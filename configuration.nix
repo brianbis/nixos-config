@@ -212,7 +212,13 @@ in
     nvidiaSettings = true;
     open = true;
     package = config.boot.kernelPackages.nvidiaPackages.latest;
-};
+  };
+  hardware.bluetooth = {
+    enable = true;
+    powerOnBoot = true;
+  };
+
+  services.blueman.enable = true;
 
   environment.etc."xdg/autostart/set-monitor-layout.desktop".text = ''
     [Desktop Entry]
