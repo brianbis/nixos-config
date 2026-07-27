@@ -13,6 +13,8 @@
     ./monitor.nix
   ];
 
+  nixpkgs.config.allowUnfree = true;
+
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
 
@@ -47,10 +49,6 @@
     "nix-command"
     "flakes"
   ];
-
-  nixpkgs.config.allowUnfree = true;
-
-  programs.firefox.enable = true;
-
+  
   system.stateVersion = "26.05";
 }

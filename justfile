@@ -3,12 +3,21 @@ set shell := ["bash", "-cu"]
 stage:
     git add .
 
+
+auto-stage:
+    if ! git diff --quiet || [ -n "$(git status --porcelain)" ]; then \
+        echo "Staging changes..."; \
+        git add .; \
+    fi
+
 # Apply current NixOS configuration
 switch:
+    just auto-stage
     sudo nixos-rebuild switch --flake .
 
 # Build without activating (safe test)
 build:
+    just auto-stage
     sudo nixos-rebuild build --flake .
 
 # Show what would change before switching

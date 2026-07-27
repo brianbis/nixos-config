@@ -1,0 +1,71 @@
+@namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
+/* Hide horizontal tabs at the top of the window */
+#tabbrowser-tabs {
+  visibility: collapse !important;
+}
+#main-window[tabsintitlebar="true"]:not([extradragspace="true"]) #TabsToolbar > .toolbar-items {
+  opacity: 0;
+  pointer-events: none;
+}
+#main-window:not([tabsintitlebar="true"]) #TabsToolbar {
+    visibility: collapse !important;
+}
+#main-window[tabsintitlebar="true"]:not([extradragspace="true"]) #TabsToolbar .titlebar-spacer {
+    border-inline-end: none;
+}
+
+/* Adding empty space for buttons */
+#nav-bar {
+	margin-right:140px;
+}
+
+/* 15px for dragging whole window by mouse*/
+#titlebar {
+	appearance: none !important;
+	height: 0px;
+}
+
+/* Fix for main menu calling by Alt button */
+#titlebar > #toolbar-menubar {
+	margin-top: 10px;
+}
+
+/* Move minimize/restore/close buttons to empty space */
+#TabsToolbar > .titlebar-buttonbox-container {
+	display: block;
+	position: absolute;
+	top: 1px;
+	right: 1px;
+}
+#sidebar-box[sidebarcommand="treestyletab_piro_sakura_ne_jp-sidebar-action"] #sidebar-header {
+  display: none;
+}
+
+#sidebar-box[sidebarcommand="treestyletab_piro_sakura_ne_jp-sidebar-action"] #sidebar-header {
+  display: none !important;
+}
+
+/* default: real 40px sidebar that pushes page */
+#sidebar-box[sidebarcommand="treestyletab_piro_sakura_ne_jp-sidebar-action"] {
+  --thin-tab-width: 20px;
+  --wide-tab-width: 260px;
+
+  overflow: visible !important;
+  position: relative !important;
+  min-width: var(--thin-tab-width) !important;
+  max-width: var(--thin-tab-width) !important;
+  border-right: 1px solid #0c0c0d;
+  z-index: 2;
+}
+
+/* hover: grow, then cancel the extra width so it overlays instead of reflowing */
+#sidebar-box[sidebarcommand="treestyletab_piro_sakura_ne_jp-sidebar-action"]:hover {
+  min-width: var(--wide-tab-width) !important;
+  max-width: var(--wide-tab-width) !important;
+  margin-right: calc((var(--wide-tab-width) - var(--thin-tab-width)) * -1) !important;
+  z-index: 3;
+}
+
+#sidebar-splitter {
+  display: none !important;
+}

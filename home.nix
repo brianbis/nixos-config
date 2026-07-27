@@ -1,7 +1,6 @@
-{ pkgs, ... }:
+{ pkgs, nur, ... }:
 
 {
-  nixpkgs.config.allowUnfree = true;
   home.username = "b";
   home.homeDirectory = "/home/b";
 
@@ -52,4 +51,18 @@
     mangohud
     gamescope
   ];
+  programs.firefox = {
+    enable = true;
+
+    profiles.main = {
+      id = 0;
+      isDefault = true;
+
+      userChrome = builtins.readFile ./firefox/userChrome.css;
+
+      extensions = import ./firefox/addons.nix { inherit pkgs; };
+
+      settings = import ./firefox/settings.nix;
+    };
+  };
 }
