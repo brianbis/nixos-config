@@ -175,6 +175,7 @@ in
     # dev
     git
     gh
+    just
     # games
     bolt-launcher
     lutris
@@ -183,9 +184,9 @@ in
     mangohud
     gamescope # valve display compositor, to make things run at the right size
     nvtopPackages.nvidia # htop for gpu
+    #encryption
     sops
     age
-    just
   #  vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
   #  wget
   ];
