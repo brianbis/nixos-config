@@ -18,13 +18,16 @@ update:
 
 save message="NixOS configuration update":
     git add .
-    git diff --cached --quiet || git commit -m "{{message}}"
+    if git diff --cached --quiet; then \
+        git commit --amend -m "{{message}}"; \
+    else \
+        git commit -m "{{message}}"; \
+    fi
 
 push message="NixOS configuration update":
-    git add .
-    git diff --cached --quiet || git commit -m "{{message}}"
-    git push
-    
+    just save "{{message}}"
+    git push --force-with-lease
+
 # Check config evaluation without switching
 check:
     nixos-rebuild dry-build --flake .
