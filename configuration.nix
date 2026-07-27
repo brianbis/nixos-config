@@ -1,17 +1,7 @@
 { ... }:
 
-let
-  sops-nix = builtins.fetchTarball {
-    url = "https://github.com/Mic92/sops-nix/archive/master.tar.gz";
-  };
-
-  home-manager = builtins.fetchTarball {
-    url = "https://github.com/nix-community/home-manager/archive/master.tar.gz";
-  };
-in
 {
   imports = [
-    ./hardware-configuration.nix
     ./packages.nix
     ./desktop.nix
     ./audio.nix
@@ -20,12 +10,7 @@ in
     ./networking.nix
     ./security.nix
     ./gaming.nix
-
-    "${sops-nix}/modules/sops"
-    "${home-manager}/nixos"
   ];
-
-  home-manager.users.b = import ./home.nix;
 
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
