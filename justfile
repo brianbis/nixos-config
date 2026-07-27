@@ -17,14 +17,14 @@ update:
     nix flake update
 
 # Save configuration changes
-save:
+save message="NixOS configuration update":
     git add .
-    git commit -m "NixOS configuration update"
+    git commit -m "{{message}}"
 
 # Save and push configuration changes
-push:
+push message="NixOS configuration update":
     git add .
-    git commit -m "NixOS configuration update"
+    git commit -m "{{message}}"
     git push
 
 # Check config evaluation without switching
