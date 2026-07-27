@@ -173,6 +173,7 @@ in
     whois
     tailscale
     # dev
+    vscode
     git
     gh
     just
