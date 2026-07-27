@@ -167,6 +167,7 @@ in
     nvtopPackages.nvidia # htop for gpu
     sops
     age
+    just
   #  vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
   #  wget
   ];
@@ -200,7 +201,6 @@ in
   # Before changing this value read the documentation for this option
   # (e.g. man configuration.nix or on https://nixos.org/nixos/options.html).
   system.stateVersion = "26.05"; # Did you read the comment?
-  services.tailscale.enable = true;
   services.xserver.videoDrivers = [ "nvidia" ];
   services.tailscale = {
     enable = true;
