@@ -88,7 +88,25 @@ in
     # no need to redefine it in your config for now)
     #media-session.enable = true;
   };
-
+  services.pipewire.wireplumber.extraConfig = {
+    "51-airpods-no-mic" = {
+      "monitor.bluez.rules" = [
+        {
+          matches = [
+            {
+              "device.name" = "~bluez_card.*";
+            }
+          ];
+          actions = {
+            "update-props" = {
+              "bluez5.auto-connect" = [ "a2dp_sink" ];
+              "bluez5.profile" = "a2dp-sink";
+            };
+          };
+        }
+      ];
+    };
+  };
   # Enable touchpad support (enabled default in most desktopManager).
   # services.xserver.libinput.enable = true;
 
