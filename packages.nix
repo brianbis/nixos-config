@@ -17,8 +17,5 @@
     tailscale
     sops
     age
-
-    # gpu diagnostics
-    nvtopPackages.nvidia
   ];
 }

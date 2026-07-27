@@ -1,9 +1,7 @@
-{ config, ... }:
+{ config, pkgs, ... }:
 
 {
-  services.xserver.videoDrivers = [
-    "nvidia"
-  ];
+  services.xserver.videoDrivers = [ "nvidia" ];
 
   hardware.graphics.enable = true;
 
@@ -13,4 +11,8 @@
     open = true;
     package = config.boot.kernelPackages.nvidiaPackages.latest;
   };
+
+  environment.systemPackages = with pkgs; [
+    nvtopPackages.nvidia
+  ];
 }
