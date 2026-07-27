@@ -10,6 +10,7 @@
     ./networking.nix
     ./security.nix
     ./gaming.nix
+    ./monitor.nix
   ];
 
   boot.loader.systemd-boot.enable = true;

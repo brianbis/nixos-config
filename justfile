@@ -1,5 +1,8 @@
 set shell := ["bash", "-cu"]
 
+stage:
+    git add .
+
 # Apply current NixOS configuration
 switch:
     sudo nixos-rebuild switch --flake .
