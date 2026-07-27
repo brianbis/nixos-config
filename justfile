@@ -16,17 +16,15 @@ diff:
 update:
     nix flake update
 
-# Save configuration changes
 save message="NixOS configuration update":
     git add .
-    git commit -m "{{message}}"
+    git diff --cached --quiet || git commit -m "{{message}}"
 
-# Save and push configuration changes
 push message="NixOS configuration update":
     git add .
-    git commit -m "{{message}}"
+    git diff --cached --quiet || git commit -m "{{message}}"
     git push
-
+    
 # Check config evaluation without switching
 check:
     nixos-rebuild dry-build --flake .
