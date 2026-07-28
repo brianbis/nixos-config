@@ -1,4 +1,15 @@
-{ pkgs, nur, ... }:
+{ pkgs, nur, discord-nixpkgs, ... }:
+
+let
+  discordPkgs = import discord-nixpkgs {
+    system = pkgs.system;
+    config = {
+      allowUnfree = true;
+    };
+  };
+
+  discord = discordPkgs.discord;
+in
 
 {
   home.username = "b";
@@ -54,15 +65,25 @@
   programs.firefox = {
     enable = true;
 
+    policies = {
+      Preferences = {
+        "toolkit.legacyUserProfileCustomizations.stylesheets" = {
+          Value = true;
+          Status = "locked";
+        };
+      };
+    };
+
     profiles.main = {
       id = 0;
       isDefault = true;
 
       userChrome = builtins.readFile ./firefox/userChrome.css;
 
-      extensions = import ./firefox/addons.nix { inherit pkgs; };
+      extensions.packages = import ./firefox/addons.nix { inherit pkgs; };
 
       settings = import ./firefox/settings.nix;
     };
   };
+
 }
