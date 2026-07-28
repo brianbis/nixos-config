@@ -1,17 +1,10 @@
-{ pkgs, nur, discord-nixpkgs, ... }:
-
-let
-  discordPkgs = import discord-nixpkgs {
-    system = pkgs.system;
-    config = {
-      allowUnfree = true;
-    };
-  };
-
-  discord = discordPkgs.discord;
-in
+{ pkgs, nur, ... }:
 
 {
+  imports = [
+    ./discord.nix
+  ];
+
   home.username = "b";
   home.homeDirectory = "/home/b";
 
@@ -23,7 +16,6 @@ in
     # desktop apps
     vscode
     bitwarden-desktop
-    discord
     obsidian
 
     # system tools
@@ -35,7 +27,7 @@ in
     ncdu
 
     # media
-    ffmpeg
+    ffmpeg-full
     yt-dlp
     mpv
     imagemagick
@@ -62,6 +54,7 @@ in
     mangohud
     gamescope
   ];
+
   programs.firefox = {
     enable = true;
 
@@ -85,5 +78,4 @@ in
       settings = import ./firefox/settings.nix;
     };
   };
-
 }
