@@ -34,6 +34,12 @@
         home-manager.nixosModules.home-manager
 
         {
+          nixpkgs.config.allowUnfree = true;
+
+          nixpkgs.overlays = [
+            nur.overlays.default
+          ];
+
           home-manager.useGlobalPkgs = true;
 
           home-manager.extraSpecialArgs = {

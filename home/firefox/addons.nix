@@ -1,30 +1,33 @@
-{ pkgs, nur, ... }:
+{ pkgs, ... }:
 
 let
-  firefox-addons = nur.legacyPackages.${pkgs.system}.repos.rycee.firefox-addons;
+  firefox-addons = pkgs.nur.repos.rycee.firefox-addons;
 
-  black-oled = firefox-addons.buildFirefoxXpiAddon {
-    pname = "black-oled";
-    version = "1.2";
-    addonId = "{b1638061-5a6b-49fd-8495-f03a0c989a57}";
-    url = "https://addons.mozilla.org/firefox/downloads/file/3492728/oled_borderless_pitch_black-1.2.xpi";
-    sha256 = "sha256-rkr8hBFkbjjl3L+UDDa+vLwO3LQquGC+B7ThEXdemIw=";
+  oled-borderless-pitch-black =
+    firefox-addons.buildFirefoxXpiAddon {
+      pname = "oled-borderless-pitch-black";
+      version = "1.2";
+      addonId = "oled-borderless-pitch-black@mozilla.org";
+      url = "https://addons.mozilla.org/firefox/downloads/file/3492728/oled_borderless_pitch_black-1.2.xpi";
+      sha256 = "sha256-rkr8hBFkbjjl3L+UDDa+vLwO3LQquGC+B7ThEXdemIw=";
 
-    meta = {
-      homepage = "https://addons.mozilla.org/en-US/firefox/addon/black-oled/";
-      description = "Black (OLED) Firefox theme";
+      meta = {
+        homepage = "https://addons.mozilla.org/en-US/firefox/addon/oled-borderless-pitch-black/";
+        description = "OLED Borderless Pitch Black Firefox theme";
+      };
     };
-  };
 in
-(with firefox-addons; [
+with firefox-addons; [
   sponsorblock
   ublock-origin
   bitwarden
   darkreader
   amp2html
+  tampermonkey
   reddit-enhancement-suite
   old-reddit-redirect
+  betterttv
   tree-style-tab
-]) ++ [
-  black-oled
+
+  oled-borderless-pitch-black
 ]
