@@ -2,15 +2,9 @@
 
 {
   imports = [
-    ./packages.nix
-    ./desktop.nix
-    ./audio.nix
-    ./nvidia.nix
-    ./bluetooth.nix
-    ./networking.nix
-    ./security.nix
-    ./gaming.nix
-    ./monitor.nix
+    ./system
+    ./desktop
+    ./gaming
   ];
 
   nixpkgs.config.allowUnfree = true;
@@ -49,6 +43,6 @@
     "nix-command"
     "flakes"
   ];
-  
+
   system.stateVersion = "26.05";
 }

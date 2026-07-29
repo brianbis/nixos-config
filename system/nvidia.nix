@@ -1,6 +1,12 @@
 { config, pkgs, ... }:
 {
   services.xserver.videoDrivers = [ "nvidia" ];
+  
+  boot.kernelParams = [
+    "nvidia.NVreg_PreserveVideoMemoryAllocations=1"
+  ];
+
+  
   hardware.graphics = {
     enable = true;
     extraPackages = with pkgs; [ nvidia-vaapi-driver ];
@@ -9,6 +15,7 @@
     modesetting.enable = true;
     nvidiaSettings = true;
     open = true;
+    powerManagement.enable = true;
     package = config.boot.kernelPackages.nvidiaPackages.latest;
   };
   environment.sessionVariables = {

@@ -13,7 +13,7 @@
     bind
     whois
     ffmpeg-full
-    # machine/security tooling
+    # security tooling
     tailscale
     sops
     age
