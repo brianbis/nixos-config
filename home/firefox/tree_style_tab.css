@@ -1,0 +1,15 @@
+tab-twisty { display: none !important; }
+
+.ui {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+}
+
+tab-favicon {
+    margin-left: 0 !important;
+}
+
+.background,
+.background.base {
+    display: none !important;
+}
