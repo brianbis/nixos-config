@@ -40,7 +40,7 @@
             inherit discord-nixpkgs plasma-manager nur;
           };
 
-          home-manager.users.b = import ./home.nix;
+          home-manager.users.b = import ./home;
         }
       ];
 
