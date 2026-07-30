@@ -6,6 +6,7 @@
     ./packages.nix
     ./plasma.nix
     ./firefox
+    ./sts.nix
     plasma-manager.homeModules.plasma-manager
   ];
 

@@ -28,8 +28,7 @@
       system = "x86_64-linux";
 
       modules = [
-        ./configuration.nix
-        ./hardware-configuration.nix
+        ./hosts/desktop
         sops-nix.nixosModules.sops
         home-manager.nixosModules.home-manager
 

@@ -2,15 +2,11 @@
 
 {
   imports = [
+    ./hardware-configuration.nix
     ./system
-    ./desktop
-    ./gaming
   ];
 
   nixpkgs.config.allowUnfree = true;
-
-  boot.loader.systemd-boot.enable = true;
-  boot.loader.efi.canTouchEfiVariables = true;
 
   networking.hostName = "nixos";
 

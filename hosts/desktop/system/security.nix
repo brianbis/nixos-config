@@ -2,7 +2,7 @@
 
 {
   sops = {
-    defaultSopsFile = ../secrets.yaml;
+    defaultSopsFile = ../../../secrets.yaml;
 
     age.keyFile = "/home/b/.config/sops/age/keys.txt";
 

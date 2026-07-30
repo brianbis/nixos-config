@@ -8,5 +8,7 @@
     ./packages.nix
     ./nvidia.nix
     ./monitor.nix
+    ./plasma.nix
+    ./steam.nix
   ];
 }
