@@ -59,7 +59,7 @@ update:
     nix flake update
 
 save message="NixOS configuration update":
-    sudo git add .
+    sudo git add -A .
     if sudo git diff --cached --quiet; then \
         sudo git -c user.name="b" -c user.email="brianbis@gmail.com" commit --amend -m "{{message}}"; \
     else \
@@ -70,7 +70,7 @@ push message="NixOS configuration update":
     just save "{{message}}"
     sudo GIT_SSH_COMMAND="ssh -i /home/b/.ssh/id_ed25519" git fetch origin
     sudo GIT_SSH_COMMAND="ssh -i /home/b/.ssh/id_ed25519" git push --force-with-lease
-    
+
 gc:
     sudo nix-collect-garbage -d
 
