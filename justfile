@@ -68,7 +68,7 @@ save message="NixOS configuration update":
 
 push message="NixOS configuration update":
     just save "{{message}}"
-    git push --force-with-lease
+    sudo -E git push --force-with-lease
 
 gc:
     sudo nix-collect-garbage -d
