@@ -8,9 +8,11 @@
 
     shortcuts = {
       "services/org.kde.krunner.desktop" = {
-        "_launch" = [ "Meta" "Meta+R" "Alt+Space" ];
+        "_launch" = [ "Meta" "Alt+Space" ];
       };
-
+      yakuake = {
+        "toggle-window-state" = "Meta+R";
+      };
       "services/org.kde.spectacle.desktop" = {
         "RecordRegion" = "none";
       };
