@@ -17,5 +17,9 @@
     tailscale
     sops
     age
+    gdb
+    mangohud
+    vulkan-tools
+    kdePackages.yakuake
   ];
 }
