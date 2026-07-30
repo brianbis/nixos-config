@@ -9,6 +9,10 @@ let
 in
 {
   imports = [ inputs.agenix.nixosModules.default ];
+  
+  security.sudo.extraConfig = ''
+    Defaults env_keep += "SSH_AUTH_SOCK"
+  '';
 
   # System SSH configuration
   services.openssh = {
