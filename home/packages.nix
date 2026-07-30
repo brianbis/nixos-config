@@ -3,9 +3,14 @@
 {
   programs.git = {
     enable = true;
-    userEmail = "brianbis@gmail.com";
-    extraConfig = {
-      safe.directory = [ "/etc/nixos" ];
+    settings = {
+      user = {
+        name = "b";
+        email = "your-email@example.com";
+      };
+      safe = {
+        directory = [ "/etc/nixos" ];
+      };
     };
   };
   home.packages = with pkgs; [
