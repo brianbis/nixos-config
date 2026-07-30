@@ -16,6 +16,6 @@
     Type=Application
     Name=Set monitor layout
     Exec=set-monitor-layout
-    X-KDE-autostart-after=panel
+    X-KDE-autostart-phase=1
   '';
 }
