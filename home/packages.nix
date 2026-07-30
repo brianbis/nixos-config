@@ -1,6 +1,13 @@
 { pkgs, ... }:
 
 {
+  programs.git = {
+    enable = true;
+    userEmail = "brianbis@gmail.com";
+    extraConfig = {
+      safe.directory = [ "/etc/nixos" ];
+    };
+  };
   home.packages = with pkgs; [
     kdePackages.kate
 

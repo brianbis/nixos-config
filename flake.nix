@@ -17,19 +17,22 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    sops-nix.url = "github:Mic92/sops-nix";
+    agenix = {
+      url = "github:ryantm/agenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
     nur.url = "github:nix-community/NUR";
   };
 
-  outputs = { self, nixpkgs, home-manager, plasma-manager, sops-nix, nur, discord-nixpkgs, ... }:
+  outputs = { self, nixpkgs, home-manager, plasma-manager, agenix, nur, discord-nixpkgs, ... }@inputs:
   {
     nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
 
       modules = [
         ./hosts/desktop
-        sops-nix.nixosModules.sops
+        agenix.nixosModules.default # Standard agenix module
         home-manager.nixosModules.home-manager
 
         {
@@ -50,7 +53,7 @@
       ];
 
       specialArgs = {
-        inherit nur;
+        inherit nur inputs; # Pass inputs so modules can access agenix if needed
       };
     };
   };

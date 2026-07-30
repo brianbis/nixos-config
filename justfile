@@ -1,30 +1,60 @@
 set shell := ["bash", "-cu"]
 
+# Secrets management
+secrets-dir := "secrets"
+identity-key := "/var/lib/agenix/key.txt"
+
+# Edit an existing secret or create a new one
+secret-edit name:
+    @mkdir -p {{secrets-dir}}
+    sudo EDITOR="nano" agenix -e {{secrets-dir}}/{{name}}.age -i {{identity-key}}
+
+# Show decrypted secret
+secret-show name:
+    sudo age -d -i {{identity-key}} {{secrets-dir}}/{{name}}.age
+
+# Validate secret can be decrypted
+secret-check name:
+    @sudo age -d -i {{identity-key}} {{secrets-dir}}/{{name}}.age >/dev/null
+    @echo "{{name}}: OK"
+
+# Check all secrets in directory
+secrets-check:
+    @for f in {{secrets-dir}}/*.age; do \
+        echo "Checking $f"; \
+        sudo age -d -i {{identity-key}} "$f" >/dev/null || exit 1; \
+    done
+    @echo "All secrets OK"
+
+# List all age secrets
+secrets-list:
+    @ls -1 {{secrets-dir}}/*.age 2>/dev/null || echo "No secrets found in {{secrets-dir}}"
+
+# Workflow targets
 stage:
     git add .
 
-
 auto-stage:
-    if ! git diff --quiet || [ -n "$(git status --porcelain)" ]; then \
+    @if ! git diff --quiet || [ -n "$(git status --porcelain)" ]; then \
         echo "Staging changes..."; \
-        git add .; \
+        sudo git add .; \
     fi
 
-# Apply current NixOS configuration
+# NixOS build & rebuild
 switch:
     just auto-stage
     sudo nixos-rebuild switch --flake .
 
-# Build without activating (safe test)
 build:
     just auto-stage
     sudo nixos-rebuild build --flake .
 
-# Show what would change before switching
+check:
+    nixos-rebuild dry-build --flake .
+
 diff:
     nix store diff-closures /nix/var/nix/profiles/system ./result
 
-# Update flake inputs
 update:
     nix flake update
 
@@ -40,22 +70,14 @@ push message="NixOS configuration update":
     just save "{{message}}"
     git push --force-with-lease
 
-# Check config evaluation without switching
-check:
-    nixos-rebuild dry-build --flake .
-
-# Garbage collect old generations
 gc:
     sudo nix-collect-garbage -d
 
-# Show available system generations
 generations:
     sudo nix-env --list-generations --profile /nix/var/nix/profiles/system
 
-# Roll back to previous generation
 rollback:
     sudo nixos-rebuild switch --rollback --flake .
-
 
 # Shortcuts
 alias s := switch
@@ -66,5 +88,8 @@ alias rs := switch
 
 alias b := build
 alias c := check
-
 alias u := update
+
+alias se := secret-edit
+alias ss := secret-show
+alias sc := secret-check

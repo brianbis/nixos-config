@@ -1,8 +1,8 @@
-{ pkgs, ... }:
+{ pkgs, inputs, ... }:
 
 {
   environment.systemPackages = with pkgs; [
-    # system/network administration
+    inputs.agenix.packages.${pkgs.system}.default
     curl
     wget
     rsync
@@ -13,9 +13,7 @@
     bind
     whois
     ffmpeg-full
-    # security tooling
     tailscale
-    sops
     age
     gdb
     mangohud

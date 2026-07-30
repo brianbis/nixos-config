@@ -1,4 +1,4 @@
-{ ... }:
+{ pkgs, ... }:
 
 {
   programs.plasma = {
@@ -54,16 +54,6 @@
         apply = {
           position = { value = "1280,0";      apply = "remember"; };
           size     = { value = "1280,1440"; apply = "remember"; };
-          desktop  = { value = "1";         apply = "remember"; };
-          screen   = { value = "0";         apply = "remember"; };
-        };
-      }
-      {
-        description = "Konsole - left quarter half upper";
-        match.window-class = { value = "konsole"; type = "substring"; };
-        apply = {
-          position = { value = "0,0";    apply = "force"; };
-          size     = { value = "1280,720"; apply = "force"; };
           desktop  = { value = "1";         apply = "remember"; };
           screen   = { value = "0";         apply = "remember"; };
         };
