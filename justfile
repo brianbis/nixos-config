@@ -68,8 +68,8 @@ save message="NixOS configuration update":
 
 push message="NixOS configuration update":
     just save "{{message}}"
-    sudo -E git push --force-with-lease
-
+    sudo GIT_SSH_COMMAND="ssh -i /home/b/.ssh/id_ed25519" git push --force-with-lease
+    
 gc:
     sudo nix-collect-garbage -d
 
