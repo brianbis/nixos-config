@@ -32,10 +32,10 @@ secrets-list:
 
 # Workflow targets
 stage:
-    git add .
+    sudo git add .
 
 auto-stage:
-    @if ! git diff --quiet || [ -n "$(git status --porcelain)" ]; then \
+    @if ! sudo git diff --quiet || [ -n "$(sudo git status --porcelain)" ]; then \
         echo "Staging changes..."; \
         sudo git add .; \
     fi
@@ -59,11 +59,11 @@ update:
     nix flake update
 
 save message="NixOS configuration update":
-    git add .
-    if git diff --cached --quiet; then \
-        git commit --amend -m "{{message}}"; \
+    sudo git add .
+    if sudo git diff --cached --quiet; then \
+        sudo git -c user.name="b" -c user.email="brianbis@gmail.com" commit --amend -m "{{message}}"; \
     else \
-        git commit -m "{{message}}"; \
+        sudo git -c user.name="b" -c user.email="brianbis@gmail.com" commit -m "{{message}}"; \
     fi
 
 push message="NixOS configuration update":
