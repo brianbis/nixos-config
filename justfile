@@ -68,6 +68,7 @@ save message="NixOS configuration update":
 
 push message="NixOS configuration update":
     just save "{{message}}"
+    sudo GIT_SSH_COMMAND="ssh -i /home/b/.ssh/id_ed25519" git fetch origin
     sudo GIT_SSH_COMMAND="ssh -i /home/b/.ssh/id_ed25519" git push --force-with-lease
     
 gc:
