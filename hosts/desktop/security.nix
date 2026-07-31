@@ -1,7 +1,7 @@
 { lib, inputs, ... }:
 
 let
-  secretsDir = ../../../secrets;
+  secretsDir = ../../secrets;
   # List all files in secrets/ ending with .age
   secretFiles = builtins.filter
     (name: lib.hasSuffix ".age" name)
