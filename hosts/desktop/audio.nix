@@ -1,9 +1,13 @@
-{ ... }:
+{ pkgs, ... }:
 
 {
   services.pulseaudio.enable = false;
 
   security.rtkit.enable = true;
+
+  environment.systemPackages = with pkgs; [
+    deepfilternet
+  ];
 
   services.pipewire = {
     enable = true;
@@ -12,6 +16,41 @@
     alsa.support32Bit = true;
 
     pulse.enable = true;
+    extraConfig.pipewire."99-deepfilter" = {
+      "context.modules" = [
+        {
+          name = "libpipewire-module-filter-chain";
+          args = {
+            "node.description" = "DeepFilter Filtered Microphone";
+            "media.name" = "DeepFilter Filtered Microphone";
+            "filter.graph" = {
+              "nodes" = [
+                {
+                  type = "ladspa";
+                  name = "deep_filter";
+                  plugin = "${pkgs.deepfilternet}/lib/ladspa/libdeep_filter_ladspa.so";
+                  label = "deep_filter_mono";
+                  control = {
+                    "Attenuation Limit (dB)" = 100.0;
+                  };
+                }
+              ];
+            };
+            "audio.position" = [ "MONO" ];
+            "capture.props" = {
+              "node.name" = "capture.deepfilter_input";
+              "node.passive" = true;
+              # wpctl inspect @DEFAULT_AUDIO_SOURCE@ | grep -oP 'node.name = "\K[^"]+'
+              "target.object" = "alsa_input.usb-MOTU_M4_M4AE15CAEJ-00.HiFi__Mic1__source";
+            };
+            "playback.props" = {
+              "node.name" = "deepfilter_clean_mic";
+              "media.class" = "Audio/Source";
+            };
+          };
+        }
+      ];
+    };
 
     wireplumber = {
       enable = true;
