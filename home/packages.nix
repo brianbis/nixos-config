@@ -6,7 +6,7 @@
     settings = {
       user = {
         name = "b";
-        email = "your-email@example.com";
+        email = "brianbis@gmail.com";
       };
       safe = {
         directory = [ "/etc/nixos" ];
