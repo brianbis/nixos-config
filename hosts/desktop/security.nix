@@ -14,7 +14,6 @@ in
     Defaults env_keep += "SSH_AUTH_SOCK"
   '';
 
-  # System SSH configuration
   services.openssh = {
     enable = true;
     settings = {
@@ -28,7 +27,6 @@ in
     # System identity keys used to decrypt on boot
     identityPaths = [ "/var/lib/agenix/key.txt" ];
 
-    # Automatically register every .age file in secrets/
     secrets = builtins.listToAttrs (map (file: {
       # Strips ".age" extension ("tailscale-authkey.age" -> "tailscale-authkey")
       name = lib.removeSuffix ".age" file;

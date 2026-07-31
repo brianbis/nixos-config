@@ -72,8 +72,8 @@
         description = "VS Code - left quarter half lower";
         match.window-class = { value = "code"; type = "substring"; };
         apply = {
-          position = { value = "0,720";     apply = "force"; };
-          size     = { value = "1280,720"; apply = "force"; };
+          position = { value = "0,720";     apply = "remember"; };
+          size     = { value = "1280,720"; apply = "remember"; };
           desktop  = { value = "1";       apply = "remember"; };
           screen   = { value = "0";       apply = "remember"; };
         };

@@ -1,24 +1,19 @@
 set shell := ["bash", "-cu"]
 
-# Secrets management
 secrets-dir := "secrets"
 identity-key := "/var/lib/agenix/key.txt"
 
-# Edit an existing secret or create a new one
 secret-edit name:
     @mkdir -p {{secrets-dir}}
     sudo EDITOR="nano" agenix -e {{secrets-dir}}/{{name}}.age -i {{identity-key}}
 
-# Show decrypted secret
 secret-show name:
     sudo age -d -i {{identity-key}} {{secrets-dir}}/{{name}}.age
 
-# Validate secret can be decrypted
 secret-check name:
     @sudo age -d -i {{identity-key}} {{secrets-dir}}/{{name}}.age >/dev/null
     @echo "{{name}}: OK"
 
-# Check all secrets in directory
 secrets-check:
     @for f in {{secrets-dir}}/*.age; do \
         echo "Checking $f"; \
@@ -26,11 +21,9 @@ secrets-check:
     done
     @echo "All secrets OK"
 
-# List all age secrets
 secrets-list:
     @ls -1 {{secrets-dir}}/*.age 2>/dev/null || echo "No secrets found in {{secrets-dir}}"
 
-# Workflow targets
 stage:
     sudo git add .
 
