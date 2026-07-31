@@ -39,11 +39,11 @@
     yq
     unzip
     p7zip
-
+    gcc
     git
     gh
     just
-
+    python3
     bolt-launcher
     lutris
     heroic
