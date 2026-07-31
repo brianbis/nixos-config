@@ -92,17 +92,6 @@ in
           loginMode = "restorePreviousLogout";
         };
       };
-
-      # Square off window corners. Best-known match for Breeze's
-      # corner-radius setting — if it doesn't visibly change anything,
-      # nudge the slider once in System Settings > Colors & Themes >
-      # Window Decorations, then `cat ~/.config/breezerc` to confirm
-      # the real key and I'll adjust this.
-      breezerc = {
-        Windeco = {
-          CornerRadius = 0;
-        };
-      };
     };
 
     window-rules = [
