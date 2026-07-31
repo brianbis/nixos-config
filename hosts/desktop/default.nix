@@ -3,28 +3,32 @@
 {
   imports = [
     ./hardware-configuration.nix
-    ./system
+    ./audio.nix
+    ./bluetooth.nix
+    ./boot.nix
+    ./monitor.nix
+    ./networking.nix
+    ./nvidia.nix
+    ./packages.nix
+    ./plasma.nix
+    ./security.nix
+    ./steam.nix
   ];
 
-  nixpkgs.config.allowUnfree = true;
-
+  # Machine Identity & Baseline
   networking.hostName = "nixos";
-
   time.timeZone = "America/Phoenix";
+  system.stateVersion = "26.05";
 
+  # Nix Configuration
+  nixpkgs.config.allowUnfree = true;
+  nix.settings.experimental-features = [
+    "nix-command"
+    "flakes"
+  ];
+
+  # Locale & User Settings
   i18n.defaultLocale = "en_US.UTF-8";
-
-  i18n.extraLocaleSettings = {
-    LC_ADDRESS = "en_US.UTF-8";
-    LC_IDENTIFICATION = "en_US.UTF-8";
-    LC_MEASUREMENT = "en_US.UTF-8";
-    LC_MONETARY = "en_US.UTF-8";
-    LC_NAME = "en_US.UTF-8";
-    LC_NUMERIC = "en_US.UTF-8";
-    LC_PAPER = "en_US.UTF-8";
-    LC_TELEPHONE = "en_US.UTF-8";
-    LC_TIME = "en_US.UTF-8";
-  };
 
   users.users."b" = {
     isNormalUser = true;
@@ -34,11 +38,4 @@
       "wheel"
     ];
   };
-
-  nix.settings.experimental-features = [
-    "nix-command"
-    "flakes"
-  ];
-
-  system.stateVersion = "26.05";
 }
