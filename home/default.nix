@@ -1,4 +1,3 @@
-# /etc/nixos/home/default.nix
 { pkgs, lib, plasma-manager, ... }:
 
 {
@@ -43,22 +42,6 @@
         };
       };
     };
-  };
-
-  # Escape on an empty shell prompt minimizes Yakuake instead of doing nothing.
-  # NOTE: this rebinds bare Escape in bash, which is normally the start of a
-  # Meta-key sequence (Esc then key = Alt+key typed slowly). If you rely on
-  # that, this will interfere with it.
-  programs.bash = {
-    enable = true;
-    initExtra = ''
-      _yakuake_escape() {
-        if [ -z "$READLINE_LINE" ]; then
-          ${pkgs.kdePackages.qttools}/bin/qdbus6 org.kde.yakuake /yakuake/window org.kde.yakuake.toggleWindowState
-        fi
-      }
-      bind -x '"\e": _yakuake_escape'
-    '';
   };
 
   home.username = "b";
