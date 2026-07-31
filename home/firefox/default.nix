@@ -1,3 +1,4 @@
+# /etc/nixos/home/firefox/default.nix
 { pkgs, nur, ... }:
 
 {
@@ -18,6 +19,18 @@
 
       userChrome =
         builtins.readFile ./userChrome.css;
+
+      # /r/subreddit -> jumps straight to the subreddit
+      bookmarks = {
+        force = true;
+        settings = [
+          {
+            name = "Subreddit shortcut";
+            keyword = "r";
+            url = "https://old.reddit.com/r/%s";
+          }
+        ];
+      };
     };
   };
 }
