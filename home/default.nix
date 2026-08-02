@@ -43,7 +43,7 @@
       };
     };
   };
-
+ 
   home.username = "b";
   home.homeDirectory = "/home/b";
 
