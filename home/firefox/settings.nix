@@ -39,4 +39,5 @@
   # --- Always resume previous session on restart, no "Restore Session" prompt ---
   "browser.startup.page" = 3;
   "browser.sessionstore.max_resumed_crashes" = -1;
+  dom.webserial.enabled = true;
 }

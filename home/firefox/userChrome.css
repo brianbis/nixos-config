@@ -70,7 +70,7 @@
   display: none !important;
 }
 
-/* If a thin line persists above the tabs or toolbars */
+/* thin line persists above the tabs or toolbars */
 #navigator-toolbox, #toolbar-menubar, #TabsToolbar, #nav-bar {
   box-shadow: none !important;
   border-color: transparent !important;
