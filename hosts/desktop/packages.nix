@@ -1,4 +1,17 @@
 { pkgs, inputs, ... }:
+let
+  my-python-packages =
+    p: with p; [
+      # Data / science
+      numpy
+      pandas
+      scikit-learn
+      matplotlib
+      seaborn
+    ];
+in
+
+
 
 {
   environment.systemPackages = with pkgs; [
@@ -18,6 +31,8 @@
     gdb
     mangohud
     vulkan-tools
-    kdePackages.yakuake
+    (python3.withPackages my-python-packages)
+    (makeJailedCrush {})
+    (makeJailedOpencode {})
   ];
 }

@@ -23,16 +23,96 @@
     };
 
     nur.url = "github:nix-community/NUR";
+
+    # Jailed LLM tooling
+    jail-nix.url = "sourcehut:~alexdavid/jail.nix";
+    llm-agents.url = "github:numtide/llm-agents.nix";
   };
 
-  outputs = { self, nixpkgs, home-manager, plasma-manager, agenix, nur, discord-nixpkgs, ... }@inputs:
+  outputs = {
+    self,
+    nixpkgs,
+    home-manager,
+    plasma-manager,
+    agenix,
+    nur,
+    discord-nixpkgs,
+    jail-nix,
+    llm-agents,
+    ...
+  }@inputs:
+  let
+    system = "x86_64-linux";
+
+    pkgs = import nixpkgs {
+      inherit system;
+      config.allowUnfree = true;
+      overlays = [ nur.overlays.default ];
+    };
+
+    jail = jail-nix.lib.init pkgs;
+
+    commonPkgs = with pkgs; [
+      bashInteractive
+      curl
+      wget
+      jq
+      git
+      which
+      ripgrep
+      gnugrep
+      gawkInteractive
+      ps
+      findutils
+      gzip
+      unzip
+      gnutar
+      diffutils
+    ];
+
+    commonJailOptions = with jail.combinators; [
+      network
+      time-zone
+      no-new-session
+      mount-cwd
+    ];
+
+    makeJailedCrush = { extraPkgs ? [ ] }:
+      jail "jailed-crush"
+        llm-agents.packages.${system}.crush
+        (with jail.combinators;
+          commonJailOptions ++ [
+            (readwrite (noescape "~/.config/crush"))
+            (readwrite (noescape "~/.local/share/crush"))
+
+            (add-pkg-deps commonPkgs)
+            (add-pkg-deps extraPkgs)
+          ]);
+
+    makeJailedOpencode = { extraPkgs ? [ ] }:
+      jail "jailed-opencode"
+        llm-agents.packages.${system}.opencode
+        (with jail.combinators;
+          commonJailOptions ++ [
+            (readwrite (noescape "~/.config/opencode"))
+            (readwrite (noescape "~/.local/share/opencode"))
+            (readwrite (noescape "~/.local/state/opencode"))
+
+            (add-pkg-deps commonPkgs)
+            (add-pkg-deps extraPkgs)
+          ]);
+  in
   {
+    lib = {
+      inherit makeJailedCrush makeJailedOpencode;
+    };
+
     nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
-      system = "x86_64-linux";
+      inherit system;
 
       modules = [
         ./hosts/desktop
-        agenix.nixosModules.default # Standard agenix module
+        agenix.nixosModules.default
         home-manager.nixosModules.home-manager
 
         {
@@ -45,7 +125,13 @@
           home-manager.useGlobalPkgs = true;
 
           home-manager.extraSpecialArgs = {
-            inherit discord-nixpkgs plasma-manager nur;
+            inherit
+              discord-nixpkgs
+              plasma-manager
+              nur
+              jail-nix
+              llm-agents
+              ;
           };
 
           home-manager.users.b = import ./home;
@@ -53,7 +139,14 @@
       ];
 
       specialArgs = {
-        inherit nur inputs; # Pass inputs so modules can access agenix if needed
+        inherit
+          nur
+          inputs
+          jail-nix
+          llm-agents
+          makeJailedCrush
+          makeJailedOpencode
+          ;
       };
     };
   };
