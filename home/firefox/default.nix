@@ -2,6 +2,12 @@
 { pkgs, nur, ... }:
 
 {
+  home.file.".config/crush/.keep".text = "";
+  home.file.".local/share/crush/.keep".text = "";
+
+  home.file.".config/opencode/.keep".text = "";
+  home.file.".local/share/opencode/.keep".text = "";
+  home.file.".local/state/opencode/.keep".text = "";
   programs.firefox = {
     enable = true;
 

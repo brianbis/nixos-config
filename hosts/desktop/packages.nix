@@ -32,7 +32,5 @@ in
     mangohud
     vulkan-tools
     (python3.withPackages my-python-packages)
-    (makeJailedCrush {})
-    (makeJailedOpencode {})
   ];
 }

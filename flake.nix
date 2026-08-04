@@ -131,6 +131,8 @@
               nur
               jail-nix
               llm-agents
+              makeJailedCrush
+              makeJailedOpencode
               ;
           };
 

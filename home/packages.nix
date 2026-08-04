@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, makeJailedOpencode, makeJailedCrush, ... }:
 
 {
   programs.git = {
@@ -48,5 +48,7 @@
     lutris
     heroic
     gamescope
+    (makeJailedCrush {})
+    (makeJailedOpencode {})
   ];
 }
