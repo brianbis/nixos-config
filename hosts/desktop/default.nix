@@ -13,6 +13,7 @@
     ./plasma.nix
     ./security.nix
     ./steam.nix
+    ./vllm.nix
   ];
 
   # Machine Identity & Baseline

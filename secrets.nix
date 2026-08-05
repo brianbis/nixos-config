@@ -5,4 +5,5 @@ let
 in
 {
   "secrets/tailscale-authkey.age".publicKeys = [ adminPubKey ];
+  "secrets/hf-token.age".publicKeys = [ adminPubKey ];
 }
