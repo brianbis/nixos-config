@@ -68,6 +68,10 @@
       unzip
       gnutar
       diffutils
+      (python3.withPackages (ps: [
+              ps.cryptography
+              # add other python packages here if needed later
+            ]))
     ];
 
     commonJailOptions = with jail.combinators; [

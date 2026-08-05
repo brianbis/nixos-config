@@ -1,4 +1,83 @@
 { config, pkgs, ... }:
+
+let
+  mkVllm = {
+    image,
+    model,
+    servedName,
+    port,
+    maxModelLen,
+    gpuMemoryUtilization ? "0.90",
+    quantization ? null,
+    kvCacheDtype ? null,
+    extraArgs ? [],
+  }:
+
+  let
+    quantArgs =
+      if quantization != null
+      then [
+        "--quantization" quantization
+      ]
+      else [];
+
+    kvArgs =
+      if kvCacheDtype != null
+      then [
+        "--kv-cache-dtype" kvCacheDtype
+      ]
+      else [];
+
+  in {
+    inherit image;
+
+    autoStart = false;
+
+    volumes = [
+      "/var/lib/vllm/hf-cache:/root/.cache/huggingface"
+    ];
+
+    ports = [
+      "127.0.0.1:${toString port}:8000"
+    ];
+
+    environment = {
+      PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True";
+    };
+
+    environmentFiles = [
+      config.age.secrets.hf-token.path
+    ];
+
+    cmd =
+      [
+        "--model" model
+        "--served-model-name" servedName
+
+        "--max-model-len" (toString maxModelLen)
+        "--gpu-memory-utilization" gpuMemoryUtilization
+
+        "--enable-prefix-caching"
+
+        "--enable-auto-tool-choice"
+        "--tool-call-parser" "gemma4"
+        "--reasoning-parser" "gemma4"
+
+        "--host" "0.0.0.0"
+        "--port" "8000"
+      ]
+      ++ quantArgs
+      ++ kvArgs
+      ++ extraArgs;
+
+    extraOptions = [
+      "--device=nvidia.com/gpu=all"
+      "--ipc=host"
+      "--shm-size=32g"
+    ];
+  };
+
+in
 {
   virtualisation.docker.enable = true;
   hardware.nvidia-container-toolkit.enable = true;
@@ -9,40 +88,62 @@
   ];
 
   virtualisation.oci-containers.backend = "docker";
-  virtualisation.oci-containers.containers.vllm-gemma4 = {
-    image = "docker.io/vllm/vllm-openai:v0.26.0";
-    autoStart = true;
 
-    volumes = [
-      "/var/lib/vllm/hf-cache:/root/.cache/huggingface"
-    ];
+  virtualisation.oci-containers.containers = {
 
-    ports = [ "127.0.0.1:8000:8000" ];
+    #
+    # Gemma 4 31B NVFP4 Turbo
+    # RTX 5090 / Blackwell target
+    #
+    vllm-gemma4-nvfp4-turbo = mkVllm {
+      image = "docker.io/vllm/vllm-openai:cu130-nightly";
 
-    environment = {
-      PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True";
+      model = "LilaRest/gemma-4-31B-it-NVFP4-turbo";
+
+      servedName = "gemma-4-nvfp4";
+
+      port = 8000;
+
+      maxModelLen = 25000;
+
+      gpuMemoryUtilization = "0.95";
+
+      quantization = "modelopt";
+
+      kvCacheDtype = "fp8";
+
+      extraArgs = [
+        "--trust-remote-code"
+
+        # Conservative starting point.
+        # Increase after confirming stable memory usage.
+        "--max-num-seqs" "16"
+        "--max-num-batched-tokens" "8192"
+      ];
     };
 
-    environmentFiles = [ config.age.secrets.hf-token.path ];
 
-    cmd = [
-      "--model" "cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit"
-      "--served-model-name" "gemma-4-26b-a4b"
-      "--max-model-len" "131072"
-      "--gpu-memory-utilization" "0.90"
-      "--cpu-offload-gb" "0"                  # Reduced from 30; AWQ fits much better in VRAM
-      "--enforce-eager"
-      "--enable-prefix-caching"
-      "--enable-auto-tool-choice"
-      "--tool-call-parser" "gemma4"
-      "--reasoning-parser" "gemma4"
-      "--host" "0.0.0.0"
-      "--port" "8000"
-    ];
+    #
+    # Gemma 4 26B AWQ fallback
+    #
+    vllm-gemma4-awq = mkVllm {
+      image = "docker.io/vllm/vllm-openai:v0.26.0";
 
-    extraOptions = [
-      "--device=nvidia.com/gpu=all"
-      "--ipc=host"
-    ];
+      model = "cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit";
+
+      servedName = "gemma-4-awq";
+
+      port = 8000;
+
+      maxModelLen = 262144;
+
+      gpuMemoryUtilization = "0.90";
+
+      extraArgs = [
+        "--max-num-seqs" "8"
+        "--max-num-batched-tokens" "8192"
+      ];
+    };
+
   };
 }
