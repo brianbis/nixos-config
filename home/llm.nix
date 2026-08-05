@@ -40,8 +40,8 @@ let
           cost_per_1m_out = 0;
           cost_per_1m_in_cached = 0;
           cost_per_1m_out_cached = 0;
-          context_window = 25000;
-          default_max_tokens = 8192;
+          context_window = 262144;
+          default_max_tokens = 262144;
           can_reason = true;
           supports_attachments = true;
         }
