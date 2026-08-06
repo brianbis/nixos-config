@@ -18,7 +18,6 @@
     Exec=${pkgs.discord}/bin/discord --start-minimized
     Hidden=false
     NoDisplay=false
-    X-GNOME-Autostart-enabled=true
   '';
 
   # Yakuake Autostart
@@ -29,7 +28,6 @@
     Exec=${pkgs.kdePackages.yakuake}/bin/yakuake
     Hidden=false
     NoDisplay=false
-    X-GNOME-Autostart-enabled=true
   '';
 
   programs.plasma = {

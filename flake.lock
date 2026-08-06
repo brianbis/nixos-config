@@ -78,22 +78,6 @@
         "type": "github"
       }
     },
-    "discord-nixpkgs": {
-      "locked": {
-        "lastModified": 1785043490,
-        "narHash": "sha256-+DsqJD0xrmxyErk5xeHhoTsIu2i090sMIsABYYToyP0=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "64a1fc0ed43e9f770f1401dd5d4dd57c12ca001a",
-        "type": "github"
-      },
-      "original": {
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "64a1fc0ed43e9f770f1401dd5d4dd57c12ca001a",
-        "type": "github"
-      }
-    },
     "flake-parts": {
       "inputs": {
         "nixpkgs-lib": [
@@ -326,7 +310,6 @@
     "root": {
       "inputs": {
         "agenix": "agenix",
-        "discord-nixpkgs": "discord-nixpkgs",
         "home-manager": "home-manager_2",
         "jail-nix": "jail-nix",
         "llm-agents": "llm-agents",

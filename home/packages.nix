@@ -16,6 +16,7 @@
 
   home.packages = with pkgs; [
     kdePackages.kate
+    kdePackages.yakuake
     discord
     vscode
     bitwarden-desktop
