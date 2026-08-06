@@ -3,10 +3,11 @@
 let
     jail = jail-nix.lib.init pkgs;
   withDeepSeekKey = pkg: name:
-  pkgs.writeShellScriptBin name ''
-    export DEEPSEEK_API_KEY="$(cat ${deepseekSecret})"
-    exec ${pkg}/bin/${name} "$@"
-  '';
+    pkgs.writeShellScriptBin name ''
+      export DEEPSEEK_API_KEY="$(cat /run/agenix/deepseek-api-key)"
+      export OPENAI_API_KEY="$DEEPSEEK_API_KEY"
+      exec ${pkg}/bin/${name} "$@"
+    '';
   commonPkgs = with pkgs; [
     bashInteractive
     curl
@@ -37,105 +38,59 @@ let
     ]))
   ];
 
-  userJailOptions = with jail.combinators; [
+  # Base jail options: user (cwd, no /etc/nixos) vs system (/etc/nixos rw).
+  baseJailOptions = system: with jail.combinators; [
     network
     time-zone
     no-new-session
-    mount-cwd
-    (readonly deepseekSecret)
+  ] ++ (if system
+    then [ (readwrite "/etc/nixos") ]
+    else [ mount-cwd ]) ++ [ (readonly "/run/agenix/deepseek-api-key") ];
+
+  # Common libs/CLI tools injected into every jail.
+  mkToolJail = { name, pkg, dirs, system }:
+    jail "jailed-${name}${if system then "-system" else ""}"
+      pkg
+      (with jail.combinators;
+        baseJailOptions system ++
+        dirs ++
+        [ (add-pkg-deps commonPkgs) ]);
+
+  # Per-tool read/write dirs.
+  aiderDirs = with jail.combinators; [
+    (readwrite (noescape "~/.config/aider"))
+    (readwrite (noescape "~/.aider.conf.yml"))
+    (readwrite (noescape "~/.gitconfig"))
+  ];
+  crushDirs = with jail.combinators; [
+    (readwrite (noescape "~/.config/crush"))
+    (readwrite (noescape "~/.local/share/crush"))
+  ];
+  opencodeDirs = with jail.combinators; [
+    (readwrite (noescape "~/.config/opencode"))
+    (readwrite (noescape "~/.local/share/opencode"))
+    (readwrite (noescape "~/.local/state/opencode"))
   ];
 
-  systemJailOptions = with jail.combinators; [
-    network
-    time-zone
-    no-new-session
-    (readwrite "/etc/nixos")
-    (readonly deepseekSecret)
-  ];
+  agent = n: llm-agents.packages.${pkgs.system}.${n};
 
-  makeJailedAider = { extraPkgs ? [ ] }:
-    jail "jailed-aider"
-      pkgs.aider-chat
-      (with jail.combinators;
-        userJailOptions ++ [
-          (readwrite (noescape "~/.config/aider"))
-          (readwrite (noescape "~/.aider.conf.yml"))
-          (readwrite (noescape "~/.gitconfig"))
+  # Build a (user, system) jail pair for a tool.
+  # tool = { name, pkg, dirs, systemDirs ? [ ] }
+  makeTool = { name, pkg, dirs, systemDirs ? [ ] }:
+    [
+      (mkToolJail { inherit name pkg dirs; system = false; })
+      (mkToolJail { inherit name pkg; dirs = dirs ++ systemDirs; system = true; })
+    ];
 
-          (add-pkg-deps commonPkgs)
-          (add-pkg-deps extraPkgs)
-        ]);
-
-  makeJailedAiderSystem = { extraPkgs ? [ ] }:
-    jail "jailed-aider-system"
-      pkgs.aider-chat
-      (with jail.combinators;
-        systemJailOptions ++ [
-          (readwrite (noescape "~/.config/aider"))
-          (readwrite (noescape "~/.aider.conf.yml"))
-          (readwrite (noescape "~/.gitconfig"))
-          (readonly deepseekSecret)
-          (add-pkg-deps commonPkgs)
-          (add-pkg-deps extraPkgs)
-        ]);
-
-  makeJailedCrush = { extraPkgs ? [ ] }:
-  jail "jailed-crush"
-    (withDeepSeekKey
-      llm-agents.packages.${pkgs.system}.crush
-      "crush")
-    (with jail.combinators;
-      userJailOptions ++ [
-        (readwrite (noescape "~/.config/crush"))
-        (readwrite (noescape "~/.local/share/crush"))
-
-        (add-pkg-deps commonPkgs)
-        (add-pkg-deps extraPkgs)
-      ]);
-
-  makeJailedCrushSystem = { extraPkgs ? [ ] }:
-    jail "jailed-crush-system"
-       (withDeepSeekKey
-      llm-agents.packages.${pkgs.system}.crush
-      "crush")
-      (with jail.combinators;
-        systemJailOptions ++ [
-          (readwrite (noescape "~/.config/crush"))
-          (readwrite (noescape "~/.local/share/crush"))
-
-          (add-pkg-deps commonPkgs)
-          (add-pkg-deps extraPkgs)
-        ]);
-
-  makeJailedOpencode = { extraPkgs ? [ ] }:
-    jail "jailed-opencode"
-      (withDeepSeekKey
-        llm-agents.packages.${pkgs.system}.opencode
-        "opencode")
-      (with jail.combinators;
-        userJailOptions ++ [
-          (readwrite (noescape "~/.config/opencode"))
-          (readwrite (noescape "~/.local/share/opencode"))
-          (readwrite (noescape "~/.local/state/opencode"))
-
-          (add-pkg-deps commonPkgs)
-          (add-pkg-deps extraPkgs)
-        ]);
-
-  makeJailedOpencodeSystem = { extraPkgs ? [ ] }:
-    jail "jailed-opencode-system"
-      (withDeepSeekKey
-        llm-agents.packages.${pkgs.system}.opencode
-        "opencode")
-      (with jail.combinators;
-        systemJailOptions ++ [
-          (readwrite (noescape "~/.config/opencode"))
-          (readwrite (noescape "~/.local/share/opencode"))
-          (readwrite (noescape "~/.local/state/opencode"))
-
-          (add-pkg-deps commonPkgs)
-          (add-pkg-deps extraPkgs)
-        ]);
+  jails =
+    makeTool { name = "aider"; pkg = pkgs.aider-chat; dirs = aiderDirs;
+               systemDirs = [ (with jail.combinators; (readonly deepseekSecret)) ]; }
+    ++ makeTool {
+         name = "crush";
+         pkg = withDeepSeekKey (agent "crush") "crush";
+         dirs = crushDirs;
+       }
+    ++ makeTool { name = "opencode"; pkg = withDeepSeekKey (agent "opencode") "opencode"; dirs = opencodeDirs; };
   aiderConfig = ''
       # Local vLLM OpenAI-compatible endpoint
       openai-api-base: http://127.0.0.1:8000/v1
@@ -158,7 +113,7 @@ let
 
   crushConfig = builtins.toJSON {
     "$schema" = "https://charm.land/crush.json";
-    
+
     providers = {
       vllm = {
         name = "vLLM (local)";
@@ -180,7 +135,7 @@ let
           }
         ];
       };
-      
+
       vllm_nvfp4 = {
         name = "vLLM NVFP4 (local)";
         type = "openai-compat";
@@ -201,13 +156,12 @@ let
           }
         ];
       };
-      
+
       deepseek = {
-        # ✅ Added 'name' field (like your other providers)
         name = "DeepSeek";
         type = "openai-compat";
         base_url = "https://api.deepseek.com";
-        api_key = ""; 
+        api_key = "";
         models = [
           {
             id = "deepseek-v4-pro";
@@ -283,16 +237,7 @@ let
 
 in
 {
-  home.packages = [
-    (makeJailedAider { })
-    (makeJailedAiderSystem { })
-
-    (makeJailedCrush { })
-    (makeJailedCrushSystem { })
-
-    (makeJailedOpencode { })
-    (makeJailedOpencodeSystem { })
-  ];
+  home.packages = jails;
     home.activation.writeLLMConfigs =
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD mkdir -p \

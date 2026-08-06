@@ -38,6 +38,7 @@
       "networkmanager"
       "wheel"
       "dialout"
+      "llm"
     ];
   };
 }
