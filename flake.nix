@@ -4,9 +4,6 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
-    discord-nixpkgs.url =
-      "github:NixOS/nixpkgs/64a1fc0ed43e9f770f1401dd5d4dd57c12ca001a";
-
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -36,7 +33,6 @@
     plasma-manager,
     agenix,
     nur,
-    discord-nixpkgs,
     jail-nix,
     llm-agents,
     ...
@@ -72,7 +68,6 @@
 
           home-manager.extraSpecialArgs = {
             inherit
-              discord-nixpkgs
               plasma-manager
               nur
               jail-nix
