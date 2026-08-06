@@ -51,6 +51,8 @@
     };
   in
   {
+    formatter.${system} =
+      nixpkgs.legacyPackages.${system}.nixfmt-rfc-style;
     nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
       inherit system;
 

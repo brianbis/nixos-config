@@ -2,7 +2,11 @@
 
 let
     jail = jail-nix.lib.init pkgs;
-
+  withDeepSeekKey = pkg: name:
+  pkgs.writeShellScriptBin name ''
+    export DEEPSEEK_API_KEY="$(cat ${deepseekSecret})"
+    exec ${pkg}/bin/${name} "$@"
+  '';
   commonPkgs = with pkgs; [
     bashInteractive
     curl
@@ -38,6 +42,7 @@ let
     time-zone
     no-new-session
     mount-cwd
+    (readonly deepseekSecret)
   ];
 
   systemJailOptions = with jail.combinators; [
@@ -45,6 +50,7 @@ let
     time-zone
     no-new-session
     (readwrite "/etc/nixos")
+    (readonly deepseekSecret)
   ];
 
   makeJailedAider = { extraPkgs ? [ ] }:
@@ -68,26 +74,30 @@ let
           (readwrite (noescape "~/.config/aider"))
           (readwrite (noescape "~/.aider.conf.yml"))
           (readwrite (noescape "~/.gitconfig"))
-
+          (readonly deepseekSecret)
           (add-pkg-deps commonPkgs)
           (add-pkg-deps extraPkgs)
         ]);
 
   makeJailedCrush = { extraPkgs ? [ ] }:
-    jail "jailed-crush"
+  jail "jailed-crush"
+    (withDeepSeekKey
       llm-agents.packages.${pkgs.system}.crush
-      (with jail.combinators;
-        userJailOptions ++ [
-          (readwrite (noescape "~/.config/crush"))
-          (readwrite (noescape "~/.local/share/crush"))
+      "crush")
+    (with jail.combinators;
+      userJailOptions ++ [
+        (readwrite (noescape "~/.config/crush"))
+        (readwrite (noescape "~/.local/share/crush"))
 
-          (add-pkg-deps commonPkgs)
-          (add-pkg-deps extraPkgs)
-        ]);
+        (add-pkg-deps commonPkgs)
+        (add-pkg-deps extraPkgs)
+      ]);
 
   makeJailedCrushSystem = { extraPkgs ? [ ] }:
     jail "jailed-crush-system"
+       (withDeepSeekKey
       llm-agents.packages.${pkgs.system}.crush
+      "crush")
       (with jail.combinators;
         systemJailOptions ++ [
           (readwrite (noescape "~/.config/crush"))
@@ -99,7 +109,9 @@ let
 
   makeJailedOpencode = { extraPkgs ? [ ] }:
     jail "jailed-opencode"
-      llm-agents.packages.${pkgs.system}.opencode
+      (withDeepSeekKey
+        llm-agents.packages.${pkgs.system}.opencode
+        "opencode")
       (with jail.combinators;
         userJailOptions ++ [
           (readwrite (noescape "~/.config/opencode"))
@@ -112,7 +124,9 @@ let
 
   makeJailedOpencodeSystem = { extraPkgs ? [ ] }:
     jail "jailed-opencode-system"
-      llm-agents.packages.${pkgs.system}.opencode
+      (withDeepSeekKey
+        llm-agents.packages.${pkgs.system}.opencode
+        "opencode")
       (with jail.combinators;
         systemJailOptions ++ [
           (readwrite (noescape "~/.config/opencode"))
@@ -193,7 +207,7 @@ let
         name = "DeepSeek";
         type = "openai-compat";
         base_url = "https://api.deepseek.com";
-        api_key = "$DEEPSEEK_API_KEY";  # will be replaced by jq
+        api_key = ""; 
         models = [
           {
             id = "deepseek-v4-pro";
@@ -297,42 +311,9 @@ in
       $DRY_RUN_CMD printf '%s\n' '${crushConfig}' \
         > $HOME/.config/crush/crush.json
 
-
-      # Inject DeepSeek key into Crush config
-      DEEPSEEK_KEY="$(${pkgs.coreutils}/bin/cat ${deepseekSecret})"
-
-      $DRY_RUN_CMD ${pkgs.jq}/bin/jq \
-        --arg key "$DEEPSEEK_KEY" \
-        '.providers.deepseek.api_key = $key' \
-        $HOME/.config/crush/crush.json \
-        > $HOME/.config/crush/crush.json.tmp
-
-      $DRY_RUN_CMD mv \
-        $HOME/.config/crush/crush.json.tmp \
-        $HOME/.config/crush/crush.json
-
-
       # OpenCode
       $DRY_RUN_CMD rm -f $HOME/.config/opencode/opencode.json
       $DRY_RUN_CMD printf '%s\n' '${opencodeConfig}' \
         > $HOME/.config/opencode/opencode.json
-
-
-      # OpenCode auth
-      $DRY_RUN_CMD rm -f $HOME/.local/share/opencode/auth.json
-      $DRY_RUN_CMD printf '%s\n' '${opencodeAuth}' \
-        > $HOME/.local/share/opencode/auth.json
-
-
-      # Inject DeepSeek key into OpenCode auth
-      $DRY_RUN_CMD ${pkgs.jq}/bin/jq \
-        --arg key "$DEEPSEEK_KEY" \
-        '.deepseek.key = $key' \
-        $HOME/.local/share/opencode/auth.json \
-        > $HOME/.local/share/opencode/auth.json.tmp
-
-      $DRY_RUN_CMD mv \
-        $HOME/.local/share/opencode/auth.json.tmp \
-        $HOME/.local/share/opencode/auth.json
-    '';
+  '';
 }
