@@ -16,7 +16,7 @@
 
   home.packages = with pkgs; [
     kdePackages.kate
-
+    discord
     vscode
     bitwarden-desktop
     obsidian
