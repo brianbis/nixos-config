@@ -49,89 +49,8 @@
       config.allowUnfree = true;
       overlays = [ nur.overlays.default ];
     };
-
-    jail = jail-nix.lib.init pkgs;
-
-    commonPkgs = with pkgs; [
-      bashInteractive
-      curl
-      wget
-      jq
-      git
-      which
-      ripgrep
-      gnugrep
-      gawkInteractive
-      ps
-      findutils
-      gzip
-      unzip
-      gnutar
-      diffutils
-      strace
-      openssl
-      cfr
-      tcpdump
-      mitmproxy
-      jdk21
-      (python3.withPackages (ps: [
-              ps.cryptography
-              # add other python packages here if needed later
-            ]))
-    ];
-
-    commonJailOptions = with jail.combinators; [
-      network
-      time-zone
-      no-new-session
-      mount-cwd
-    ];
-
-    makeJailedAider = { extraPkgs ? [ ] }:
-        jail "jailed-aider"
-          pkgs.aider-chat
-          (with jail.combinators;
-            commonJailOptions ++ [
-              (readwrite (noescape "~/.config/aider"))
-              (readwrite (noescape "~/.aider.conf.yml"))
-
-              # Allow git repo access
-              (readwrite (noescape "~/.gitconfig"))
-
-              (add-pkg-deps commonPkgs)
-              (add-pkg-deps extraPkgs)
-            ]);
-
-    makeJailedCrush = { extraPkgs ? [ ] }:
-      jail "jailed-crush"
-        llm-agents.packages.${system}.crush
-        (with jail.combinators;
-          commonJailOptions ++ [
-            (readwrite (noescape "~/.config/crush"))
-            (readwrite (noescape "~/.local/share/crush"))
-
-            (add-pkg-deps commonPkgs)
-            (add-pkg-deps extraPkgs)
-          ]);
-
-    makeJailedOpencode = { extraPkgs ? [ ] }:
-      jail "jailed-opencode"
-        llm-agents.packages.${system}.opencode
-        (with jail.combinators;
-          commonJailOptions ++ [
-            (readwrite (noescape "~/.config/opencode"))
-            (readwrite (noescape "~/.local/share/opencode"))
-            (readwrite (noescape "~/.local/state/opencode"))
-
-            (add-pkg-deps commonPkgs)
-            (add-pkg-deps extraPkgs)
-          ]);
   in
   {
-    lib = {
-      inherit makeJailedCrush makeJailedOpencode makeJailedAider;
-    };
-
     nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
       inherit system;
 
@@ -156,9 +75,6 @@
               nur
               jail-nix
               llm-agents
-              makeJailedCrush
-              makeJailedOpencode
-              makeJailedAider
               ;
 
             deepseekSecret = config.age.secrets.deepseek-api-key.path;
@@ -174,9 +90,6 @@
           inputs
           jail-nix
           llm-agents
-          makeJailedCrush
-          makeJailedOpencode
-          makeJailedAider
           ;
       };
     };

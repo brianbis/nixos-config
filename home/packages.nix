@@ -1,4 +1,4 @@
-{ pkgs, makeJailedOpencode, makeJailedCrush, makeJailedAider, ... }:
+{ pkgs, ... }:
 
 {
   programs.git = {
@@ -13,6 +13,7 @@
       };
     };
   };
+
   home.packages = with pkgs; [
     kdePackages.kate
 
@@ -48,8 +49,5 @@
     lutris
     heroic
     gamescope
-    (makeJailedCrush {})
-    (makeJailedOpencode {})
-    (makeJailedAider {})
   ];
 }

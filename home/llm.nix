@@ -1,6 +1,127 @@
-{ config, lib, pkgs, deepseekSecret, ... }:
+{ config, lib, pkgs, jail-nix, llm-agents, deepseekSecret, ... }:
 
 let
+    jail = jail-nix.lib.init pkgs;
+
+  commonPkgs = with pkgs; [
+    bashInteractive
+    curl
+    wget
+    jq
+    git
+    which
+    ripgrep
+    gnugrep
+    gawkInteractive
+    ps
+    findutils
+    gzip
+    unzip
+    gnutar
+    diffutils
+    strace
+    openssl
+    cfr
+    tcpdump
+    mitmproxy
+    jdk21
+
+    (python3.withPackages (ps: [
+      ps.cryptography
+      ps.dnslib
+      ps.requests
+    ]))
+  ];
+
+  userJailOptions = with jail.combinators; [
+    network
+    time-zone
+    no-new-session
+    mount-cwd
+  ];
+
+  systemJailOptions = with jail.combinators; [
+    network
+    time-zone
+    no-new-session
+    (readwrite "/etc/nixos")
+  ];
+
+  makeJailedAider = { extraPkgs ? [ ] }:
+    jail "jailed-aider"
+      pkgs.aider-chat
+      (with jail.combinators;
+        userJailOptions ++ [
+          (readwrite (noescape "~/.config/aider"))
+          (readwrite (noescape "~/.aider.conf.yml"))
+          (readwrite (noescape "~/.gitconfig"))
+
+          (add-pkg-deps commonPkgs)
+          (add-pkg-deps extraPkgs)
+        ]);
+
+  makeJailedAiderSystem = { extraPkgs ? [ ] }:
+    jail "jailed-aider-system"
+      pkgs.aider-chat
+      (with jail.combinators;
+        systemJailOptions ++ [
+          (readwrite (noescape "~/.config/aider"))
+          (readwrite (noescape "~/.aider.conf.yml"))
+          (readwrite (noescape "~/.gitconfig"))
+
+          (add-pkg-deps commonPkgs)
+          (add-pkg-deps extraPkgs)
+        ]);
+
+  makeJailedCrush = { extraPkgs ? [ ] }:
+    jail "jailed-crush"
+      llm-agents.packages.${pkgs.system}.crush
+      (with jail.combinators;
+        userJailOptions ++ [
+          (readwrite (noescape "~/.config/crush"))
+          (readwrite (noescape "~/.local/share/crush"))
+
+          (add-pkg-deps commonPkgs)
+          (add-pkg-deps extraPkgs)
+        ]);
+
+  makeJailedCrushSystem = { extraPkgs ? [ ] }:
+    jail "jailed-crush-system"
+      llm-agents.packages.${pkgs.system}.crush
+      (with jail.combinators;
+        systemJailOptions ++ [
+          (readwrite (noescape "~/.config/crush"))
+          (readwrite (noescape "~/.local/share/crush"))
+
+          (add-pkg-deps commonPkgs)
+          (add-pkg-deps extraPkgs)
+        ]);
+
+  makeJailedOpencode = { extraPkgs ? [ ] }:
+    jail "jailed-opencode"
+      llm-agents.packages.${pkgs.system}.opencode
+      (with jail.combinators;
+        userJailOptions ++ [
+          (readwrite (noescape "~/.config/opencode"))
+          (readwrite (noescape "~/.local/share/opencode"))
+          (readwrite (noescape "~/.local/state/opencode"))
+
+          (add-pkg-deps commonPkgs)
+          (add-pkg-deps extraPkgs)
+        ]);
+
+  makeJailedOpencodeSystem = { extraPkgs ? [ ] }:
+    jail "jailed-opencode-system"
+      llm-agents.packages.${pkgs.system}.opencode
+      (with jail.combinators;
+        systemJailOptions ++ [
+          (readwrite (noescape "~/.config/opencode"))
+          (readwrite (noescape "~/.local/share/opencode"))
+          (readwrite (noescape "~/.local/state/opencode"))
+
+          (add-pkg-deps commonPkgs)
+          (add-pkg-deps extraPkgs)
+        ]);
   aiderConfig = ''
       # Local vLLM OpenAI-compatible endpoint
       openai-api-base: http://127.0.0.1:8000/v1
@@ -148,6 +269,16 @@ let
 
 in
 {
+  home.packages = [
+    (makeJailedAider { })
+    (makeJailedAiderSystem { })
+
+    (makeJailedCrush { })
+    (makeJailedCrushSystem { })
+
+    (makeJailedOpencode { })
+    (makeJailedOpencodeSystem { })
+  ];
     home.activation.writeLLMConfigs =
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD mkdir -p \
