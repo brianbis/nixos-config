@@ -24,18 +24,23 @@ in
 
   # Agenix secret management
   age = {
-    # System identity keys used to decrypt on boot
     identityPaths = [ "/var/lib/agenix/key.txt" ];
 
     secrets = builtins.listToAttrs (map (file: {
-      # Strips ".age" extension ("tailscale-authkey.age" -> "tailscale-authkey")
       name = lib.removeSuffix ".age" file;
-      value = {
-        file = "${secretsDir}/${file}";
-        owner = "root";
-        group = "root";
-        mode = "0400";
-      };
+
+      value =
+        if file == "deepseek-api-key.age" then {
+          file = "${secretsDir}/${file}";
+          owner = "b";
+          group = "users";
+          mode = "0400";
+        } else {
+          file = "${secretsDir}/${file}";
+          owner = "root";
+          group = "root";
+          mode = "0400";
+        };
     }) secretFiles);
   };
 }

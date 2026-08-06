@@ -1,4 +1,4 @@
-{ pkgs, makeJailedOpencode, makeJailedCrush, ... }:
+{ pkgs, makeJailedOpencode, makeJailedCrush, makeJailedAider, ... }:
 
 {
   programs.git = {
@@ -50,5 +50,6 @@
     gamescope
     (makeJailedCrush {})
     (makeJailedOpencode {})
+    (makeJailedAider {})
   ];
 }

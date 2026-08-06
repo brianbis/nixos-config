@@ -68,6 +68,12 @@
       unzip
       gnutar
       diffutils
+      strace
+      openssl
+      cfr
+      tcpdump
+      mitmproxy
+      jdk21
       (python3.withPackages (ps: [
               ps.cryptography
               # add other python packages here if needed later
@@ -80,6 +86,21 @@
       no-new-session
       mount-cwd
     ];
+
+    makeJailedAider = { extraPkgs ? [ ] }:
+        jail "jailed-aider"
+          pkgs.aider-chat
+          (with jail.combinators;
+            commonJailOptions ++ [
+              (readwrite (noescape "~/.config/aider"))
+              (readwrite (noescape "~/.aider.conf.yml"))
+
+              # Allow git repo access
+              (readwrite (noescape "~/.gitconfig"))
+
+              (add-pkg-deps commonPkgs)
+              (add-pkg-deps extraPkgs)
+            ]);
 
     makeJailedCrush = { extraPkgs ? [ ] }:
       jail "jailed-crush"
@@ -108,7 +129,7 @@
   in
   {
     lib = {
-      inherit makeJailedCrush makeJailedOpencode;
+      inherit makeJailedCrush makeJailedOpencode makeJailedAider;
     };
 
     nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
@@ -119,7 +140,7 @@
         agenix.nixosModules.default
         home-manager.nixosModules.home-manager
 
-        {
+        ({ config, ... }: {
           nixpkgs.config.allowUnfree = true;
 
           nixpkgs.overlays = [
@@ -137,11 +158,14 @@
               llm-agents
               makeJailedCrush
               makeJailedOpencode
+              makeJailedAider
               ;
+
+            deepseekSecret = config.age.secrets.deepseek-api-key.path;
           };
 
           home-manager.users.b = import ./home;
-        }
+        })
       ];
 
       specialArgs = {
@@ -152,6 +176,7 @@
           llm-agents
           makeJailedCrush
           makeJailedOpencode
+          makeJailedAider
           ;
       };
     };

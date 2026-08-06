@@ -104,7 +104,7 @@ in
 
       port = 8000;
 
-      maxModelLen = 25000;
+      maxModelLen = 32768;
 
       gpuMemoryUtilization = "0.95";
 
@@ -118,7 +118,7 @@ in
         # Conservative starting point.
         # Increase after confirming stable memory usage.
         "--max-num-seqs" "16"
-        "--max-num-batched-tokens" "8192"
+        "--max-num-batched-tokens" "16384"
       ];
     };
 
