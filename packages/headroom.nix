@@ -67,6 +67,7 @@ python.pkgs.buildPythonApplication (finalAttrs: {
     uvicorn
     orjson
     httpx
+    h2
     openai
     mcp
     magika
@@ -81,8 +82,6 @@ python.pkgs.buildPythonApplication (finalAttrs: {
     tree-sitter
     tree-sitter-language-pack
     ast-grep-py
-    # satisfies the wheel's `ast-grep-cli` runtime dependency (provides the
-    # ast-grep binary and the matching Python distribution).
     ast-grep-cli
   ];
 

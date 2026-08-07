@@ -50,5 +50,24 @@
     lutris
     heroic
     gamescope
+
+    # Language servers for language-aware tooling (LSP)
+    nil # Nix
+    gopls # Go
+    pyright # Python
+    typescript-language-server # TypeScript / JavaScript
+    rust-analyzer # Rust
+    lua-language-server # Lua
+    clang-tools # C / C++ (clangd)
+    bash-language-server # Bash / shell
+    vscode-langservers-extracted # JSON, YAML, HTML, CSS
+    marksman # Markdown
+    taplo # TOML
+    sqls # SQL language server
+    # SQL / database tooling
+
+    sqlite
+    postgresql
+    mariadb.client
   ];
 }
