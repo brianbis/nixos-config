@@ -1,6 +1,6 @@
 # Shared rendering for the jailed LLM tooling. Single source of truth for the
 # model catalog, LSP catalog, provider mapping, and the crush config builder.
-# Imported by both home/llm/default.nix (to render the per-user crash config)
+# Imported by both home/llm/default.nix (to render the per-user crush config)
 # and the NixOS host module hosts/desktop/crush-system.nix (to seed the
 # root-only /var/lib/crush-system state for the root-run "system" jail
 # variants). Keeping this here means the user and system configs stay identical
@@ -347,7 +347,7 @@ let
     providers = crushProviders;
   };
 
-  # Per-system crash config (read by the root-run "system" jail variants).
+  # Per-system crush config (read by the root-run "system" jail variants).
   systemCrushConfig = crushConfigFor systemStateDir;
 
 in

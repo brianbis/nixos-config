@@ -1,4 +1,3 @@
-# /etc/nixos/home/plasma.nix
 { pkgs, ... }:
 
 let

@@ -10,9 +10,6 @@ let
       seaborn
     ];
 in
-
-
-
 {
   environment.systemPackages = with pkgs; [
     inputs.agenix.packages.${pkgs.system}.default

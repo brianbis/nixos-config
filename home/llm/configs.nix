@@ -1,5 +1,5 @@
 # Renders the per-user (non-sudo) tool configs from the shared catalog:
-# crash.json, opencode.json, and aider's .aider.conf.yml. The root-only system
+# crush.json, opencode.json, and aider's .aider.conf.yml. The root-only system
 # config is seeded separately by the host module (hosts/desktop/crush-system.nix)
 # from the same catalog, so user and system configs stay identical in content.
 { shared, userHome }:
@@ -14,7 +14,7 @@ let
     crushConfigFor
     ;
 
-  # Per-user crash config (read by the non-sudo jail variants).
+  # Per-user crush config (read by the non-sudo jail variants).
   userCrushConfig = crushConfigFor userHome;
 
   opencodeConfig = builtins.toJSON (opencodeProviders // {

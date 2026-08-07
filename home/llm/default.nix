@@ -24,6 +24,16 @@ in
 {
   home.packages = jail-config.jails;
 
+  # Ensure the jailed agents' writable dirs exist as tracked empty files so
+  # home-manager creates the parent directories for us (bubblewrap mount points).
+  home.file = {
+    ".config/crush/.keep".text = "";
+    ".local/share/crush/.keep".text = "";
+    ".config/opencode/.keep".text = "";
+    ".local/share/opencode/.keep".text = "";
+    ".local/state/opencode/.keep".text = "";
+  };
+
   # Write the per-user (non-sudo) crush/aider/opencode configs only. The
   # root-only /var/lib/crush-system tree is seeded separately by the NixOS
   # host module (hosts/desktop/crush-system.nix), so a user-level activation

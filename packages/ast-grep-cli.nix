@@ -6,9 +6,8 @@
 }:
 
 let
-  # headroom devs excluded 0.44.1 which is latest because of a compromised python wheel 
-  # but is that wheely necessary
-  # just lie
+  # The latest ast-grep 0.44.1 wheel was pulled from PyPI due to a compromise,
+  # so we ship the previous 0.44.0 as the shim version.
   shimVersion = "0.44.0";
 in
 stdenv.mkDerivation {
