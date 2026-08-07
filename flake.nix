@@ -62,6 +62,21 @@
 
           nixpkgs.overlays = [
             nur.overlays.default
+
+            # headroom-ai: context compression layer for the jailed LLM agents.
+            (final: prev: {
+              python3 = prev.python3.override {
+                packageOverrides = pyfinal: pyprev: {
+                  ast-grep-cli = pyfinal.callPackage ./packages/ast-grep-cli.nix {
+                    ast-grep = prev.ast-grep;
+                  };
+                };
+              };
+
+              headroom = final.python3.pkgs.callPackage ./packages/headroom.nix {
+                python = final.python3;
+              };
+            })
           ];
 
           home-manager.useGlobalPkgs = true;

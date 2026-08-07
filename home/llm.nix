@@ -2,12 +2,54 @@
 
 let
     jail = jail-nix.lib.init pkgs;
+
+  # Context-compression proxy layering. local vLLM traffic from every jailed
+  # agent (crush/opencode/aider) is routed through the Headroom proxy, which
+  # forwards upstream to vLLM on :8000. headroom listens on :8787.
+  headroomPort = 8787;
+  headroomProxyUrl = "http://127.0.0.1:${toString headroomPort}";
+  headroomUpstreamUrl = "http://127.0.0.1:8000";
+
   withDeepSeekKey = pkg: name:
     pkgs.writeShellScriptBin name ''
       export DEEPSEEK_API_KEY="$(cat /run/agenix/deepseek-api-key)"
       export OPENAI_API_KEY="$DEEPSEEK_API_KEY"
       exec ${pkg}/bin/${name} "$@"
     '';
+
+  # Crush PreToolUse hook that rewrites bash commands to use rtk for token
+  # savings, transparently (the model still sees its original command; crush
+  # substitutes the rtk-aware form before execution). Mirrors crush's official
+  # docs/hooks/examples/rtk-rewrite.sh. Requires rtk >= 0.23 and jq, both of
+  # which are in commonPkgs so they exist inside every jailed agent.
+  rtkRewriteHook = ''
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if ! command -v jq &>/dev/null; then
+      exit 0
+    fi
+    if ! command -v rtk &>/dev/null; then
+      exit 0
+    fi
+    CMD="''${CRUSH_TOOL_INPUT_COMMAND:-}"
+    if [ -z "$CMD" ]; then
+      exit 0
+    fi
+
+    REWRITTEN=$(rtk rewrite "$CMD" 2>/dev/null) && EXIT_CODE=0 || EXIT_CODE=$?
+
+    case $EXIT_CODE in
+    0 | 3)
+      [ "$CMD" = "$REWRITTEN" ] && exit 0
+      jq -n --arg cmd "$REWRITTEN" \
+        "{\"decision\":\"allow\",\"updated_input\":({\"command\":\$cmd}|tostring)}"
+      ;;
+    *)
+      exit 0
+      ;;
+    esac
+  '';
   commonPkgs = with pkgs; [
     bashInteractive
     curl
@@ -30,6 +72,13 @@ let
     tcpdump
     mitmproxy
     jdk21
+
+    # rtk: Rust Token Killer, compresses noisy command output before it hits
+    # the context window, usable by any jailed agent (in nixpkgs).
+    rtk
+    # headroom: context optimization layer that compresses everything an agent
+    # reads. Not in nixpkgs / llm-agents; built from ./packages/headroom.nix.
+    headroom
 
     (python3.withPackages (ps: [
       ps.cryptography
@@ -92,8 +141,8 @@ let
        }
     ++ makeTool { name = "opencode"; pkg = withDeepSeekKey (agent "opencode") "opencode"; dirs = opencodeDirs; };
   aiderConfig = ''
-      # Local vLLM OpenAI-compatible endpoint
-      openai-api-base: http://127.0.0.1:8000/v1
+      # Local vLLM OpenAI-compatible endpoint via the Headroom proxy
+      openai-api-base: ${headroomProxyUrl}/v1
       openai-api-key: sk-local
 
       # Convenient shortcuts for your local models
@@ -114,11 +163,22 @@ let
   crushConfig = builtins.toJSON {
     "$schema" = "https://charm.land/crush.json";
 
+    # Rewrite bash tool calls through rtk to compress token-heavy command
+    # output before it reaches the model.
+    hooks.PreToolUse = [
+      {
+        name = "rtk-rewrite";
+        matcher = "^bash$";
+        command = "${config.home.homeDirectory}/.config/crush/hooks/rtk-rewrite.sh";
+        timeout = 10;
+      }
+    ];
+
     providers = {
       vllm = {
         name = "vLLM (local)";
         type = "openai-compat";
-        base_url = "http://127.0.0.1:8000/v1";
+        base_url = "${headroomProxyUrl}/v1";
         api_key = "sk-local";
         models = [
           {
@@ -139,7 +199,7 @@ let
       vllm_nvfp4 = {
         name = "vLLM NVFP4 (local)";
         type = "openai-compat";
-        base_url = "http://127.0.0.1:8000/v1";
+        base_url = "${headroomProxyUrl}/v1";
         api_key = "sk-local";
         models = [
           {
@@ -190,7 +250,7 @@ let
       npm = "@ai-sdk/openai-compatible";
       name = "vLLM (local)";
 
-      options.baseURL = "http://127.0.0.1:8000/v1";
+      options.baseURL = "${headroomProxyUrl}/v1";
 
       models."gemma-4-awq".name =
         "Gemma 4 26B MoE AWQ";
@@ -201,7 +261,7 @@ let
       npm = "@ai-sdk/openai-compatible";
       name = "vLLM NVFP4 (local)";
 
-      options.baseURL = "http://127.0.0.1:8000/v1";
+      options.baseURL = "${headroomProxyUrl}/v1";
 
       models."gemma-4-nvfp4".name =
         "Gemma 4 31B NVFP4 Turbo";
@@ -241,10 +301,17 @@ in
     home.activation.writeLLMConfigs =
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD mkdir -p \
-        $HOME/.config/crush \
+        $HOME/.config/crush/hooks \
         $HOME/.config/opencode \
-        $HOME/.local/share/opencode
+        $HOME/.local/share/opencode \
+        $HOME/.config/headroom \
+        $HOME/.local/share/headroom
 
+      # Crush rtk rewrite hook (used by the PreToolUse hook in crush.json)
+      $DRY_RUN_CMD rm -f $HOME/.config/crush/hooks/rtk-rewrite.sh
+      $DRY_RUN_CMD printf '%s\n' '${rtkRewriteHook}' \
+        > $HOME/.config/crush/hooks/rtk-rewrite.sh
+      $DRY_RUN_CMD chmod +x $HOME/.config/crush/hooks/rtk-rewrite.sh
 
       # Aider
       $DRY_RUN_CMD rm -f $HOME/.aider.conf.yml
@@ -261,4 +328,25 @@ in
       $DRY_RUN_CMD printf '%s\n' '${opencodeConfig}' \
         > $HOME/.config/opencode/opencode.json
   '';
+
+  # headroom context-compression proxy. Always-on so jailed agents'
+  # local vLLM traffic flows through it without any manual step.
+  systemd.user.services.headroom-proxy = {
+    Unit = {
+      Description = "Headroom context-compression proxy (vLLM upstream)";
+      After = [ "network.target" ];
+    };
+
+    Service = {
+      ExecStart = "${pkgs.headroom}/bin/headroom proxy " +
+        "--openai-api-url ${headroomUpstreamUrl} " +
+        "--host 127.0.0.1 --port ${toString headroomPort}";
+      Restart = "on-failure";
+      RestartSec = "3";
+      WorkingDirectory = "%h/.local/share/headroom";
+      Environment = "HOME=%h";
+    };
+
+    Install.WantedBy = [ "default.target" ];
+  };
 }
