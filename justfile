@@ -73,36 +73,45 @@ generations:
 rollback:
     sudo nixos-rebuild switch --rollback --flake .
 
-vllm-awq-service := "docker-vllm-gemma4-awq.service"
-vllm-nvfp4-service := "docker-vllm-gemma4-nvfp4-turbo.service"
+# vLLM docker containers
+#
+# Only ever run ONE at a time: they fight over VRAM.
+
+vllm-containers := "docker-vllm-gemma4-nvfp4-turbo docker-vllm-gemma4-awq"
+
+# Start commands
 
 vllm-gemma4-nvfp4-turbo:
-    sudo systemctl start {{vllm-nvfp4-service}}
+    sudo systemctl start docker-vllm-gemma4-nvfp4-turbo.service
 
 vllm-gemma4-awq:
-    sudo systemctl start {{vllm-awq-service}}
+    sudo systemctl start docker-vllm-gemma4-awq.service
+
+# Infer running container and stop it
 
 vllm-stop:
-    @if sudo systemctl is-active --quiet {{vllm-awq-service}}; then \
-        echo "Stopping {{vllm-awq-service}}"; \
-        sudo systemctl stop {{vllm-awq-service}}; \
-    elif sudo systemctl is-active --quiet {{vllm-nvfp4-service}}; then \
-        echo "Stopping {{vllm-nvfp4-service}}"; \
-        sudo systemctl stop {{vllm-nvfp4-service}}; \
-    else \
-        echo "No vLLM container running"; \
-    fi
+    #!/usr/bin/env bash
+    for c in {{vllm-containers}}; do
+        if sudo systemctl is-active --quiet "$c.service"; then
+            echo "Stopping $c"
+            sudo systemctl stop "$c.service"
+            exit 0
+        fi
+    done
+    echo "No vLLM container running"
 
+# Infer running container and show status
 vllm-status:
-    @if sudo systemctl is-active --quiet {{vllm-awq-service}}; then \
-        echo "vLLM running: {{vllm-awq-service}}"; \
-        sudo systemctl status {{vllm-awq-service}} --no-pager; \
-    elif sudo systemctl is-active --quiet {{vllm-nvfp4-service}}; then \
-        echo "vLLM running: {{vllm-nvfp4-service}}"; \
-        sudo systemctl status {{vllm-nvfp4-service}} --no-pager; \
-    else \
-        echo "No vLLM container running"; \
-    fi
+    #!/usr/bin/env bash
+    for c in {{vllm-containers}}; do
+        echo "checking $c"
+        if sudo systemctl is-active --quiet "$c.service"; then
+            echo "vLLM running: $c"
+            sudo systemctl status "$c.service" --no-pager
+            exit 0
+        fi
+    done
+    echo "No vLLM container running"
 
 # Shortcuts
 alias s := switch
