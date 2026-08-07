@@ -3,6 +3,15 @@
 let
     jail = jail-nix.lib.init pkgs;
 
+  # The user's real home directory, pinned at build time. The jails must not
+  # depend on the runtime $HOME because the "system" variants are run via sudo
+  # for /etc/nixos write access, and sudo resets $HOME to /root. If we let
+  # bind mounts resolve ~ at runtime they'd all point at /root and bwrap would
+  # fail ("Can't find source path /root/.config/crush"). Hardcoding the real
+  # home here means every jailed tool sees the same config regardless of how
+  # it's invoked.
+  userHome = config.home.homeDirectory;
+
   # Context-compression proxy layering. local vLLM traffic from every jailed
   # agent (crush/opencode/aider) is routed through the Headroom proxy, which
   # forwards upstream to vLLM on :8000. headroom listens on :8787.
@@ -359,6 +368,10 @@ let
     network
     time-zone
     no-new-session
+    # Pin HOME to the user's real home (not the invoking shell's $HOME, which
+    # sudo would reset to /root). This keeps fwd-env HOME and all the ~/ bind
+    # mounts below in agreement no matter how the jail is launched.
+    (set-env "HOME" userHome)
   ] ++ (if system
     then [ (readwrite "/etc/nixos") ]
     else [ mount-cwd ]) ++ [ (readonly "/run/agenix/deepseek-api-key") ] ++ lspAdds;
@@ -372,20 +385,23 @@ let
         dirs ++
         [ (add-pkg-deps commonPkgs) ]);
 
-  # Per-tool read/write dirs.
-  aiderDirs = with jail.combinators; [
-    (readwrite (noescape "~/.config/aider"))
-    (readwrite (noescape "~/.aider.conf.yml"))
-    (readwrite (noescape "~/.gitconfig"))
+  # Per-tool read/write dirs. Paths are absolute under userHome because
+  # us-and-sudo must see identical mounts; a runtime ~ would diverge (sudo
+  # resets $HOME to /root).
+  mkDirs = paths: map (with jail.combinators; p: readwrite p) paths;
+  aiderDirs = mkDirs [
+    "${userHome}/.config/aider"
+    "${userHome}/.aider.conf.yml"
+    "${userHome}/.gitconfig"
   ];
-  crushDirs = with jail.combinators; [
-    (readwrite (noescape "~/.config/crush"))
-    (readwrite (noescape "~/.local/share/crush"))
+  crushDirs = mkDirs [
+    "${userHome}/.config/crush"
+    "${userHome}/.local/share/crush"
   ];
-  opencodeDirs = with jail.combinators; [
-    (readwrite (noescape "~/.config/opencode"))
-    (readwrite (noescape "~/.local/share/opencode"))
-    (readwrite (noescape "~/.local/state/opencode"))
+  opencodeDirs = mkDirs [
+    "${userHome}/.config/opencode"
+    "${userHome}/.local/share/opencode"
+    "${userHome}/.local/state/opencode"
   ];
 
   agent = n: llm-agents.packages.${pkgs.system}.${n};
@@ -463,6 +479,14 @@ let
 
   crushConfig = builtins.toJSON {
     "$schema" = "https://charm.land/crush.json";
+
+    # Force the per-project data dir out of the working directory. The system
+    # jail runs crush from /etc/nixos, which is root-owned; without this crash
+    # tries to mkdir /etc/nixos/.crush and fails with "permission denied".
+    # Putting state under the user's (rw-overlaid) home keeps it writable in
+    # both the user and system jails, and also gives each editable copy of the
+    # tree a distinct data dir keyed by cwd.
+    options.data_directory = "${userHome}/.local/share/crush";
 
     # Rewrite bash tool calls through rtk to compress token-heavy command
     # output before it reaches the model.
