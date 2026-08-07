@@ -73,6 +73,30 @@ generations:
 rollback:
     sudo nixos-rebuild switch --rollback --flake .
 
+# vLLM docker containers
+# Only ever run ONE at a time: they fight over the system's VRAM.
+vllm-containers := "vllm-gemma4-nvfp4-turbo vllm-gemma4-awq"
+vllm-start container:
+    sudo systemctl start "oci-container@{{container}}.service"
+
+vllm-stop container:
+    sudo systemctl stop "oci-container@{{container}}.service"
+
+vllm-restart container:
+    sudo systemctl restart "oci-container@{{container}}.service"
+
+vllm-logs container:
+    sudo journalctl -fu "oci-container@{{container}}.service"
+
+vllm-status container:
+    sudo systemctl status "oci-container@{{container}}.service"
+
+vllm-ps:
+    docker ps --format "table {{{{.Names}}\t{{{{.Status}}\t{{{{.Ports}}"
+
+vllm-list:
+    @for c in {{vllm-containers}}; do echo "  $$c"; done
+
 # Shortcuts
 alias s := switch
 alias sw := switch
