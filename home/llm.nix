@@ -12,6 +12,14 @@ let
   # it's invoked.
   userHome = config.home.homeDirectory;
 
+  # Root-owned state root for the "system" jail variants (run as root via
+  # sudo). bwrap-as-root cannot traverse the user's 700 home dirs (e.g.
+  # /home/b/.config) to bind-mount them, so the system variants keep their
+  # config + data under this root-readable tree instead. The configs are all
+  # rendered from the same shared catalogs below, so this copy stays identical
+  # in content to the per-user one under $HOME.
+  systemStateDir = "/var/lib/crush-system";
+
   # Context-compression proxy layering. local vLLM traffic from every jailed
   # agent (crush/opencode/aider) is routed through the Headroom proxy, which
   # forwards upstream to vLLM on :8000. headroom listens on :8787.
@@ -371,9 +379,9 @@ let
     # Pin HOME to the user's real home (not the invoking shell's $HOME, which
     # sudo would reset to /root). This keeps fwd-env HOME and all the ~/ bind
     # mounts below in agreement no matter how the jail is launched.
-    (set-env "HOME" userHome)
+    (set-env "HOME" (if system then systemStateDir else userHome))
   ] ++ (if system
-    then [ (readwrite "/etc/nixos") ]
+    then [ (readwrite "/etc/nixos") (readwrite systemStateDir) ]
     else [ mount-cwd ]) ++ [ (readonly "/run/agenix/deepseek-api-key") ] ++ lspAdds;
 
   # Common libs/CLI tools injected into every jail.
@@ -402,6 +410,15 @@ let
     "${userHome}/.config/opencode"
     "${userHome}/.local/share/opencode"
     "${userHome}/.local/state/opencode"
+  ];
+
+  # System (root-run) variants keep their writable state under systemStateDir
+  # instead of the user's home, because bwrap-as-root cannot traverse the
+  # user's 700 home dirs to bind-mount them here. The configs/data are seeded
+  # there by the home activation (see writeLLMConfigs).
+  systemCrushDirs = mkDirs [
+    "${systemStateDir}/.config"
+    "${systemStateDir}/.local/share"
   ];
 
   agent = n: llm-agents.packages.${pkgs.system}.${n};
@@ -433,10 +450,13 @@ let
 
   # Build a (user, system) jail pair for a tool.
   # tool = { name, pkg, dirs, systemDirs ? [ ] }
+  # When systemDirs is given it replaces the user's home dirs (so bwrap-as-root
+  # never has to traverse $HOME, which is 700); otherwise the system variant
+  # reuses the same dirs as the user variant.
   makeTool = { name, pkg, dirs, systemDirs ? [ ] }:
     [
       (mkToolJail { inherit name pkg dirs; system = false; })
-      (mkToolJail { inherit name pkg; dirs = dirs ++ systemDirs; system = true; })
+      (mkToolJail { inherit name pkg; dirs = if systemDirs == [ ] then dirs else systemDirs; system = true; })
     ];
 
   jails =
@@ -446,6 +466,7 @@ let
          name = "crush";
          pkg = withDeepSeekKey crushUnbanned "crush";
          dirs = crushDirs;
+         systemDirs = systemCrushDirs;
        }
     ++ makeTool { name = "opencode"; pkg = withDeepSeekKey (agent "opencode") "opencode"; dirs = opencodeDirs; };
   aiderConfig = ''
@@ -477,16 +498,19 @@ let
     '';
 
 
-  crushConfig = builtins.toJSON {
+  # Render the crush config for a given state root. The user variants live
+  # under $HOME; the system variants (run as root) under systemStateDir. Both
+  # are produced from the same shared catalogs, so content stays identical.
+  crushConfigFor = base: builtins.toJSON {
     "$schema" = "https://charm.land/crush.json";
 
     # Force the per-project data dir out of the working directory. The system
     # jail runs crush from /etc/nixos, which is root-owned; without this crash
     # tries to mkdir /etc/nixos/.crush and fails with "permission denied".
-    # Putting state under the user's (rw-overlaid) home keeps it writable in
+    # Putting state under the (rw-overlaid) state root keeps it writable in
     # both the user and system jails, and also gives each editable copy of the
     # tree a distinct data dir keyed by cwd.
-    options.data_directory = "${userHome}/.local/share/crush";
+    options.data_directory = "${base}/.local/share/crush";
 
     # Rewrite bash tool calls through rtk to compress token-heavy command
     # output before it reaches the model.
@@ -494,7 +518,7 @@ let
       {
         name = "rtk-rewrite";
         matcher = "^bash$";
-        command = "${config.home.homeDirectory}/.config/crush/hooks/rtk-rewrite.sh";
+        command = "${base}/.config/crush/hooks/rtk-rewrite.sh";
         timeout = 10;
       }
     ];
@@ -522,6 +546,12 @@ let
     providers = crushProviders;
   };
 
+  # Per-user crush config (read by the non-sudo jail variants).
+  userCrushConfig = crushConfigFor userHome;
+
+  # Per-system crush config (read by the root-run "system" jail variants).
+  systemCrushConfig = crushConfigFor systemStateDir;
+
   opencodeConfig = builtins.toJSON (opencodeProviders // {
     "$schema" = "https://opencode.ai/config.json";
   });
@@ -538,11 +568,23 @@ in
         $HOME/.config/headroom \
         $HOME/.local/share/headroom
 
+      # Also seed the root-readable system-state tree (see systemStateDir).
+      # It is owned by the user (tmpfiles rule in hosts/desktop/default.nix)
+      # so this user-level activation can write it, yet it lives under
+      # /var/lib so bwrap-as-root can mount it without traversing $HOME.
+      $DRY_RUN_CMD mkdir -p \
+        ${systemStateDir}/.config/crush/hooks \
+        ${systemStateDir}/.local/share/crush
+
       # Crush rtk rewrite hook (used by the PreToolUse hook in crush.json)
       $DRY_RUN_CMD rm -f $HOME/.config/crush/hooks/rtk-rewrite.sh
       $DRY_RUN_CMD printf '%s\n' '${rtkRewriteHook}' \
         > $HOME/.config/crush/hooks/rtk-rewrite.sh
       $DRY_RUN_CMD chmod +x $HOME/.config/crush/hooks/rtk-rewrite.sh
+      $DRY_RUN_CMD rm -f ${systemStateDir}/.config/crush/hooks/rtk-rewrite.sh
+      $DRY_RUN_CMD printf '%s\n' '${rtkRewriteHook}' \
+        > ${systemStateDir}/.config/crush/hooks/rtk-rewrite.sh
+      $DRY_RUN_CMD chmod +x ${systemStateDir}/.config/crush/hooks/rtk-rewrite.sh
 
       # Aider
       $DRY_RUN_CMD rm -f $HOME/.aider.conf.yml
@@ -551,8 +593,11 @@ in
 
       # Crush
       $DRY_RUN_CMD rm -f $HOME/.config/crush/crush.json
-      $DRY_RUN_CMD printf '%s\n' '${crushConfig}' \
+      $DRY_RUN_CMD printf '%s\n' '${userCrushConfig}' \
         > $HOME/.config/crush/crush.json
+      $DRY_RUN_CMD rm -f ${systemStateDir}/.config/crush/crush.json
+      $DRY_RUN_CMD printf '%s\n' '${systemCrushConfig}' \
+        > ${systemStateDir}/.config/crush/crush.json
 
       # OpenCode
       $DRY_RUN_CMD rm -f $HOME/.config/opencode/opencode.json
