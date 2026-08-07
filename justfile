@@ -73,29 +73,36 @@ generations:
 rollback:
     sudo nixos-rebuild switch --rollback --flake .
 
-# vLLM docker containers
-# Only ever run ONE at a time: they fight over the system's VRAM.
-vllm-containers := "vllm-gemma4-nvfp4-turbo vllm-gemma4-awq"
-vllm-start container:
-    sudo systemctl start "oci-container@{{container}}.service"
+vllm-awq-service := "docker-vllm-gemma4-awq.service"
+vllm-nvfp4-service := "docker-vllm-gemma4-nvfp4-turbo.service"
 
-vllm-stop container:
-    sudo systemctl stop "oci-container@{{container}}.service"
+vllm-gemma4-nvfp4-turbo:
+    sudo systemctl start {{vllm-nvfp4-service}}
 
-vllm-restart container:
-    sudo systemctl restart "oci-container@{{container}}.service"
+vllm-gemma4-awq:
+    sudo systemctl start {{vllm-awq-service}}
 
-vllm-logs container:
-    sudo journalctl -fu "oci-container@{{container}}.service"
+vllm-stop:
+    @if sudo systemctl is-active --quiet {{vllm-awq-service}}; then \
+        echo "Stopping {{vllm-awq-service}}"; \
+        sudo systemctl stop {{vllm-awq-service}}; \
+    elif sudo systemctl is-active --quiet {{vllm-nvfp4-service}}; then \
+        echo "Stopping {{vllm-nvfp4-service}}"; \
+        sudo systemctl stop {{vllm-nvfp4-service}}; \
+    else \
+        echo "No vLLM container running"; \
+    fi
 
-vllm-status container:
-    sudo systemctl status "oci-container@{{container}}.service"
-
-vllm-ps:
-    docker ps --format "table {{{{.Names}}\t{{{{.Status}}\t{{{{.Ports}}"
-
-vllm-list:
-    @for c in {{vllm-containers}}; do echo "  $$c"; done
+vllm-status:
+    @if sudo systemctl is-active --quiet {{vllm-awq-service}}; then \
+        echo "vLLM running: {{vllm-awq-service}}"; \
+        sudo systemctl status {{vllm-awq-service}} --no-pager; \
+    elif sudo systemctl is-active --quiet {{vllm-nvfp4-service}}; then \
+        echo "vLLM running: {{vllm-nvfp4-service}}"; \
+        sudo systemctl status {{vllm-nvfp4-service}} --no-pager; \
+    else \
+        echo "No vLLM container running"; \
+    fi
 
 # Shortcuts
 alias s := switch
