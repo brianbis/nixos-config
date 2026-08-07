@@ -40,6 +40,7 @@ let
     which
     ripgrep
     gnugrep
+    gnused
     gawkInteractive
     ps
     findutils
