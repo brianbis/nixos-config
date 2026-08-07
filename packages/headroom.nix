@@ -94,6 +94,6 @@ python.pkgs.buildPythonApplication (finalAttrs: {
     homepage = "https://github.com/chopratejas/headroom";
     license = lib.licenses.asl20;
     mainProgram = "headroom";
-    maintainers = with lib.maintainers; [ ];
+    maintainers = [ ];
   };
 })

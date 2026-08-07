@@ -259,13 +259,6 @@ let
     small_model = "${models.gemma4awq.providerName}/${models.gemma4awq.id}";
   };
 
-  # opencode auth: one api key per upstream, keyed by the same provider names.
-  opencodeAuth = builtins.listToAttrs (map (name: {
-    name = name;
-    value.type = "api";
-    value.key = providerLabel.${name}.api_key;
-  }) (lib.unique (map (m: m.providerName) allModels)));
-
   # Wrapper that reads the DeepSeek key from the agenix secret at runtime and
   # hands it to headroom via the extra-headers option.
   headroomDeepseekWrapper = pkgs.writeShellScriptBin "headroom-deepseek" ''
@@ -508,11 +501,6 @@ let
   opencodeConfig = builtins.toJSON (opencodeProviders // {
     "$schema" = "https://opencode.ai/config.json";
   });
-
-
-  # Auth keys for opencode, derived from the same catalog/provider map as the
-  # rest (one api key per upstream, keyed by providerName).
-  opencodeAuthJson = builtins.toJSON opencodeAuth;
 
 in
 {

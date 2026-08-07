@@ -1,5 +1,5 @@
 # /etc/nixos/home/firefox/default.nix
-{ pkgs, nur, ... }:
+{ pkgs, ... }:
 
 {
   home.file.".config/crush/.keep".text = "";
@@ -14,7 +14,7 @@
     profiles.main = {
       extensions = {
         packages =
-          import ./addons.nix { inherit pkgs nur; };
+          import ./addons.nix { inherit pkgs; };
 
         settings =
           import ./tree_style_tab.nix { inherit pkgs; };
