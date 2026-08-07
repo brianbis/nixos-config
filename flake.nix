@@ -51,7 +51,7 @@
         agenix.nixosModules.default
         home-manager.nixosModules.home-manager
 
-        ({ config, ... }: {
+        ({ config, pkgs, lib, ... }: {
           nixpkgs.config.allowUnfree = true;
 
           nixpkgs.overlays = [
@@ -82,6 +82,12 @@
               jail-nix
               llm-agents
               ;
+
+            # Shared model/LSP catalog + config renderer, used by both
+            # home/llm/default.nix and hosts/desktop/crush-system.nix.
+            shared = import ./home/llm/catalog.nix {
+              inherit lib pkgs jail-nix;
+            };
 
             deepseekSecret = config.age.secrets.deepseek-api-key.path;
           };
