@@ -48,6 +48,7 @@
     binds {
         Mod+Shift+Slash hotkey-overlay-title="Show a list of important hotkeys" { show-hotkey-overlay; }
         Mod+T hotkey-overlay-title="Open a Terminal: foot" { spawn "foot"; }
+        Mod+D hotkey-overlay-title="Run an Application: fuzzel" { spawn "fuzzel"; }
 
         Mod+O repeat=false { toggle-overview; }
         Mod+Q repeat=false { close-window; }

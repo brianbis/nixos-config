@@ -16,6 +16,7 @@
 
   home.packages = with pkgs; [
     foot                # primary terminal (native Wayland, niri-friendly)
+    fuzzel              # app launcher (niri's default, Mod+D)
     kdePackages.kate
     kdePackages.yakuake
     discord
