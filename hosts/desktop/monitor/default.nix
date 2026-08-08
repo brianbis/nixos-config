@@ -1,6 +1,6 @@
-# Assumes this file lives at ./monitor/monitor.nix with the Python
-# scripts alongside it at ./monitor/scripts/*.py — adjust the readFile
-# paths below if you put them somewhere else.
+# Assumes this file lives at ./monitor/default.nix with the Python
+# scripts alongside it at ./monitor/scripts/*.py — adjust the paths
+# below if you put them somewhere else.
 { pkgs, ... }:
 
 let
@@ -36,26 +36,28 @@ let
   # True/False/None, so it breaks the day this attrset gains a bool.)
   layoutJsonFile = pkgs.writeText "monitor-layout.json" (builtins.toJSON monitor-layout);
 
-  # The logic shared by both backends — physical-monitor resolution,
-  # error(), run_json(), load_layout(). Concatenated as plain text
-  # above each backend script below.
-  coreLib = builtins.readFile ./scripts/core.py;
+  # All Python scripts ship in one store directory; core.py is a real
+  # module that the backends `from core import ...` (PYTHONPATH points
+  # here). checkPhase runs flake8 over the whole directory at build
+  # time, which is what failed `nixos-rebuild` before.
+  monitor-scripts = pkgs.stdenv.mkDerivation {
+    pname = "monitor-scripts";
+    version = "0.1.0";
+    src = ./scripts;
+    nativeBuildInputs = [ pkgs.python3Packages.flake8 ];
+    dontBuild = true;
+    installPhase = ''
+      mkdir -p $out
+      cp *.py $out/
+    '';
+    checkPhase = ''
+      flake8 $out/*.py
+    '';
+  };
 
-  display-discovery = pkgs.writers.writePython3Bin "display-discovery" { }
-    (builtins.readFile ./scripts/display-discovery.py);
-
-  kscreen-backend = pkgs.writers.writePython3Bin "set-monitor-layout-kscreen" { } (''
-    KSCREEN = "${pkgs.kdePackages.libkscreen}/bin/kscreen-doctor"
-    DISCOVERY = "${display-discovery}/bin/display-discovery"
-    LAYOUT_PATH = "${layoutJsonFile}"
-
-  '' + coreLib + "\n" + builtins.readFile ./scripts/kscreen-backend.py);
-
-  sddm-kwin-backend = pkgs.writers.writePython3Bin "set-sddm-monitor-layout" { } (''
-    DISCOVERY = "${display-discovery}/bin/display-discovery"
-    LAYOUT_PATH = "${layoutJsonFile}"
-
-  '' + coreLib + "\n" + builtins.readFile ./scripts/sddm-kwin-backend.py);
+  display-discovery = pkgs.writeShellScriptBin "display-discovery" ''
+    exec ${pkgs.python3}/bin/python3 ${monitor-scripts}/display-discovery.py "$@"
+  '';
 
   # ===================================================================
   # Desktop-manager backend dispatcher.
@@ -65,6 +67,21 @@ let
   # `load_layout` + `resolve_physical` — the desired layout doesn't
   # change, and neither does the shared resolution logic.
   # ===================================================================
+  kscreen-backend = pkgs.writeShellScriptBin "set-monitor-layout-kscreen" ''
+    export PYTHONPATH=${monitor-scripts}
+    export KSCREEN=${pkgs.kdePackages.libkscreen}/bin/kscreen-doctor
+    export DISCOVERY=${display-discovery}/bin/display-discovery
+    export LAYOUT_PATH=${layoutJsonFile}
+    exec ${pkgs.python3}/bin/python3 ${monitor-scripts}/kscreen-backend.py "$@"
+  '';
+
+  sddm-kwin-backend = pkgs.writeShellScriptBin "set-sddm-monitor-layout" ''
+    export PYTHONPATH=${monitor-scripts}
+    export DISCOVERY=${display-discovery}/bin/display-discovery
+    export LAYOUT_PATH=${layoutJsonFile}
+    exec ${pkgs.python3}/bin/python3 ${monitor-scripts}/sddm-kwin-backend.py "$@"
+  '';
+
   set-monitor-layout = pkgs.writeShellScriptBin "set-monitor-layout" ''
     set -euo pipefail
     backend="''${MONITOR_LAYOUT_BACKEND:-kscreen}"

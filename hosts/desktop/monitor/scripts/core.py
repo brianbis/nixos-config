@@ -1,10 +1,8 @@
 """Shared helpers for monitor-layout backends.
 
-Nix concatenates this module's source directly above each backend
-script (see monitor.nix), so everything defined here — error(),
-run_json(), load_layout(), resolve_physical() — is available to the
-backend code as if it were one file. There's no import machinery:
-it's just string concatenation before writePython3Bin sees it.
+Imported by the backend scripts as a real module (`from core import
+...`); the Nix expression ships it in the same store directory and puts
+that directory on PYTHONPATH. See monitor/default.nix.
 """
 
 import json
@@ -51,7 +49,7 @@ def load_layout(path):
 
 
 def strip_gpu_prefix(connector):
-    """'1-DP-2' (per-GPU DRM connector) -> 'DP-2' (desktop-manager connector)."""
+    """'1-DP-2' (per-GPU) -> 'DP-2' (desktop-manager) connector."""
     if connector.startswith("DP-"):
         return connector
     _, _, tail = connector.partition("-")

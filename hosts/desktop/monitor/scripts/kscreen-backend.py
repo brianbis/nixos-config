@@ -1,11 +1,15 @@
-"""Apply the declared layout to the live KScreen session via kscreen-doctor.
-
-Expects KSCREEN, DISCOVERY, LAYOUT_PATH and everything in core.py to
-already be defined above this point (Nix concatenates them in).
-"""
-
+import json
 import math
+import os
+import subprocess
+import sys
 import time
+
+from core import error, load_layout, resolve_physical
+
+KSCREEN = os.environ["KSCREEN"]
+DISCOVERY = os.environ["DISCOVERY"]
+LAYOUT_PATH = os.environ["LAYOUT_PATH"]
 
 layout = load_layout(LAYOUT_PATH)
 physical = resolve_physical(layout, DISCOVERY)
@@ -15,10 +19,19 @@ physical = resolve_physical(layout, DISCOVERY)
 kscreen = None
 for attempt in range(15):
     try:
-        result = subprocess.run([KSCREEN, "--json"], check=True, capture_output=True, text=True)
+        result = subprocess.run(
+            [KSCREEN, "--json"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
         kscreen = json.loads(result.stdout)
         break
-    except (FileNotFoundError, subprocess.CalledProcessError, json.JSONDecodeError):
+    except (
+        FileNotFoundError,
+        subprocess.CalledProcessError,
+        json.JSONDecodeError,
+    ):
         if attempt == 14:
             error("KScreen session was not available")
         time.sleep(1)
@@ -31,14 +44,22 @@ if not isinstance(outputs, list):
 def resolve_output(desired, display):
     matches = [o for o in outputs if o.get("name") == display["connector"]]
     if not matches:
-        error(f'could not resolve KScreen output for {desired["model"]} (connector {display["connector"]})')
+        error(
+            f"could not resolve KScreen output for {desired['model']} "
+            f"(connector {display['connector']})"
+        )
     if len(matches) != 1:
-        error(f'KScreen connector {display["connector"]} is ambiguous for {desired["model"]}')
+        error(
+            f"KScreen connector {display['connector']} is ambiguous "
+            f"for {desired['model']}"
+        )
     return matches[0]
 
 
 def resolve_mode(desired, output):
-    w, h, r = desired["mode"]["width"], desired["mode"]["height"], desired["mode"]["refresh"]
+    w = desired["mode"]["width"]
+    h = desired["mode"]["height"]
+    r = desired["mode"]["refresh"]
     matches = [
         m for m in output.get("modes", [])
         if m.get("size", {}).get("width") == w
@@ -47,9 +68,9 @@ def resolve_mode(desired, output):
         and math.isclose(float(m["refreshRate"]), float(r), abs_tol=0.5)
     ]
     if not matches:
-        error(f'could not find {w}x{h}@{r} mode for {desired["model"]}')
+        error(f"could not find {w}x{h}@{r} mode for {desired['model']}")
     if len(matches) > 1:
-        error(f'multiple {w}x{h}@{r} modes found for {desired["model"]}')
+        error(f"multiple {w}x{h}@{r} modes found for {desired['model']}")
     return matches[0]["id"]
 
 
@@ -74,8 +95,9 @@ print("Applying monitor layout:", file=sys.stderr)
 for name, desired, display, output, mode_id in resolved:
     pos = desired["position"]
     print(
-        f'  {name}: {desired["manufacturer"]} {desired["model"]} {desired["serial"]!r} '
-        f'-> connector {display["connector"]}, output {output["id"]}, mode {mode_id}, '
+        f"  {name}: {desired['manufacturer']} {desired['model']} "
+        f"{desired['serial']!r} -> connector {display['connector']}, "
+        f"output {output['id']}, mode {mode_id}, "
         f"position {pos['x']},{pos['y']}",
         file=sys.stderr,
     )

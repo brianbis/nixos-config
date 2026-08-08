@@ -17,7 +17,7 @@ import sys
 
 def edid_string(data, offset, length):
     """Decode an EDID ASCII descriptor, stripping padding/newlines."""
-    raw = data[offset:offset + length]
+    raw = data[offset: offset + length]
     raw = raw.split(b"\n", 1)[0]
     raw = raw.split(b"\x00", 1)[0]
     return raw.decode("ascii", errors="replace").strip(" \r\n")
@@ -26,7 +26,11 @@ def edid_string(data, offset, length):
 def manufacturer(data):
     """Decode the 3-character EDID manufacturer ID."""
     value = (data[8] << 8) | data[9]
-    chars = [(value >> 10) & 0x1f, (value >> 5) & 0x1f, value & 0x1f]
+    chars = [
+        (value >> 10) & 0x1F,
+        (value >> 5) & 0x1F,
+        value & 0x1F,
+    ]
 
     if any(c < 1 or c > 26 for c in chars):
         return "UNKNOWN"
@@ -41,7 +45,7 @@ def parse_edid(data):
     if data[0:8] != b"\x00\xff\xff\xff\xff\xff\xff\x00":
         raise ValueError("invalid EDID header")
 
-    if sum(data[0:128]) & 0xff:
+    if sum(data[0:128]) & 0xFF:
         raise ValueError("invalid EDID checksum")
 
     mfr = manufacturer(data)
@@ -52,20 +56,24 @@ def parse_edid(data):
 
     for i in range(4):
         off = 0x36 + i * 18
-        descriptor = data[off:off + 18]
+        descriptor = data[off: off + 18]
 
         if descriptor[0:2] != b"\x00\x00":
             continue
 
         tag = descriptor[3]
-        if tag == 0xff:
+
+        if tag == 0xFF:
             serial = edid_string(data, off + 5, 13)
-        elif tag == 0xfc:
+        elif tag == 0xFC:
             product_name = edid_string(data, off + 5, 13)
 
     product_code = data[10] | (data[11] << 8)
     edid_serial = (
-        data[12] | (data[13] << 8) | (data[14] << 16) | (data[15] << 24)
+        data[12]
+        | (data[13] << 8)
+        | (data[14] << 16)
+        | (data[15] << 24)
     )
 
     return {
@@ -106,7 +114,10 @@ def connectors():
         try:
             identity = parse_edid(data)
         except ValueError as e:
-            print(f"warning: could not parse EDID for {connector}: {e}", file=sys.stderr)
+            print(
+                f"warning: could not parse EDID for {connector}: {e}",
+                file=sys.stderr,
+            )
             continue
 
         yield {
@@ -124,5 +135,13 @@ if __name__ == "__main__":
         print()
     else:
         for display in displays:
-            serial = f" (serial {display['serial']})" if display["serial"] else ""
-            print(f"{display['connector']}: {display['manufacturer']} {display['model']}{serial}")
+            serial = (
+                f" (serial {display['serial']})"
+                if display["serial"]
+                else ""
+            )
+            print(
+                f"{display['connector']}: "
+                f"{display['manufacturer']} "
+                f"{display['model']}{serial}"
+            )
