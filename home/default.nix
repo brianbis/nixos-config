@@ -1,4 +1,4 @@
-{ pkgs, noctalia, ... }:
+{ pkgs, noctalia, plasma-manager, ... }:
 
 {
   imports = [
@@ -10,6 +10,7 @@
     ./sts.nix
     ./llm
     noctalia.homeModules.default
+    plasma-manager.homeModules.plasma-manager
   ];
 
   # ── Desktop: Plasma default, Niri + Hyprland for testing ─────────────────
