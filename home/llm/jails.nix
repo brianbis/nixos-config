@@ -1,5 +1,5 @@
 # Builds the (user, system) jail pair for each jailed agent (crush, opencode,
-# aider). This is the sandboxing layer: it wires bubblewrap mounts, injected
+# aider, claude). This is the sandboxing layer: it wires bubblewrap mounts, injected
 # packages, HOME pinning and the shared LSP set from the catalog.
 { lib, pkgs, jail-nix, llm-agents, deepseekSecret, shared, userHome }:
 
@@ -116,6 +116,10 @@ let
     "${userHome}/.local/share/opencode"
     "${userHome}/.local/state/opencode"
   ];
+  claudeDirs = mkDirs [
+    "${userHome}/.claude"
+    "${userHome}/.claude.json"
+  ];
 
   # System (root-run) variants keep their writable state under systemStateDir
   # instead of the user's home, because bwrap-as-root cannot traverse the
@@ -125,6 +129,14 @@ let
   systemCrushDirs = mkDirs [
     "${systemStateDir}/.config"
     "${systemStateDir}/.local/share"
+  ];
+
+  # Claude Code system variant: HOME is pinned to systemStateDir, so its
+  # config dir and project-state file resolve to this root-owned tree,
+  # seeded by the host module (hosts/desktop/crush-system.nix).
+  systemClaudeDirs = mkDirs [
+    "${systemStateDir}/.claude"
+    "${systemStateDir}/.claude.json"
   ];
 
   agent = n: llm-agents.packages.${pkgs.system}.${n};
@@ -174,7 +186,16 @@ let
          dirs = crushDirs;
          systemDirs = systemCrushDirs;
        }
-    ++ makeTool { name = "opencode"; pkg = withDeepSeekKey (agent "opencode") "opencode"; dirs = opencodeDirs; };
+    ++ makeTool { name = "opencode"; pkg = withDeepSeekKey (agent "opencode") "opencode"; dirs = opencodeDirs; }
+    # NOTE: claude-code bundles its own bubblewrap bash sandbox (the
+    # llm-agents package adds bwrap+socat to PATH). Nested bwrap can fail
+    # inside our jail; if Claude's sandbox errors, disable it via settings.
+    ++ makeTool {
+         name = "claude";
+         pkg = agent "claude-code";
+         dirs = claudeDirs;
+         systemDirs = systemClaudeDirs;
+       };
 
 in
 {

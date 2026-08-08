@@ -4,7 +4,7 @@
 { lib, pkgs, shared, headroomDeepseekWrapper }:
 
 let
-  inherit (shared) headroomUpstreamUrl headroomPort;
+  inherit (shared) headroomUpstreamUrl headroomPort headroomClaudePort;
 in
 {
   # headroom proxy for the local vLLM upstream.
@@ -37,6 +37,27 @@ in
 
     Service = {
       ExecStart = "${headroomDeepseekWrapper}/bin/headroom-deepseek";
+      Restart = "on-failure";
+      RestartSec = "3";
+      WorkingDirectory = "%h/.local/share/headroom";
+      Environment = "HOME=%h";
+    };
+
+    Install.WantedBy = [ "default.target" ];
+  };
+
+  # headroom proxy for Claude Code (Anthropic Messages format). vLLM serves
+  # /v1/messages natively, so the same local upstream works for both formats.
+  systemd.user.services.headroom-proxy-claude = {
+    Unit = {
+      Description = "Headroom context-compression proxy (Claude Code / vLLM upstream)";
+      After = [ "network.target" ];
+    };
+
+    Service = {
+      ExecStart = "${pkgs.headroom}/bin/headroom proxy " +
+        "--anthropic-api-url ${headroomUpstreamUrl} " +
+        "--host 127.0.0.1 --port ${toString headroomClaudePort}";
       Restart = "on-failure";
       RestartSec = "3";
       WorkingDirectory = "%h/.local/share/headroom";

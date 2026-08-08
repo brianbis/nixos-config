@@ -11,7 +11,7 @@
 
 let
   shared = import ../../home/llm/catalog.nix { inherit lib pkgs jail-nix; };
-  inherit (shared) systemStateDir systemCrushConfig rtkRewriteHook;
+  inherit (shared) systemStateDir systemCrushConfig claudeConfig rtkRewriteHook;
 in
 {
   # Root-only, root-owned state tree. Permission 0755 keeps it readable (and the
@@ -24,6 +24,7 @@ in
     "d ${systemStateDir}/.local 0755 root root - -"
     "d ${systemStateDir}/.local/share 0755 root root - -"
     "d ${systemStateDir}/.local/share/crush 0755 root root - -"
+    "d ${systemStateDir}/.claude 0755 root root - -"
   ];
 
   # Seed the root-owned crush.json + rtk hook at every switch, before any jail
@@ -31,7 +32,16 @@ in
   system.activationScripts.crushSystemState.text = ''
     mkdir -p \
       ${systemStateDir}/.config/crush/hooks \
-      ${systemStateDir}/.local/share/crush
+      ${systemStateDir}/.local/share/crush \
+      ${systemStateDir}/.claude
+
+    # Claude Code state file: only created if missing so session history
+    # survives re-activation.
+    [ -f ${systemStateDir}/.claude.json ] || echo '{}' > ${systemStateDir}/.claude.json
+
+    cat > ${systemStateDir}/.claude/settings.json <<'CLAUDE_EOF'
+    ${claudeConfig}
+    CLAUDE_EOF
 
     cat > ${systemStateDir}/.config/crush/crush.json <<'CRUSH_EOF'
     ${systemCrushConfig}

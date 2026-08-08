@@ -32,9 +32,10 @@ in
     ".config/opencode/.keep".text = "";
     ".local/share/opencode/.keep".text = "";
     ".local/state/opencode/.keep".text = "";
+    ".claude/.keep".text = "";
   };
 
-  # Write the per-user (non-sudo) crush/aider/opencode configs only. The
+  # Write the per-user (non-sudo) crush/aider/opencode/claude configs only. The
   # root-only /var/lib/crush-system tree is seeded separately by the NixOS
   # host module (hosts/desktop/crush-system.nix), so a user-level activation
   # never needs to write into root-owned state.
@@ -45,7 +46,8 @@ in
         $HOME/.config/opencode \
         $HOME/.local/share/opencode \
         $HOME/.config/headroom \
-        $HOME/.local/share/headroom
+        $HOME/.local/share/headroom \
+        $HOME/.claude
 
       # Crush rtk rewrite hook (used by the PreToolUse hook in crush.json)
       $DRY_RUN_CMD rm -f $HOME/.config/crush/hooks/rtk-rewrite.sh
@@ -66,6 +68,14 @@ in
       $DRY_RUN_CMD rm -f $HOME/.config/opencode/opencode.json
       $DRY_RUN_CMD printf '%s\n' '${tool-configs.opencodeConfig}' \
         > $HOME/.config/opencode/opencode.json
+
+      # Claude Code (settings.json routes it through the Claude-facing
+      # headroom proxy to local vLLM; state file only created if missing so
+      # session history survives re-activation)
+      $DRY_RUN_CMD [ -f $HOME/.claude.json ] || printf '{}\n' > $HOME/.claude.json
+      $DRY_RUN_CMD rm -f $HOME/.claude/settings.json
+      $DRY_RUN_CMD printf '%s\n' '${tool-configs.claudeConfig}' \
+        > $HOME/.claude/settings.json
   '';
 
   systemd.user.services = services.systemd.user.services;

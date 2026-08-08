@@ -22,6 +22,14 @@ let
   headroomCloudProxyUrl = "http://127.0.0.1:${toString headroomCloudPort}";
   headroomCloudUpstreamUrl = "https://api.deepseek.com/v1";
 
+  # Claude Code-facing headroom proxy (port 8789). Claude Code speaks the
+  # Anthropic Messages API (POST /v1/messages), so this instance forwards
+  # Anthropic-format traffic to the local vLLM, which serves that endpoint
+  # natively. The OpenAI-format proxy on headroomPort can't be reused: its
+  # Anthropic route would fall back to api.anthropic.com.
+  headroomClaudePort = 8789;
+  headroomClaudeProxyUrl = "http://127.0.0.1:${toString headroomClaudePort}";
+
   # Single source of truth for every LLM exposed to the jailed agents. Each of
   # the three tools (crush / opencode / aider) derives its provider + model
   # lists from this catalog, so a model edit hits all tools at once (DRY) and
@@ -347,6 +355,19 @@ let
     providers = crushProviders;
   };
 
+  # Claude Code user settings (settings.json). The env block routes the agent
+  # through the Claude-facing headroom proxy to the local vLLM, using the
+  # catalog's default local model. Identical content is seeded for the user
+  # and root-run system jail variants.
+  claudeConfig = builtins.toJSON {
+    env = {
+      ANTHROPIC_BASE_URL = headroomClaudeProxyUrl;
+      ANTHROPIC_AUTH_TOKEN = "sk-local";
+      ANTHROPIC_MODEL = models.gemma4awq.id;
+      ANTHROPIC_SMALL_FAST_MODEL = models.gemma4awq.id;
+    };
+  };
+
   # Per-system crush config (read by the root-run "system" jail variants).
   systemCrushConfig = crushConfigFor systemStateDir;
 
@@ -359,6 +380,8 @@ in
     headroomCloudPort
     headroomCloudProxyUrl
     headroomCloudUpstreamUrl
+    headroomClaudePort
+    headroomClaudeProxyUrl
     models
     providerLabel
     lsps
@@ -373,6 +396,7 @@ in
     rtkRewriteHook
     systemStateDir
     crushConfigFor
+    claudeConfig
     systemCrushConfig
     ;
 }

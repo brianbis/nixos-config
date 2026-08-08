@@ -23,11 +23,16 @@
   system.stateVersion = "26.05";
 
   # Nix Configuration
-  nixpkgs.config.allowUnfree = true;
   nix.settings.experimental-features = [
     "nix-command"
     "flakes"
   ];
+
+  nix.gc = {
+    automatic = true;
+    dates = "weekly";
+    options = "--delete-older-than 30d";
+  };
 
   # Locale & User Settings
   i18n.defaultLocale = "en_US.UTF-8";

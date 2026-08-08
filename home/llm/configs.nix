@@ -12,6 +12,7 @@ let
     models
     opencodeProviders
     crushConfigFor
+    claudeConfig
     ;
 
   # Per-user crush config (read by the non-sudo jail variants).
@@ -50,5 +51,5 @@ let
     '';
 in
 {
-  inherit userCrushConfig opencodeConfig aiderConfig;
+  inherit userCrushConfig opencodeConfig aiderConfig claudeConfig;
 }
