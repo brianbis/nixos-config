@@ -8,6 +8,8 @@
   # shell/bar/launcher/etc.) runs on top of it via the `programs.noctalia`
   # home-manager module.
   programs.niri.enable = true;
+  # Auto-select the Niri session at the SDDM login screen.
+  services.displayManager.defaultSession = "niri";
 
   services.xserver.xkb = {
     layout = "us";
