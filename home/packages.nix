@@ -15,6 +15,7 @@
   };
 
   home.packages = with pkgs; [
+    foot                # primary terminal (native Wayland, niri-friendly)
     kdePackages.kate
     kdePackages.yakuake
     discord

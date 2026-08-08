@@ -13,6 +13,8 @@ in
 {
   environment.systemPackages = with pkgs; [
     inputs.agenix.packages.${pkgs.system}.default
+    inputs.noctalia.packages.${pkgs.system}.default
+    kdePackages.konsole
     curl
     wget
     rsync
