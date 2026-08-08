@@ -42,7 +42,10 @@ let
       name = "Gemma 4 26B MoE AWQ";
       url = headroomProxyUrl;
       context = 262144;
-      maxTok = 196608;
+      # Single-generation cap for a 32GB card. A request far beyond this
+      # (e.g. 180k output) won't fit one run alongside the 17GB AWQ weights;
+      # agents loop via tool calls instead.
+      maxTok = 65536;
       reason = true;
       attachments = true;
       costIn = 0;
@@ -55,8 +58,9 @@ let
       id = "gemma-4-nvfp4";
       name = "Gemma 4 31B NVFP4 Turbo";
       url = headroomProxyUrl;
-      context = 98304;
-      maxTok = 90000;
+      # Must match --max-model-len 32768 in hosts/desktop/vllm.nix.
+      context = 32768;
+      maxTok = 30000;
       reason = true;
       attachments = false;
       costIn = 0.14;

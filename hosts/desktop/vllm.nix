@@ -112,13 +112,13 @@ in
 
       kvCacheDtype = "fp8";
 
+      # Single dedicated card (RTX 5090 / 32GB). One long generation at a
+      # time. Keep CUDA graphs enabled; eager mode pins peak memory during KV
+      # cache init and OOMs at 0.95 utilization.
       extraArgs = [
         "--trust-remote-code"
-
-        # Conservative starting point.
-        # Increase after confirming stable memory usage.
-        "--max-num-seqs" "16"
-        "--max-num-batched-tokens" "16384"
+        "--max-num-seqs" "1"
+        "--max-num-batched-tokens" "8192"
       ];
     };
 
@@ -139,8 +139,11 @@ in
 
       gpuMemoryUtilization = "0.90";
 
+      # 262K-context model on a 32GB card. Keep CUDA graphs enabled so
+      # vLLM frees capture scratch before KV cache allocation; eager mode
+      # keeps peak memory high during init and OOMs on this card.
       extraArgs = [
-        "--max-num-seqs" "8"
+        "--max-num-seqs" "1"
         "--max-num-batched-tokens" "8192"
       ];
     };

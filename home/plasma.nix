@@ -80,6 +80,26 @@ in
     };
 
     configFile = {
+      kdeglobals = {
+        General = {
+          ColorScheme = "BreezeDark";
+        };
+
+        "Colors:View" = {
+          BackgroundNormal = "0,0,0";
+          BackgroundAlternate = "0,0,0";
+        };
+
+        "Colors:Window" = {
+          BackgroundNormal = "0,0,0";
+          BackgroundAlternate = "0,0,0";
+        };
+      };
+      konsolerc = {
+        "Desktop Entry" = {
+          DefaultProfile = "OLED.profile";
+        };
+      };
       kwinrc = {
         Windows = {
           FocusStealingPreventionLevel = 0;

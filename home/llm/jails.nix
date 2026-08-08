@@ -31,6 +31,29 @@ let
       exec ${pkg}/bin/${name} "$@"
     '';
 
+  # Shadow the system-activating nix CLIs inside the jail with stubs that
+  # refuse to run. This is deterministic (no command-string parsing, no
+  # regex, robust against quoting / `sudo` / `env` prefixes): the real
+  # binaries are simply absent, so the agent can edit /etc/nixos but can
+  # never switch/build/install a system configuration. Each stub prints a
+  # plain message and exits non-zero.
+  forbiddenNixCmds = {
+    "nixos-rebuild" = "building or switching a NixOS system is not allowed inside a jailed agent";
+    "nixos-install" = "installing a NixOS system is not allowed inside a jailed agent";
+    "home-manager" = "home-manager is not allowed inside a jailed agent";
+    "nix-env" = "nix-env profile mutation is not allowed inside a jailed agent";
+    "nix-channel" = "nix-channel operations are not allowed inside a jailed agent";
+  };
+  nixGuard = pkgs.symlinkJoin {
+    name = "nix-guard";
+    paths = lib.mapAttrsToList (name: msg:
+      pkgs.writeShellScriptBin name ''
+        echo "denied: ${msg}. Edit config files only; do not activate." >&2
+        exit 1
+      ''
+    ) forbiddenNixCmds;
+  };
+
   commonPkgs = with pkgs; [
     bashInteractive
     curl
@@ -62,6 +85,14 @@ let
     # reads. Not in nixpkgs / llm-agents; built from ./packages/headroom.nix.
     headroom
 
+    # Nix CLI so jailed agents can search nixpkgs (`nix search nixpkgs <term>`)
+    # and eval packages against the source mounted read-only below.
+    nix
+
+    # Shadow system-activating nix CLIs (nixos-rebuild, home-manager, nix-env,
+    # nix-channel, nixos-install) with stubs that refuse to run.
+    nixGuard
+
     # Database CLI clients shared by every jailed tool.
     sqlite
     postgresql
@@ -87,7 +118,16 @@ let
     (set-env "HOME" (if system then systemStateDir else userHome))
   ] ++ (if system
     then [ (readwrite "/etc/nixos") (readwrite systemStateDir) ]
-    else [ mount-cwd ]) ++ [ (readonly "/run/agenix/deepseek-api-key") ] ++ lspAdds;
+    else [ mount-cwd ]) ++ [
+    # Mount the pinned nixpkgs source read-only so `nix search nixpkgs <term>`
+    # (which resolves nixpkgs via the default channels registry) and direct
+    # grepping of the source in $NIXPKGS both work. Enabling the flakes +
+    # nix-command experimental features is what makes `nix search` usable.
+    (readonly pkgs.path)
+    (set-env "NIX_CONFIG"
+      "experimental-features = nix-command flakes")
+    (set-env "NIXPKGS" pkgs.path)
+  ] ++ [ (readonly "/run/agenix/deepseek-api-key") ] ++ lspAdds;
 
   # Common libs/CLI tools injected into every jail.
   mkToolJail = { name, pkg, dirs, system }:
