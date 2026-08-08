@@ -7,7 +7,7 @@
     ./bluetooth.nix
     ./boot.nix
     ./crush-system.nix
-    ./monitor.nix
+    ./monitor
     ./networking.nix
     ./nvidia.nix
     ./packages.nix
