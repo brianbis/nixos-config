@@ -90,7 +90,11 @@ if len({i for i, _ in resolved.values()}) != len(resolved):
     error("multiple physical monitors resolved to the same KWin output")
 
 desired_setup_outputs = []
-for name, desired in layout.items():
+# Nix attrsets aren't ordered -- `layout` may iterate in any order
+# (builtins.toJSON serializes keys alphabetically, not as declared).
+# Sort left-to-right by declared position so `priority` is
+# deterministic instead of depending on attribute-name spelling.
+for name, desired in sorted(layout.items(), key=lambda kv: (kv[1]["position"]["x"], kv[1]["position"]["y"])):
     new_index, _ = resolved[name]
     pos = desired["position"]
     desired_setup_outputs.append({
