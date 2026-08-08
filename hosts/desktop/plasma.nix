@@ -3,10 +3,10 @@
 
   services.displayManager.sddm.enable = true;
 
-  # Keep Plasma installed as a login-screen fallback: if a future niri
-  # config fails to parse, pick the Plasma session from SDDM instead of
-  # fighting a bare desktop. Niri remains the default session.
+  # Plasma is the daily driver and the default session. Niri and Hyprland stay
+  # installed as selectable SDDM sessions for testing the tiling compositors.
   services.desktopManager.plasma6.enable = true;
+  services.displayManager.defaultSession = "plasma";
 
   # Niri scrollable-tiling Wayland compositor. The system module wires up the
   # SDDM login session, xdg-desktop-portal, and gnome-keyring. Its runtime
@@ -14,7 +14,11 @@
   # shell/bar/launcher/etc.) runs on top of it via the `programs.noctalia`
   # home-manager module.
   programs.niri.enable = true;
-  services.displayManager.defaultSession = "niri";
+
+  # Hyprland dynamic-tiling Wayland compositor, alternative to niri. The
+  # system module adds the SDDM session + xdg-desktop-portal; its runtime
+  # config (binds, window rules) is written from home/hyprland.nix.
+  programs.hyprland.enable = true;
 
   services.xserver.xkb = {
     layout = "us";

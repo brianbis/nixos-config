@@ -3,15 +3,20 @@
 {
   imports = [
     ./packages.nix
+    ./plasma.nix
     ./niri.nix
+    ./hyprland.nix
     ./firefox
     ./sts.nix
     ./llm
     noctalia.homeModules.default
   ];
 
-  # ── Desktop: Niri compositor + Noctalia shell ─────────────────────────────
-  # The full niri config (binds, window rules) is enabled in ./niri.nix.
+  # ── Desktop: Plasma default, Niri + Hyprland for testing ─────────────────
+  # The full niri config (binds, window rules) is enabled in ./niri.nix, and
+  # the Hyprland config in ./hyprland.nix. Plasma is the SDDM default session
+  # (see hosts/desktop/plasma.nix); both tiling compositors remain selectable
+  # from the login screen.
 
   # Noctalia provides the shell layer (bars, launcher, notifications, lock
   # screen, wallpaper, session actions) on top of Niri. Its home module manages
