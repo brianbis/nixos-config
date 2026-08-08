@@ -8,7 +8,7 @@
 # known-valid) with three intentional changes:
 #   * spawn-at-startup launches Noctalia instead of waybar,
 #   * Mod+T opens `foot` instead of alacritty,
-#   * extra window-rules + a Bluetooth binding are appended.
+#   * window-rules send Discord/Obsidian/Firefox/VS Code to dedicated workspaces.
 {
   xdg.configFile."niri/config.kdl".text = ''
     input {
@@ -121,9 +121,6 @@
 
         XF86MonBrightnessUp   allow-when-locked=true { spawn-sh "brightnessctl set +10%"; }
         XF86MonBrightnessDown allow-when-locked=true { spawn-sh "brightnessctl set 10%-"; }
-
-        // Bluetooth headphones (ported from the KDE global shortcut Ctrl+Shift+C).
-        Ctrl+Shift+C hotkey-overlay-title="Connect Bluetooth Headphones" { spawn-sh "bt-connect-headphones 10 3"; }
     }
 
     // Send the old KDE window-rules apps to dedicated workspaces.
