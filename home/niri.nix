@@ -26,7 +26,7 @@
     layout {
         gaps 16
         center-focused-column "never"
-        default-column-width { proportion 0.5 }
+        default-column-width { proportion 0.5; }
         focus-ring {
             width 4
             active-color "#7fc8ff"
