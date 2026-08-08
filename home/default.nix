@@ -4,8 +4,8 @@
   imports = [
     ./packages.nix
     ./plasma.nix
-    ./niri.nix
-    ./hyprland.nix
+    #./niri.nix
+    #./hyprland.nix
     ./firefox
     ./sts.nix
     ./llm

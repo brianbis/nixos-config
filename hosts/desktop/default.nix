@@ -15,7 +15,6 @@
     ./security.nix
     ./steam.nix
     ./vllm.nix
-    ./display-discovery.nix
   ];
 
   # Machine Identity & Baseline

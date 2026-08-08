@@ -68,7 +68,6 @@
             # libdisplay-info's .pc is visible to the codegen step.
             (final: prev: {
               niri = prev.niri.overrideAttrs (old: {
-                strictDeps = false;
               });
             })
 
