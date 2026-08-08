@@ -13,12 +13,12 @@
   # config (binds, window rules) is written from home/niri.nix. Noctalia (the
   # shell/bar/launcher/etc.) runs on top of it via the `programs.noctalia`
   # home-manager module.
-  programs.niri.enable = true;
+  #programs.niri.enable = true;
 
   # Hyprland dynamic-tiling Wayland compositor, alternative to niri. The
   # system module adds the SDDM session + xdg-desktop-portal; its runtime
   # config (binds, window rules) is written from home/hyprland.nix.
-  programs.hyprland.enable = true;
+  #programs.hyprland.enable = true;
 
   services.xserver.xkb = {
     layout = "us";
