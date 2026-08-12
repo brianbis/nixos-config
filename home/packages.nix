@@ -95,6 +95,7 @@ let
     gh
     just
     python3
+    python3Packages.huggingface-hub
     bolt-launcher
     lutris
     heroic

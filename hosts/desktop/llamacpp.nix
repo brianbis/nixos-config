@@ -1,22 +1,60 @@
-{ pkgs, lib, ... }:
+{ config, pkgs, lib, ... }:
 
 let
   # GGUF models directory. The single llama.cpp slot below serves the vision
-  # language model Muse-Glimmer-30B. No build-time download: fetch it once,
-  # e.g.:
-  #   huggingface-cli download meta-models/Muse-Glimmer-30B-GGUF \
-  #     muse-glimmer-30B-kquant-dynamic.gguf mmproj-kquant.gguf dflash-kquant.gguf \
-  #     --local-dir /var/lib/llama/models
-  #
-  # REQUIRED llama.cpp build: Muse Glimmer support needs b10353+ (merged
-  # 2026-08-10). The pinned nixpkgs snapshot here is 2026-07-26, which predates
-  # that merge, so the stock pkgs.llama-cpp may reject these files with
-  # "architecture muse-glimmer not registered". If so, override llama-cpp with a
-  # newer overlay/package before nixos-rebuild.
+  # language model Muse-Glimmer-30B. Files are downloaded idempotently at switch
+  # time by the activation script below (see system.activationScripts.museModels).
   modelsDir = "/var/lib/llama/models";
+
+  # Model weights fetched from the GGUF repo at activation (only when missing).
+  # Kept behind `--include` so we never pull the extra 17gb build / README.
+  repo = "meta-models/Muse-Glimmer-30B-GGUF";
+  gguf = files:
+    builtins.concatStringsSep " " (map (f: "\"${f}\"") files);
+  modelFiles = [
+    "muse-glimmer-30B-kquant-dynamic.gguf"
+    "mmproj-kquant.gguf"
+    "dflash-kquant.gguf"
+  ];
 
 in {
   environment.systemPackages = with pkgs; [ llama-cpp ];
+
+  # Download the GGUF weights into /var/lib/llama/models at every switch, only
+  # if a file is missing. Uses the existing agenix hf-token secret for auth.
+  # Runs as root during activation; `hf` is invoked from the store so this works
+  # even if the user profile (and thus PATH) isn't updated yet.
+  system.activationScripts.museModels.text = ''
+    mkdir -p ${modelsDir}
+    for f in ${gguf modelFiles}; do
+      if [ ! -f "${modelsDir}/$f" ]; then
+        echo "llamacpp: downloading $f (missing)"
+      fi
+    done
+    missing=0
+    for f in ${gguf modelFiles}; do
+      [ -f "${modelsDir}/$f" ] || missing=1
+    done
+    if [ "$missing" = "1" ]; then
+      export HF_TOKEN="$(cat ${config.age.secrets.hf-token.path} | tr -d '\n')"
+      export HF_HUB_DOWNLOAD_TIMEOUT=600
+      # `hf download` (not the deprecated huggingface-cli, which errors out).
+      ${pkgs.python3Packages.huggingface-hub}/bin/hf download ${repo} \
+        --token "$HF_TOKEN" \
+        --local-dir ${modelsDir} \
+        --include "muse-glimmer-30B-kquant-dynamic.gguf" \
+        --include "mmproj-kquant.gguf" \
+        --include "dflash-kquant.gguf"
+      status=$?
+      if [ "$status" != "0" ]; then
+        echo "llamacpp: hf download failed with status $status" >&2
+        exit "$status"
+      fi
+      chmod 0644 ${modelsDir}/*.gguf
+    else
+      echo "llamacpp: all model files present, skipping download"
+    fi
+  '';
 
   systemd.tmpfiles.rules = [
     "d ${modelsDir} 0755 root root -"
@@ -28,7 +66,8 @@ in {
   # OpenAI-compatible API on :8000 that the headroom proxies upstream to.
   systemd.services.llamacpp-muse = {
     description = "llama.cpp Muse-Glimmer-30B (kquant-dynamic)";
-    enable = false;
+    # Not masked: remove enable=false so `systemctl start` works. Empty
+    # wantedBy means it never auto-starts at boot; start it explicitly.
     wantedBy = [];
 
     serviceConfig = {

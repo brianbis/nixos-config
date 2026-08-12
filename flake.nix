@@ -92,6 +92,35 @@
                 python = final.python3;
               };
             })
+
+            # Muse-Glimmer needs llama.cpp b10353+ (architecture merge 2026-08-10).
+            # The nixpkgs pin here (2026-07-26) ships b10273, which refuses to load
+            # the muse-glimmer GGUF ("architecture muse-glimmer not registered").
+            # Override llama-cpp to build from a llama.cpp master tag that includes
+            # the merge, with CUDA enabled for the RTX 5090. First build will fail
+            # on the SRI hash; set hash to the value printed in the error.
+            (final: prev: {
+              llama-cpp = (prev.llama-cpp.override {
+                cudaSupport = true;
+                cudaPackages = prev.cudaPackages;
+              }).overrideAttrs (old: {
+                  version = "10353";
+                  src = prev.fetchFromGitHub {
+                    owner = "ggml-org";
+                    repo = "llama.cpp";
+                    tag = "b10353";
+                    hash = "sha256-/kjqrGjkWJtlotTcZE5r+gSoce+llGwXz4gmQEOe8M0=";
+                    leaveDotGit = true;
+                    postFetch = ''
+                      git -C "$out" rev-parse --short HEAD > $out/COMMIT
+                      find "$out" -name .git -print0 | xargs -0 rm -rf
+                    '';
+                  };
+                  # b10353 changed package-lock.json, so the nixpkgs-pinned
+                  # npmDepsHash no longer matches this source.
+                  npmDepsHash = "sha256-2Q7XhaLAArmviOLdQsNbYTfdyDE5pW9lR26cRHEVl9k=";
+                });
+            })
           ];
 
           home-manager.useGlobalPkgs = true;
