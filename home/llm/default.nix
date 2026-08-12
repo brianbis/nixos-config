@@ -70,7 +70,7 @@ in
         > $HOME/.config/opencode/opencode.json
 
       # Claude Code (settings.json routes it through the Claude-facing
-      # headroom proxy to local vLLM; state file only created if missing so
+      # headroom proxy to local llama.cpp; state file only created if missing so
       # session history survives re-activation)
       $DRY_RUN_CMD [ -f $HOME/.claude.json ] || printf '{}\n' > $HOME/.claude.json
       $DRY_RUN_CMD rm -f $HOME/.claude/settings.json

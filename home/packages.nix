@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, inputs, ... }:
 
 
 let
@@ -61,6 +61,7 @@ let
   };
 
   home.packages = with pkgs; [
+    inputs.sidra.packages.${pkgs.system}.default
     foot
     ghostty
     fuzzel

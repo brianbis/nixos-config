@@ -9,9 +9,9 @@
 
 let
   jail = jail-nix.lib.init pkgs;
-  # Context-compression proxy layering. local vLLM traffic from every jailed
-  # agent (crush/opencode/aider) is routed through the Headroom proxy, which
-  # forwards upstream to vLLM on :8000. headroom listens on :8787.
+  # Context-compression proxy layering. local llama.cpp traffic from every
+  # jailed agent (crush/opencode/aider) is routed through the Headroom proxy,
+  # which forwards upstream to llama-server on :8000. headroom listens on :8787.
   headroomPort = 8787;
   headroomProxyUrl = "http://127.0.0.1:${toString headroomPort}";
   headroomUpstreamUrl = "http://127.0.0.1:8000";
@@ -24,7 +24,7 @@ let
 
   # Claude Code-facing headroom proxy (port 8789). Claude Code speaks the
   # Anthropic Messages API (POST /v1/messages), so this instance forwards
-  # Anthropic-format traffic to the local vLLM, which serves that endpoint
+  # Anthropic-format traffic to the local llama-server, which serves that endpoint
   # natively. The OpenAI-format proxy on headroomPort can't be reused: its
   # Anthropic route would fall back to api.anthropic.com.
   headroomClaudePort = 8789;
@@ -34,10 +34,15 @@ let
   # the three tools (crush / opencode / aider) derives its provider + model
   # lists from this catalog, so a model edit hits all tools at once (DRY) and
   # every tool always sees the same set (parity). Local models route through
-  # headroomProxyUrl (vLLM upstream); cloud through headroomCloudProxyUrl.
+  # headroomProxyUrl (llama.cpp upstream); cloud through headroomCloudProxyUrl.
   models = {
+    # Local backends. Two engines, both serving the OpenAI-compatible API on
+    # :8000, are mutually exclusive (start one at a time):
+    #   - vLLM (hosts/desktop/vllm.nix): cached Gemma-4 AWQ/NVFP4 weights, no
+    #     download needed.
+    #   - llama.cpp (hosts/desktop/llamacpp.nix): Muse-Glimmer-30B GGUF.
     gemma4awq = {
-      providerName = "vllm";
+      providerName = "vllm_awq";
       id = "gemma-4-awq";
       name = "Gemma 4 26B MoE AWQ";
       url = headroomProxyUrl;
@@ -56,7 +61,7 @@ let
     gemma4nvfp4 = {
       providerName = "vllm_nvfp4";
       id = "gemma-4-nvfp4";
-      name = "Gemma 4 31B NVFP4 Turbo";
+      name = "Gemma 4 31B NVFP4";
       url = headroomProxyUrl;
       # Must match --max-model-len 32768 in hosts/desktop/vllm.nix.
       context = 32768;
@@ -67,6 +72,18 @@ let
       costOut = 0.28;
       costInCached = 0.014;
       costOutCached = 0.28;
+    };
+    muse = {
+      providerName = "llamacpp";
+      id = "muse-glimmer-30B";
+      name = "Muse-Glimmer-30B (kquant-dynamic GGUF)";
+      url = headroomProxyUrl;
+      # Repo advertises 131072-token context; the 18.3GiB weights on a 32GB
+      # card cap effective context to ~32k with a single generation.
+      context = 32768;
+      maxTok = 8192;
+      reason = true;
+      attachments = true;
     };
     deepseekPro = {
       providerName = "deepseek";
@@ -91,9 +108,12 @@ let
   # Map providerName (from the catalog) to the label/style each tool config
   # needs. Used only to render per-tool configs consistently.
   providerLabel = {
-    vllm.name = "vLLM (local)";
-    vllm.type = "openai-compat";
-    vllm.api_key = "sk-local";
+    llamacpp.name = "llama.cpp (local)";
+    llamacpp.type = "openai-compat";
+    llamacpp.api_key = "sk-local";
+    vllm_awq.name = "vLLM AWQ (local)";
+    vllm_awq.type = "openai-compat";
+    vllm_awq.api_key = "sk-local";
     vllm_nvfp4.name = "vLLM NVFP4 (local)";
     vllm_nvfp4.type = "openai-compat";
     vllm_nvfp4.api_key = "sk-local";
@@ -263,7 +283,8 @@ let
     };
   opencodeProviders = {
     provider = {
-      vllm = opencodeProvider "vllm";
+      llamacpp = opencodeProvider "llamacpp";
+      vllm_awq = opencodeProvider "vllm_awq";
       vllm_nvfp4 = opencodeProvider "vllm_nvfp4";
       deepseek = opencodeProvider "deepseek";
     };
@@ -341,8 +362,8 @@ let
     # Headroom MCP server: exposes headroom_retrieve (plus headroom_compress /
     # headroom_stats) as callable tools so the model can turn the proxy's
     # hash= compression markers back into original content. Spawned as a stdio
-    # server per Crush session; connects out to the vLLM proxy on 8787, whose
-    # compression store holds the compressed content.
+    # server per Crush session; connects out to the llama.cpp proxy on 8787,
+    # whose compression store holds the compressed content.
     mcp.headroom = {
       type = "stdio";
       command = "headroom";
@@ -360,7 +381,7 @@ let
   };
 
   # Claude Code user settings (settings.json). The env block routes the agent
-  # through the Claude-facing headroom proxy to the local vLLM, using the
+  # through the Claude-facing headroom proxy to the local llama.cpp, using the
   # catalog's default local model. Identical content is seeded for the user
   # and root-run system jail variants.
   claudeConfig = builtins.toJSON {

@@ -21,10 +21,16 @@
 
     nur.url = "github:nix-community/NUR";
 
+    # Apple Music desktop client
+    sidra.url = "github:wimpysworld/sidra";
+
     # Jailed LLM tooling
     jail-nix.url = "sourcehut:~alexdavid/jail.nix";
     llm-agents.url = "github:numtide/llm-agents.nix";
     noctalia.url = "github:noctalia-dev/noctalia";
+
+    # Real-time microphone noise suppression (DPDFNet + PipeWire virtual mic)
+    hushmic-nix.url = "github:Fovty/hushmic-nix";
   };
 
   outputs = {
@@ -37,6 +43,7 @@
     jail-nix,
     llm-agents,
     noctalia,
+    hushmic-nix,
     ...
   }@inputs:
   let
@@ -96,6 +103,8 @@
               jail-nix
               llm-agents
               noctalia
+              hushmic-nix
+              inputs
               ;
 
             # Shared model/LSP catalog + config renderer, used by both
@@ -118,6 +127,7 @@
           jail-nix
           llm-agents
           noctalia
+          hushmic-nix
           ;
       };
     };

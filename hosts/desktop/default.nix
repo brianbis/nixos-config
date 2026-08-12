@@ -15,6 +15,7 @@
     ./security.nix
     ./steam.nix
     ./vllm.nix
+    ./llamacpp.nix
   ];
 
   # Machine Identity & Baseline

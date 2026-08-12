@@ -1,5 +1,5 @@
 # Headroom context-compression proxy systemd user services. Always-on so
-# jailed agents' local vLLM (and cloud DeepSeek) traffic flows through the
+# jailed agents' local llama.cpp (and cloud DeepSeek) traffic flows through the
 # compression layer without any manual step.
 { lib, pkgs, shared, headroomDeepseekWrapper }:
 
@@ -7,10 +7,10 @@ let
   inherit (shared) headroomUpstreamUrl headroomPort headroomClaudePort;
 in
 {
-  # headroom proxy for the local vLLM upstream.
+  # headroom proxy for the local llama.cpp upstream.
   systemd.user.services.headroom-proxy = {
     Unit = {
-      Description = "Headroom context-compression proxy (vLLM upstream)";
+      Description = "Headroom context-compression proxy (llama.cpp upstream)";
       After = [ "network.target" ];
     };
 
@@ -46,11 +46,11 @@ in
     Install.WantedBy = [ "default.target" ];
   };
 
-  # headroom proxy for Claude Code (Anthropic Messages format). vLLM serves
-  # /v1/messages natively, so the same local upstream works for both formats.
+  # headroom proxy for Claude Code (Anthropic Messages format). llama.cpp serves
+  # /v1/messages via llama-server, so the same local upstream works for both formats.
   systemd.user.services.headroom-proxy-claude = {
     Unit = {
-      Description = "Headroom context-compression proxy (Claude Code / vLLM upstream)";
+      Description = "Headroom context-compression proxy (Claude Code / llama.cpp upstream)";
       After = [ "network.target" ];
     };
 
