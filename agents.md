@@ -43,6 +43,24 @@ This file documents how this NixOS flake provisions the host, secrets, local LLM
 - Headroom proxies all local and cloud LLM traffic. Never point agents directly at upstream services.
 - All changes go through `just switch` which auto-stages and rebuilds the flake.
 
+## Headroom
+Headroom is a local context-compression proxy for all LLM traffic. Agents never talk directly to llama.cpp / DeepSeek. Requests go through headroom proxies on :8787 local, :8788 cloud, :8789 Claude. Compression is reversible via CCR: `headroom_compress`/`headroom_retrieve` MCP tools. See `packages/headroom.nix` and `home/llm/catalog.nix` for ports and MCP config.
+
+### Using Headroom as an agent
+The headroom MCP server exposes three tools to agents:
+
+* `headroom_compress(content)` – compresses text/JSON/logs/code. Returns `compressed`, `hash`, `original_tokens`, `compressed_tokens`, `savings_percent`, `transforms`. The original is stored locally for retrieval.
+* `headroom_retrieve(hash, query?)` – retrieves the original uncompressed content by hash. Optional `query` can search within the original.
+* `headroom_stats` – session summary: requests compressed, avg/best compression, tokens saved, estimated cost saved.
+
+Typical workflow:
+1. Agent reads a large file/tool output.
+2. Call `headroom_compress` on the content. Use the `compressed` output in the prompt to the model.
+3. If the model needs full fidelity, call `headroom_retrieve(hash)` to fetch the original.
+4. Check `headroom_stats` for savings.
+
+Example: compress a 500-line log, send compressed version to the model, retrieve original on demand with the hash returned by compress. Never send raw multi-megabyte outputs directly.
+
 ## Flake inputs
 `flake.nix` defines:
 - `nixpkgs unstable`, `home-manager`, `plasma-manager`, `agenix`, `nur`
