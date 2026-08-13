@@ -80,7 +80,7 @@ let
       url = headroomProxyUrl;
       # Repo advertises 131072-token context; the 18.3GiB weights on a 32GB
       # card cap effective context to ~32k with a single generation.
-      context = 32768;
+      context = 131072;
       maxTok = 8192;
       reason = true;
       attachments = true;

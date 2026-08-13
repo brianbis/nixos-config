@@ -127,3 +127,34 @@ alias u := update
 alias se := secret-edit
 alias ss := secret-show
 alias sc := secret-check
+
+# llama.cpp shortcuts
+
+llamacpp-start:
+    sudo systemctl start llamacpp-muse.service
+
+llamacpp-stop:
+    sudo systemctl stop llamacpp-muse.service
+
+llamacpp-restart:
+    sudo systemctl restart llamacpp-muse.service
+
+llamacpp-status:
+    sudo systemctl status llamacpp-muse.service --no-pager
+
+llamacpp-logs:
+    sudo journalctl -u llamacpp-muse.service -f
+
+llamacpp-health:
+    curl -s http://127.0.0.1:8000/health || echo "llama.cpp not responding"
+
+llamacpp-models:
+    ls -lh /var/lib/llama/models
+
+llamacpp-psi:
+    sudo systemctl is-active --quiet llamacpp-muse.service && echo "running" || echo "stopped"
+
+# Short aliases
+alias lc-start := llamacpp-start
+alias lc-stop := llamacpp-stop
+alias lc-status := llamacpp-status

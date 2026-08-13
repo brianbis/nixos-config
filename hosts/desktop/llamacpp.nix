@@ -91,11 +91,12 @@ in {
         # drafter leave room for a conservative KV cache on the 32GB card. With
         # --parallel 1 the per-slot context equals -c; bump toward 131072 if
         # you never see OOM and want the model's full trained window.
-        "--ctx-size" "32768"
+        "--ctx-size" "131072"
         "--n-predict" "8192"
         "--n-gpu-layers" "99"
         "--parallel" "1"
-        "--flash-attn"
+        # b10353: --flash-attn takes an explicit boolean value.
+        "--flash-attn" "true"
         "--mlock"
         # Sampling defaults recommended by the model card.
         "--temp" "1.0"
