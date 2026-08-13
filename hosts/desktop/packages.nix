@@ -13,9 +13,8 @@ in
 {
   environment.systemPackages = with pkgs; [
     inputs.agenix.packages.${pkgs.system}.default
-    inputs.noctalia.packages.${pkgs.system}.default
     kdePackages.konsole
-    # X11 compatibility layer for niri (spawned automatically when found in
+    # X11 compatibility layer (spawned automatically when found in
     # PATH). Needed for X11 apps like Discord and Yakuake.
     xwayland-satellite
     curl

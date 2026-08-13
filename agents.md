@@ -14,7 +14,7 @@ This file documents how this NixOS flake provisions the host, secrets, local LLM
   home/
     default.nix
     packages.nix
-    plasma.nix / hyprland.nix / niri.nix
+    plasma.nix
     firefox/
     sts.nix
     llm/
@@ -46,9 +46,8 @@ This file documents how this NixOS flake provisions the host, secrets, local LLM
 ## Flake inputs
 `flake.nix` defines:
 - `nixpkgs unstable`, `home-manager`, `plasma-manager`, `agenix`, `nur`
-- `jail-nix`, `llm-agents.nix`, `noctalia`, `hushmic-nix`, `sidra`
+- `jail-nix`, `llm-agents.nix`, `hushmic-nix`, `sidra`
 - Overlays:
-  - relax `niri` strictDeps
   - add `ast-grep-cli` and `headroom` to python3
   - override `llama-cpp` to a specific tag with CUDA enabled
 
@@ -160,26 +159,20 @@ Imports agenix, creates `llm` group, adds user `b`, configures sudo.
 Enables Steam and gamemode.
 
 ### hosts/desktop/packages.nix
-System packages: agenix, noctalia, konsole, xwayland-satellite, python data packages.
+System packages: agenix, konsole, xwayland-satellite, python data packages.
 
 ### hosts/desktop/monitor/
 Monitor config and scripts for display discovery, kscreen backend, sddm-kwin backend.
 
 ## Home modules
 ### home/default.nix
-Home Manager for user `b`. Imports packages, plasma, firefox, sts, llm, noctalia, plasma-manager.
+Home Manager for user `b`. Imports packages, plasma, firefox, sts, llm, plasma-manager.
 
 ### home/packages.nix
 User packages, custom derivations like fluent-oled.
 
 ### home/plasma.nix
 Plasma customization, Alt+F4 close or shutdown script.
-
-### home/hyprland.nix
-Hyprland compositor Lua config, mirrors niri keybindings, NVIDIA env vars.
-
-### home/niri.nix
-Niri compositor KDL config, spawns Noctalia, window rules.
 
 ### home/firefox/
 Firefox home config: default.nix, settings.nix, addons.nix, tree_style_tab, userChrome.css.

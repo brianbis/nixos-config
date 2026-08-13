@@ -27,7 +27,6 @@
     # Jailed LLM tooling
     jail-nix.url = "sourcehut:~alexdavid/jail.nix";
     llm-agents.url = "github:numtide/llm-agents.nix";
-    noctalia.url = "github:noctalia-dev/noctalia";
 
     # Real-time microphone noise suppression (DPDFNet + PipeWire virtual mic)
     hushmic-nix.url = "github:Fovty/hushmic-nix";
@@ -42,7 +41,6 @@
     nur,
     jail-nix,
     llm-agents,
-    noctalia,
     hushmic-nix,
     ...
   }@inputs:
@@ -65,18 +63,6 @@
 
           nixpkgs.overlays = [
             nur.overlays.default
-
-            # niri's release is a strictDeps Rust build whose `build.rs` (via
-            # libdisplay-info-sys/bindgen) must resolve `libdisplay-info.pc`, but
-            # strictDeps isolates the pkg-config env used by the bindgen hook, so
-            # the host libdisplay-info dev output never lands on PKG_CONFIG_PATH
-            # and the build dies with "Cannot find libdisplay-info". Relax
-            # strictDeps (a build-env isolation, not a correctness property) so
-            # libdisplay-info's .pc is visible to the codegen step.
-            (final: prev: {
-              niri = prev.niri.overrideAttrs (old: {
-              });
-            })
 
             # headroom-ai: context compression layer for the jailed LLM agents.
             (final: prev: {
@@ -131,7 +117,6 @@
               nur
               jail-nix
               llm-agents
-              noctalia
               hushmic-nix
               inputs
               ;
@@ -155,7 +140,6 @@
           inputs
           jail-nix
           llm-agents
-          noctalia
           hushmic-nix
           ;
       };
