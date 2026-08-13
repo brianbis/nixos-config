@@ -1,4 +1,4 @@
-{ ... }:
+{ lib, ... }:
 
 {
   imports = [
@@ -37,6 +37,20 @@
 
   # Locale & User Settings
   i18n.defaultLocale = "en_US.UTF-8";
+
+  services.power-profiles-daemon.enable = false;
+  services.tlp = {
+    enable = true;
+    settings = {
+      CPU_SCALING_GOVERNOR_ON_AC = "powersave";
+      CPU_ENERGY_PERF_POLICY_ON_AC = "balance_power";
+      PLATFORM_PROFILE_ON_AC = "balanced";
+    };
+  };
+  services.thermald.enable = true;
+  services.udev.extraRules = ''
+    ACTION=="add", SUBSYSTEM=="usb", TEST=="power/control", ATTR{power/control}="auto"
+  '';
 
   users.users."b" = {
     isNormalUser = true;

@@ -17,6 +17,8 @@ let
     "dflash-kquant.gguf"
   ];
 
+  dwellSeconds = 10;
+
 in {
   environment.systemPackages = with pkgs; [ llama-cpp ];
 
@@ -66,9 +68,8 @@ in {
   # OpenAI-compatible API on :8000 that the headroom proxies upstream to.
   systemd.services.llamacpp-muse = {
     description = "llama.cpp Muse-Glimmer-30B (kquant-dynamic)";
-    # Not masked: remove enable=false so `systemctl start` works. Empty
-    # wantedBy means it never auto-starts at boot; start it explicitly.
-    wantedBy = [];
+    # Auto-starts at boot, stays online. Model sleeps after idle to free VRAM.
+    wantedBy = [ "multi-user.target" ];
 
     serviceConfig = {
       Type = "simple";
@@ -98,6 +99,7 @@ in {
         # b10353: --flash-attn takes an explicit boolean value.
         "--flash-attn" "true"
         "--mlock"
+        "--sleep-idle-seconds" "${toString dwellSeconds}"
         # Sampling defaults recommended by the model card.
         "--temp" "1.0"
         "--top-p" "0.95"

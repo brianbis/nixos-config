@@ -347,6 +347,7 @@ let
     # both the user and system jails, and also gives each editable copy of the
     # tree a distinct data dir keyed by cwd.
     options.data_directory = "${base}/.local/share/crush";
+    options.context_paths = [ "agents.md" ];
 
     # Rewrite bash tool calls through rtk to compress token-heavy command
     # output before it reaches the model.
