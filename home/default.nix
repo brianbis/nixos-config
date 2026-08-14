@@ -102,15 +102,9 @@ html, body {
   color: #8a8a8a !important;
 }
   '';
-  force = true;
 };
 
-  xdg.configFile."Sidra/config.json" = {
-    text = ''
-{"theme":"custom"}
-    '';
-    force = true;
-  };
+  xdg.configFile."Sidra/config.json".source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/sidra-config.json";
 
   xdg.desktopEntries.sidra = {
     name = "Sidra";

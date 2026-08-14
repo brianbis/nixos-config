@@ -359,6 +359,9 @@ let
     # tree a distinct data dir keyed by cwd.
     options.data_directory = "${base}/.local/share/crush";
     options.context_paths = [ "agents.md" ];
+    options.tui.transparent = true;
+    options.tui.compact_mode = true;
+    options.tui.scrollbar = "never";
 
     # Rewrite bash tool calls through rtk to compress token-heavy command
     # output before it reaches the model.
