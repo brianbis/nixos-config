@@ -38,7 +38,6 @@
   # Locale & User Settings
   i18n.defaultLocale = "en_US.UTF-8";
   services.lact.enable = true;
-  environment.etc."lact/config.yaml".source = ../../dotfiles/lact-config.yaml;
   services.power-profiles-daemon.enable = false;
   services.tlp = {
     enable = true;
