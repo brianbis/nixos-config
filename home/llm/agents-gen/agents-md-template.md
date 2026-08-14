@@ -19,9 +19,9 @@ Never call upstream services directly. Always use the configured providers.
 - Network is allowed. Egress is not controlled by Headroom.
 - Read-only mounts: nixpkgs source, `/run/agenix/deepseek-api-key`.
 - Writable paths are whitelisted per tool.
-- Denied commands: ``nixos-rebuild`, `nixos-install`, `home-manager`, `nix-env`, `nix-channel`` are stubbed to deny.
+- Denied commands: `{{deniedCommands}}` are stubbed to deny.
 
-Common packages available: `bash-interactive-5.3p15, curl-8.21.0, wget-1.25.0, jq-1.8.2, git-2.55.0, which-2.25, ripgrep-15.2.0, gnugrep-3.12, gnused-4.10, gawk-interactive-5.4.1, ps-procps-4.0.6, findutils-4.11.0, gzip-1.14, unzip-6.0, gnutar-1.35, diffutils-3.12, strace-7.1, openssl-3.6.3, cfr-0.152, tcpdump-4.99.6, mitmproxy-12.2.3, openjdk-21.0.12+8, rtk-0.44.2, headroom-ai-0.34.0, nix-2.34.8, nix-guard, sqlite-3.53.3, postgresql-18.4, mariadb-client-11.4.12, python3-3.14.7-env`
+Common packages available: `{{commonPackages}}`
 
 ## Tool Contracts
 

@@ -36,6 +36,7 @@ auto-stage:
 # NixOS build & rebuild
 switch:
     just auto-stage
+    sudo nix build .#agents-md --print-out-paths | xargs -I{} sudo cp {} agents.md
     sudo nixos-rebuild switch --flake .
 
 build:
@@ -127,6 +128,9 @@ alias u := update
 alias se := secret-edit
 alias ss := secret-show
 alias sc := secret-check
+
+agents-md:
+    nix build .#agents-md --print-out-paths
 
 # llama.cpp shortcuts
 

@@ -239,5 +239,5 @@ let
 
 in
 {
-  inherit jails headroomDeepseekWrapper;
+  inherit jails headroomDeepseekWrapper commonPkgs;
 }

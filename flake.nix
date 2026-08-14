@@ -46,10 +46,31 @@
   }@inputs:
   let
     system = "x86_64-linux";
+    pkgs = nixpkgs.legacyPackages.${system};
+
+    # pkgs with headroom overlay for agents-md
+    agentsPkgs = import nixpkgs {
+      inherit system;
+      overlays = [
+        (final: prev: {
+          headroom = final.python3.pkgs.callPackage ./packages/headroom.nix { python = final.python3; };
+          python3 = prev.python3.override {
+            packageOverrides = pyfinal: pyprev: {
+              headroom = pyfinal.callPackage ./packages/headroom.nix { python = pyfinal; };
+            };
+          };
+        })
+      ];
+    };
   in
   {
     formatter.${system} =
       nixpkgs.legacyPackages.${system}.nixfmt-rfc-style;
+
+    packages.${system}.agents-md = agentsPkgs.callPackage ./home/llm/agents-gen/agents-md.nix {
+      inherit jail-nix llm-agents;
+    };
+
     nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
       inherit system;
 
