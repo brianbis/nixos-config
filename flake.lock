@@ -182,24 +182,6 @@
         "type": "github"
       }
     },
-    "hushmic-nix": {
-      "inputs": {
-        "nixpkgs": "nixpkgs"
-      },
-      "locked": {
-        "lastModified": 1785245157,
-        "narHash": "sha256-UcY+mJyDv8CPT5NNDsbVLVbKbZ80lUJY/LH2x9eDXz4=",
-        "owner": "Fovty",
-        "repo": "hushmic-nix",
-        "rev": "51914fba62ea1013e1d7affabc418ab4249933b2",
-        "type": "github"
-      },
-      "original": {
-        "owner": "Fovty",
-        "repo": "hushmic-nix",
-        "type": "github"
-      }
-    },
     "jail-nix": {
       "locked": {
         "lastModified": 1776230864,
@@ -219,7 +201,7 @@
       "inputs": {
         "bun2nix": "bun2nix",
         "flake-parts": "flake-parts",
-        "nixpkgs": "nixpkgs_2",
+        "nixpkgs": "nixpkgs",
         "systems": "systems_2",
         "treefmt-nix": "treefmt-nix"
       },
@@ -239,22 +221,6 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1785090369,
-        "narHash": "sha256-m0pDuRJG7EDo9ri+4Ksu83VsI+PlxNC9lNBfydejce4=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "624af665418d3c65d544145b4d34ad696439570e",
-        "type": "github"
-      },
-      "original": {
-        "owner": "NixOS",
-        "ref": "nixos-unstable",
-        "repo": "nixpkgs",
-        "type": "github"
-      }
-    },
-    "nixpkgs_2": {
-      "locked": {
         "lastModified": 1786410043,
         "narHash": "sha256-JTbODJPDcd3d8U7lO4MVUU3Yo0jz2KQSAHXka+IWBEo=",
         "owner": "NixOS",
@@ -269,45 +235,29 @@
         "type": "github"
       }
     },
+    "nixpkgs_2": {
+      "locked": {
+        "lastModified": 1786599213,
+        "narHash": "sha256-yNJd40f11EzXBjSByCB7IPpeFFAdeoSKKM67dGkfFoU=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "0e251e24a4f24e036a084b6b4b2d2491af4167f4",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
     "nixpkgs_3": {
       "locked": {
         "lastModified": 1786599213,
         "narHash": "sha256-yNJd40f11EzXBjSByCB7IPpeFFAdeoSKKM67dGkfFoU=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "0e251e24a4f24e036a084b6b4b2d2491af4167f4",
-        "type": "github"
-      },
-      "original": {
-        "owner": "NixOS",
-        "ref": "nixos-unstable",
-        "repo": "nixpkgs",
-        "type": "github"
-      }
-    },
-    "nixpkgs_4": {
-      "locked": {
-        "lastModified": 1786599213,
-        "narHash": "sha256-yNJd40f11EzXBjSByCB7IPpeFFAdeoSKKM67dGkfFoU=",
         "owner": "nixos",
         "repo": "nixpkgs",
         "rev": "0e251e24a4f24e036a084b6b4b2d2491af4167f4",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nixos",
-        "ref": "nixos-unstable",
-        "repo": "nixpkgs",
-        "type": "github"
-      }
-    },
-    "nixpkgs_5": {
-      "locked": {
-        "lastModified": 1785967620,
-        "narHash": "sha256-IItrdb7Puk05RqOBWZYFC5X6Wl1sJmCfh5MWVHw5iMM=",
-        "owner": "nixos",
-        "repo": "nixpkgs",
-        "rev": "b7c2ada94fe99c15b0dbcf4d11fd7850b957a436",
         "type": "github"
       },
       "original": {
@@ -320,7 +270,7 @@
     "nur": {
       "inputs": {
         "flake-parts": "flake-parts_2",
-        "nixpkgs": "nixpkgs_4"
+        "nixpkgs": "nixpkgs_3"
       },
       "locked": {
         "lastModified": 1786674662,
@@ -361,10 +311,9 @@
       "inputs": {
         "agenix": "agenix",
         "home-manager": "home-manager_2",
-        "hushmic-nix": "hushmic-nix",
         "jail-nix": "jail-nix",
         "llm-agents": "llm-agents",
-        "nixpkgs": "nixpkgs_3",
+        "nixpkgs": "nixpkgs_2",
         "nur": "nur",
         "plasma-manager": "plasma-manager",
         "sidra": "sidra"
@@ -372,7 +321,9 @@
     },
     "sidra": {
       "inputs": {
-        "nixpkgs": "nixpkgs_5"
+        "nixpkgs": [
+          "nixpkgs"
+        ]
       },
       "locked": {
         "lastModified": 1786530202,

@@ -1,4 +1,4 @@
-{ pkgs, hushmic-nix, ... }:
+{ pkgs, ... }:
 
 {
   services.pulseaudio.enable = false;
@@ -7,7 +7,7 @@
 
   environment.systemPackages = with pkgs; [
     deepfilternet
-    (hushmic-nix.packages.${pkgs.stdenv.hostPlatform.system}.hushmic)
+    hushmic
   ];
 
   services.pipewire = {
