@@ -1,4 +1,4 @@
-{ pkgs, inputs, ... }:
+{ config, pkgs, inputs, ... }:
 
 
 let
@@ -145,74 +145,7 @@ let
     postgresql
     mariadb.client
   ];
-  xdg.dataFile."konsole/OLED.colorscheme".text = ''
-[Background]
-Color=0,0,0
+  xdg.dataFile."konsole/OLED.colorscheme".source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/konsole/OLED.colorscheme";
 
-[BackgroundIntense]
-Color=0,0,0
-
-[Foreground]
-Color=230,230,230
-
-[ForegroundIntense]
-Color=255,255,255
-
-[Color0]
-Color=0,0,0
-
-[Color1]
-Color=255,85,85
-
-[Color2]
-Color=85,255,85
-
-[Color3]
-Color=255,255,85
-
-[Color4]
-Color=85,85,255
-
-[Color5]
-Color=255,85,255
-
-[Color6]
-Color=85,255,255
-
-[Color7]
-Color=230,230,230
-
-[Color8]
-Color=85,85,85
-
-[Color9]
-Color=255,85,85
-
-[Color10]
-Color=85,255,85
-
-[Color11]
-Color=255,255,85
-
-[Color12]
-Color=85,85,255
-
-[Color13]
-Color=255,85,255
-
-[Color14]
-Color=85,255,255
-
-[Color15]
-Color=255,255,255
-'';
-
-xdg.dataFile."konsole/OLED.profile".text = ''
-[Appearance]
-ColorScheme=OLED
-
-[General]
-Name=OLED
-Parent=FALLBACK/
-'';
+xdg.dataFile."konsole/OLED.profile".source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/konsole/OLED.profile";
 }

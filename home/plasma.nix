@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ config, pkgs, ... }:
 
 let
   altF4Script = pkgs.writeShellScriptBin "alt-f4-close-or-shutdown" ''
