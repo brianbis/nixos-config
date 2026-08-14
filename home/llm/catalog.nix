@@ -85,6 +85,17 @@ let
       reason = true;
       attachments = true;
     };
+    qwen38 = {
+      providerName = "llamacpp";
+      id = "qwen3-8-27b-q8_0";
+      name = "Qwen3.8-27B Q8_0 (GGUF)";
+      url = headroomProxyUrl;
+      # Repo advertises 262144-token context.
+      context = 262144;
+      maxTok = 8192;
+      reason = true;
+      attachments = true;
+    };
     deepseekPro = {
       providerName = "deepseek";
       id = "deepseek-v4-pro";

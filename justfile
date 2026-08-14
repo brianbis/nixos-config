@@ -148,6 +148,12 @@ llamacpp-logs:
 llamacpp-health:
     curl -s http://127.0.0.1:8000/health || echo "llama.cpp not responding"
 
+llamacpp-load-muse:
+    curl -s -X POST http://127.0.0.1:8000/load -H 'Content-Type: application/json' -d '{"model":"/var/lib/llama/models/muse-glimmer-30B-kquant-dynamic.gguf"}' || echo "load failed"
+
+llamacpp-load-qwen:
+    curl -s -X POST http://127.0.0.1:8000/load -H 'Content-Type: application/json' -d '{"model":"/var/lib/llama/models/Qwen3.8-27B-Q8_0.gguf"}' || echo "load failed"
+
 llamacpp-models:
     ls -lh /var/lib/llama/models
 

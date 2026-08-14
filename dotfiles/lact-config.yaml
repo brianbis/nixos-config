@@ -1,0 +1,398 @@
+version: 6
+daemon:
+  log_level: info
+  admin_group: wheel
+  disable_clocks_cleanup: false
+apply_settings_timer: 5
+gpus:
+  10DE:2B85-10DE:2057-0000:01:00.0:
+    fan_control_enabled: false
+    power_cap: 400.0
+    min_core_clock: 180
+    max_core_clock: 2763
+    mem_clock_offsets:
+      0: 2000
+    gpu_vf_curve:
+      0:
+        voltage: 450
+        clockspeed: 180
+      1:
+        voltage: 460
+        clockspeed: 180
+      2:
+        voltage: 465
+        clockspeed: 180
+      3:
+        voltage: 470
+        clockspeed: 180
+      4:
+        voltage: 475
+        clockspeed: 180
+      5:
+        voltage: 485
+        clockspeed: 180
+      6:
+        voltage: 490
+        clockspeed: 180
+      7:
+        voltage: 495
+        clockspeed: 180
+      8:
+        voltage: 500
+        clockspeed: 180
+      9:
+        voltage: 510
+        clockspeed: 180
+      10:
+        voltage: 515
+        clockspeed: 180
+      11:
+        voltage: 520
+        clockspeed: 180
+      12:
+        voltage: 525
+        clockspeed: 180
+      13:
+        voltage: 535
+        clockspeed: 180
+      14:
+        voltage: 540
+        clockspeed: 180
+      15:
+        voltage: 545
+        clockspeed: 180
+      16:
+        voltage: 550
+        clockspeed: 180
+      17:
+        voltage: 560
+        clockspeed: 180
+      18:
+        voltage: 565
+        clockspeed: 180
+      19:
+        voltage: 570
+        clockspeed: 180
+      20:
+        voltage: 575
+        clockspeed: 180
+      21:
+        voltage: 585
+        clockspeed: 180
+      22:
+        voltage: 590
+        clockspeed: 180
+      23:
+        voltage: 595
+        clockspeed: 180
+      24:
+        voltage: 600
+        clockspeed: 180
+      25:
+        voltage: 610
+        clockspeed: 180
+      26:
+        voltage: 615
+        clockspeed: 180
+      27:
+        voltage: 620
+        clockspeed: 180
+      28:
+        voltage: 625
+        clockspeed: 180
+      29:
+        voltage: 635
+        clockspeed: 180
+      30:
+        voltage: 640
+        clockspeed: 180
+      31:
+        voltage: 645
+        clockspeed: 180
+      32:
+        voltage: 650
+        clockspeed: 180
+      33:
+        voltage: 660
+        clockspeed: 180
+      34:
+        voltage: 665
+        clockspeed: 180
+      35:
+        voltage: 670
+        clockspeed: 180
+      36:
+        voltage: 675
+        clockspeed: 180
+      37:
+        voltage: 685
+        clockspeed: 180
+      38:
+        voltage: 690
+        clockspeed: 180
+      39:
+        voltage: 695
+        clockspeed: 180
+      40:
+        voltage: 700
+        clockspeed: 180
+      41:
+        voltage: 710
+        clockspeed: 180
+      42:
+        voltage: 715
+        clockspeed: 180
+      43:
+        voltage: 720
+        clockspeed: 180
+      44:
+        voltage: 725
+        clockspeed: 180
+      45:
+        voltage: 735
+        clockspeed: 180
+      46:
+        voltage: 740
+        clockspeed: 180
+      47:
+        voltage: 745
+        clockspeed: 180
+      48:
+        voltage: 750
+        clockspeed: 180
+      49:
+        voltage: 760
+        clockspeed: 180
+      50:
+        voltage: 765
+        clockspeed: 180
+      51:
+        voltage: 770
+        clockspeed: 180
+      52:
+        voltage: 775
+        clockspeed: 225
+      53:
+        voltage: 785
+        clockspeed: 315
+      54:
+        voltage: 790
+        clockspeed: 397
+      55:
+        voltage: 795
+        clockspeed: 480
+      56:
+        voltage: 800
+        clockspeed: 562
+      57:
+        voltage: 810
+        clockspeed: 652
+      58:
+        voltage: 815
+        clockspeed: 735
+      59:
+        voltage: 820
+        clockspeed: 817
+      60:
+        voltage: 825
+        clockspeed: 982
+      61:
+        voltage: 835
+        clockspeed: 1372
+      62:
+        voltage: 840
+        clockspeed: 1762
+      63:
+        voltage: 845
+        clockspeed: 2152
+      64:
+        voltage: 850
+        clockspeed: 2227
+      65:
+        voltage: 860
+        clockspeed: 2317
+      66:
+        voltage: 865
+        clockspeed: 2385
+      67:
+        voltage: 870
+        clockspeed: 2482
+      68:
+        voltage: 875
+        clockspeed: 2572
+      69:
+        voltage: 885
+        clockspeed: 2655
+      70:
+        voltage: 890
+        clockspeed: 2752
+      71:
+        voltage: 895
+        clockspeed: 2827
+      72:
+        voltage: 900
+        clockspeed: 2827
+      73:
+        voltage: 910
+        clockspeed: 2827
+      74:
+        voltage: 915
+        clockspeed: 2827
+      75:
+        voltage: 920
+        clockspeed: 2827
+      76:
+        voltage: 925
+        clockspeed: 2827
+      77:
+        voltage: 935
+        clockspeed: 2827
+      78:
+        voltage: 940
+        clockspeed: 2827
+      79:
+        voltage: 945
+        clockspeed: 2827
+      80:
+        voltage: 950
+        clockspeed: 2827
+      81:
+        voltage: 960
+        clockspeed: 2827
+      82:
+        voltage: 965
+        clockspeed: 2827
+      83:
+        voltage: 970
+        clockspeed: 2827
+      84:
+        voltage: 975
+        clockspeed: 2827
+      85:
+        voltage: 985
+        clockspeed: 2827
+      86:
+        voltage: 990
+        clockspeed: 2827
+      87:
+        voltage: 995
+        clockspeed: 2827
+      88:
+        voltage: 1000
+        clockspeed: 2827
+      89:
+        voltage: 1010
+        clockspeed: 2827
+      90:
+        voltage: 1015
+        clockspeed: 2827
+      91:
+        voltage: 1020
+        clockspeed: 2827
+      92:
+        voltage: 1025
+        clockspeed: 2827
+      93:
+        voltage: 1035
+        clockspeed: 2827
+      94:
+        voltage: 1040
+        clockspeed: 2827
+      95:
+        voltage: 1045
+        clockspeed: 2827
+      96:
+        voltage: 1050
+        clockspeed: 2827
+      97:
+        voltage: 1060
+        clockspeed: 2842
+      98:
+        voltage: 1065
+        clockspeed: 2857
+      99:
+        voltage: 1070
+        clockspeed: 2872
+      100:
+        voltage: 1075
+        clockspeed: 2872
+      101:
+        voltage: 1085
+        clockspeed: 2895
+      102:
+        voltage: 1090
+        clockspeed: 2902
+      103:
+        voltage: 1095
+        clockspeed: 2917
+      104:
+        voltage: 1100
+        clockspeed: 2917
+      105:
+        voltage: 1110
+        clockspeed: 2940
+      106:
+        voltage: 1115
+        clockspeed: 2947
+      107:
+        voltage: 1120
+        clockspeed: 2962
+      108:
+        voltage: 1125
+        clockspeed: 2962
+      109:
+        voltage: 1135
+        clockspeed: 2985
+      110:
+        voltage: 1140
+        clockspeed: 2992
+      111:
+        voltage: 1145
+        clockspeed: 2992
+      112:
+        voltage: 1150
+        clockspeed: 3015
+      113:
+        voltage: 1160
+        clockspeed: 3022
+      114:
+        voltage: 1165
+        clockspeed: 3037
+      115:
+        voltage: 1170
+        clockspeed: 3045
+      116:
+        voltage: 1175
+        clockspeed: 3052
+      117:
+        voltage: 1185
+        clockspeed: 3060
+      118:
+        voltage: 1190
+        clockspeed: 3075
+      119:
+        voltage: 1195
+        clockspeed: 3082
+      120:
+        voltage: 1200
+        clockspeed: 3090
+      121:
+        voltage: 1210
+        clockspeed: 3097
+      122:
+        voltage: 1215
+        clockspeed: 3112
+      123:
+        voltage: 1220
+        clockspeed: 3112
+      124:
+        voltage: 1225
+        clockspeed: 3127
+      125:
+        voltage: 1235
+        clockspeed: 3135
+      126:
+        voltage: 1240
+        clockspeed: 3142
+current_profile: null
+auto_switch_profiles: false

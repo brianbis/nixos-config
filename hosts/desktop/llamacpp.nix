@@ -17,6 +17,13 @@ let
     "dflash-kquant.gguf"
   ];
 
+  # Qwen3.8-27B Q8_0 GGUF weights
+  qwenRepo = "unsloth/Qwen3.8-27B-GGUF";
+  qwenModelFiles = [
+    "Qwen3.8-27B-Q8_0.gguf"
+    "imatrix_unsloth.gguf"
+  ];
+
   dwellSeconds = 30;
 
 in {
@@ -55,6 +62,36 @@ in {
       chmod 0644 ${modelsDir}/*.gguf
     else
       echo "llamacpp: all model files present, skipping download"
+    fi
+  '';
+
+  system.activationScripts.qwenModels.text = ''
+    mkdir -p ${modelsDir}
+    for f in ${gguf qwenModelFiles}; do
+      if [ ! -f "${modelsDir}/$f" ]; then
+        echo "llamacpp-qwen: downloading $f (missing)"
+      fi
+    done
+    missing=0
+    for f in ${gguf qwenModelFiles}; do
+      [ -f "${modelsDir}/$f" ] || missing=1
+    done
+    if [ "$missing" = "1" ]; then
+      export HF_TOKEN="$(cat ${config.age.secrets.hf-token.path} | tr -d '\n')"
+      export HF_HUB_DOWNLOAD_TIMEOUT=600
+      ${pkgs.python3Packages.huggingface-hub}/bin/hf download ${qwenRepo} \
+        --token "$HF_TOKEN" \
+        --local-dir ${modelsDir} \
+        --include "Qwen3.8-27B-Q8_0.gguf" \
+        --include "imatrix_unsloth.gguf"
+      status=$?
+      if [ "$status" != "0" ]; then
+        echo "llamacpp-qwen: hf download failed with status $status" >&2
+        exit "$status"
+      fi
+      chmod 0644 ${modelsDir}/*.gguf
+    else
+      echo "llamacpp-qwen: all model files present, skipping download"
     fi
   '';
 
