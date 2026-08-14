@@ -28,6 +28,7 @@ stage:
     sudo git add .
 
 auto-stage:
+    sudo rm -f result result-*
     @if ! sudo git diff --quiet || [ -n "$(sudo git status --porcelain)" ]; then \
         echo "Staging changes..."; \
         sudo git add .; \
@@ -35,9 +36,11 @@ auto-stage:
 
 # NixOS build & rebuild
 switch:
+    sudo rm -f result result-*
     just auto-stage
-    sudo nix build .#agents-md --print-out-paths | xargs -I{} sudo cp {} agents.md
+    sudo nix build --no-link .#agents-md --print-out-paths | xargs -I{} sudo cp {} agents.md
     sudo nixos-rebuild switch --flake .
+    sudo rm -f result result-*
 
 build:
     just auto-stage
@@ -130,7 +133,7 @@ alias ss := secret-show
 alias sc := secret-check
 
 agents-md:
-    nix build .#agents-md --print-out-paths
+    nix build --no-link .#agents-md --print-out-paths
 
 # llama.cpp shortcuts
 

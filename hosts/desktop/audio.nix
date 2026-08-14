@@ -7,7 +7,7 @@
 
   environment.systemPackages = with pkgs; [
     deepfilternet
-    (hushmic-nix.packages.${pkgs.system}.hushmic)
+    (hushmic-nix.packages.${pkgs.stdenv.hostPlatform.system}.hushmic)
   ];
 
   services.pipewire = {

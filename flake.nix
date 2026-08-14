@@ -85,6 +85,17 @@
           nixpkgs.overlays = [
             nur.overlays.default
 
+            # xorg compatibility shim to silence deprecation warnings
+            (final: prev: {
+              xorg = {
+                libX11 = prev.libx11;
+                libXcursor = prev.libxcursor;
+                libXi = prev.libxi;
+                libXrandr = prev.libxrandr;
+                libxcb = prev.libxcb;
+              };
+            })
+
             # headroom-ai: context compression layer for the jailed LLM agents.
             (final: prev: {
               python3 = prev.python3.override {

@@ -179,7 +179,7 @@ let
     "${systemStateDir}/.claude.json"
   ];
 
-  agent = n: llm-agents.packages.${pkgs.system}.${n};
+  agent = n: llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.${n};
 
   # Jailed crush is already sandboxed by bubblewrap, so strip the hardcoded
   # network/download + network-config command bans from bash.go. The jail is

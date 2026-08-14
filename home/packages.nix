@@ -87,7 +87,7 @@ let
   };
 
   home.packages = with pkgs; [
-    inputs.sidra.packages.${pkgs.system}.default
+    inputs.sidra.packages.${pkgs.stdenv.hostPlatform.system}.default
     foot
     ghostty
     fuzzel
