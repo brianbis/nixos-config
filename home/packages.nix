@@ -30,6 +30,35 @@ let
       license = pkgs.lib.licenses.mit;
     };
   };
+
+  nix-ide = pkgs.stdenvNoCC.mkDerivation {
+    pname = "nix-ide";
+    version = "0.5.13";
+
+    src = pkgs.fetchFromGitHub {
+      owner = "nix-community";
+      repo = "vscode-nix-ide";
+      rev = "1d26f139a6ff4ce22ca18faabc3d2596513470ac";
+      hash = "sha256-TAElWtpoiZmMRUUc+TADezwlNuX5AGnqe2Qn+fB2qy8=";
+    };
+
+    dontBuild = true;
+
+    installPhase = ''
+      mkdir -p $out/share/vscode/extensions/jnoortheen.nix-ide
+      cp -r . $out/share/vscode/extensions/jnoortheen.nix-ide/
+    '';
+
+    vscodeExtPublisher = "jnoortheen";
+    vscodeExtName = "nix-ide";
+    vscodeExtUniqueId = "jnoortheen.nix-ide";
+
+    meta = {
+      description = "Nix language server and formatter for VS Code";
+      homepage = "https://github.com/nix-community/vscode-nix-ide";
+      license = pkgs.lib.licenses.mit;
+    };
+  };
   in
 
 {
@@ -52,11 +81,8 @@ let
     profiles.default = {
       extensions = [
         fluent-oled
+        nix-ide
       ];
-
-      userSettings = {
-        "workbench.colorTheme" = "Fluent OLED";
-      };
     };
   };
 

@@ -1,4 +1,4 @@
-{ pkgs, plasma-manager, ... }:
+{ config, pkgs, plasma-manager, ... }:
 
 {
   imports = [
@@ -19,6 +19,9 @@
     Hidden=false
     NoDisplay=false
   '';
+
+  home.file."dotfiles".source = config.lib.file.mkOutOfStoreSymlink "/etc/nixos/dotfiles";
+  xdg.configFile."Code/User/settings.json".source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/vscode-settings.json";
 
   home.username = "b";
   home.homeDirectory = "/home/b";

@@ -17,7 +17,7 @@ let
     "dflash-kquant.gguf"
   ];
 
-  dwellSeconds = 10;
+  dwellSeconds = 30;
 
 in {
   environment.systemPackages = with pkgs; [ llama-cpp ];

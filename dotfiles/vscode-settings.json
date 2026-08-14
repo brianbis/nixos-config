@@ -1,0 +1,15 @@
+{
+  "workbench.colorTheme": "Fluent OLED",
+  "nix.serverPath": "nil",
+  "nix.formatterPath": "nixfmt-rfc-style",
+  "nix.enableLanguageServer": true,
+  "[nix]": {
+    "editor.defaultFormatter": "jnoortheen.nix-ide",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2
+  },
+  "files.associations": {
+    "*.nix": "nix"
+  },
+  "editor.inlayHints.enabled": true
+}
