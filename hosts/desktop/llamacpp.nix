@@ -21,7 +21,6 @@ let
   qwenRepo = "unsloth/Qwen3.8-27B-GGUF";
   qwenModelFiles = [
     "Qwen3.8-27B-Q8_0.gguf"
-    "imatrix_unsloth.gguf"
   ];
 
   dwellSeconds = 30;
@@ -82,8 +81,7 @@ in {
       ${pkgs.python3Packages.huggingface-hub}/bin/hf download ${qwenRepo} \
         --token "$HF_TOKEN" \
         --local-dir ${modelsDir} \
-        --include "Qwen3.8-27B-Q8_0.gguf" \
-        --include "imatrix_unsloth.gguf"
+        --include "Qwen3.8-27B-Q8_0.gguf"
       status=$?
       if [ "$status" != "0" ]; then
         echo "llamacpp-qwen: hf download failed with status $status" >&2

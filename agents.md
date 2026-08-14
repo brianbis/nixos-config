@@ -184,7 +184,18 @@ Monitor config and scripts for display discovery, kscreen backend, sddm-kwin bac
 
 ## Home modules
 ### home/default.nix
-Home Manager for user `b`. Imports packages, plasma, firefox, sts, llm, plasma-manager.
+Home Manager for user `b`. Imports packages, plasma, firefox, sts, llm, plasma-manager. Defines XDG desktop entries for Sidra and Spectacle with Keywords for KRunner searchability (e.g., Sidra keywords apple/itunes, Spectacle keyword `sn`).
+
+To add a KRunner search alias, create an `xdg.desktopEntries.<name>` in `home/default.nix` with `settings.Keywords = "alias1;alias2;..."`. The desktop entry is written to `~/.local/share/applications` and makes the app searchable by those keywords in KRunner. Example used for Spectacle:
+```nix
+xdg.desktopEntries.spectacle = {
+  name = "Spectacle";
+  exec = "spectacle";
+  icon = "spectacle";
+  type = "Application";
+  settings = { Keywords = "sn;screenshot;screen capture;spectacle"; };
+};
+```
 
 ### home/packages.nix
 User packages, custom derivations like fluent-oled.
