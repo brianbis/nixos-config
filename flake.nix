@@ -56,7 +56,7 @@
 
     # package.nix uses deprecated/removed xorg.libX11-style names.
     # Build the package locally from the patched copy instead.
-    hushmic = pkgs.callPackage ./packages/hushmic/package.nix { };
+    hushmic = pkgs.callPackage ./hosts/desktop/hushmic.nix { };
 
     # pkgs with headroom overlay for agents-md.
     agentsPkgs = import nixpkgs {
@@ -65,14 +65,14 @@
       overlays = [
         (final: prev: {
           headroom =
-            final.python3.pkgs.callPackage ./packages/headroom.nix {
+            final.python3.pkgs.callPackage ./home/llm/headroom.nix {
               python = final.python3;
             };
 
           python3 = prev.python3.override {
             packageOverrides = pyfinal: pyprev: {
               headroom =
-                pyfinal.callPackage ./packages/headroom.nix {
+                pyfinal.callPackage ./home/llm/headroom.nix {
                   python = pyfinal;
                 };
             };
@@ -115,14 +115,14 @@
               python3 = prev.python3.override {
                 packageOverrides = pyfinal: pyprev: {
                   ast-grep-cli =
-                    pyfinal.callPackage ./packages/ast-grep-cli.nix {
+                    pyfinal.callPackage ./home/llm/ast-grep-cli.nix {
                       ast-grep = prev.ast-grep;
                     };
                 };
               };
 
               headroom =
-                final.python3.pkgs.callPackage ./packages/headroom.nix {
+                final.python3.pkgs.callPackage ./home/llm/headroom.nix {
                   python = final.python3;
                 };
             })
@@ -130,8 +130,6 @@
             # Muse-Glimmer needs llama.cpp b10353+ (architecture merge 2026-08-10).
             # The nixpkgs pin here (2026-07-26) ships b10273, which refuses to load
             # the muse-glimmer GGUF ("architecture muse-glimmer not registered").
-            # Override llama-cpp to build from a llama.cpp master tag that includes
-            # the merge, with CUDA enabled for the RTX 5090.
             (final: prev: {
               llama-cpp = (prev.llama-cpp.override {
                 cudaSupport = true;

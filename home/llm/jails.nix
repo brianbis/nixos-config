@@ -82,7 +82,7 @@ let
     # the context window, usable by any jailed agent (in nixpkgs).
     rtk
     # headroom: context optimization layer that compresses everything an agent
-    # reads. Not in nixpkgs / llm-agents; built from ./packages/headroom.nix.
+    # reads. Not in nixpkgs / llm-agents; built from ./home/llm/headroom.nix.
     headroom
 
     # Nix CLI so jailed agents can search nixpkgs (`nix search nixpkgs <term>`)
