@@ -27,6 +27,12 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # iMessage client via Bluetooth MAP/PBAP
+    imsg = {
+      url = "path:./home/imsg";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # Jailed LLM tooling
     jail-nix.url = "sourcehut:~alexdavid/jail.nix";
     llm-agents.url = "github:numtide/llm-agents.nix";
@@ -85,10 +91,14 @@
     formatter.${system} =
       nixpkgs.legacyPackages.${system}.nixfmt-rfc-style;
 
-    packages.${system}.agents-md =
-      agentsPkgs.callPackage ./home/llm/agents-gen/agents-md.nix {
-        inherit jail-nix llm-agents;
-      };
+    packages.${system} = {
+      agents-md =
+        agentsPkgs.callPackage ./home/llm/agents-gen/agents-md.nix {
+          inherit jail-nix llm-agents;
+        };
+
+      imsg = inputs.imsg.packages.${system}.default;
+    };
 
     nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
       inherit system;

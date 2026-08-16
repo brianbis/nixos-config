@@ -182,6 +182,22 @@
         "type": "github"
       }
     },
+    "imsg": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "path": "./home/imsg",
+        "type": "path"
+      },
+      "original": {
+        "path": "./home/imsg",
+        "type": "path"
+      },
+      "parent": []
+    },
     "jail-nix": {
       "locked": {
         "lastModified": 1776230864,
@@ -311,6 +327,7 @@
       "inputs": {
         "agenix": "agenix",
         "home-manager": "home-manager_2",
+        "imsg": "imsg",
         "jail-nix": "jail-nix",
         "llm-agents": "llm-agents",
         "nixpkgs": "nixpkgs_2",

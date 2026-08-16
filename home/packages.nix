@@ -13,8 +13,6 @@ let
       hash = "sha256-WsbG1k0D6h8XecuEojRM9KfamkuJpKThqK1AYQrCa94=";
     };
 
-    dontBuild = true;
-
     installPhase = ''
       mkdir -p $out/share/vscode/extensions/fermeridamagni.fluent-oled
       cp -r . $out/share/vscode/extensions/fermeridamagni.fluent-oled/
@@ -41,8 +39,6 @@ let
       rev = "1d26f139a6ff4ce22ca18faabc3d2596513470ac";
       hash = "sha256-TAElWtpoiZmMRUUc+TADezwlNuX5AGnqe2Qn+fB2qy8=";
     };
-
-    dontBuild = true;
 
     installPhase = ''
       mkdir -p $out/share/vscode/extensions/jnoortheen.nix-ide
@@ -88,6 +84,7 @@ let
 
   home.packages = with pkgs; [
     inputs.sidra.packages.${pkgs.system}.default
+    inputs.imsg.packages.${pkgs.system}.default
     foot
     ghostty
     fuzzel
