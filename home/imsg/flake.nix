@@ -39,9 +39,9 @@
             pkg-config
             nodejs
             cargo-tauri
-            wrapGAppsHook3 # Sets up GTK schemas and environments
+            wrapGAppsHook3
             makeWrapper
-            addDriverRunpath # <-- The magic bullet for NixOS OpenGL/GBM
+            addDriverRunpath
             npmHooks.npmConfigHook
             npmHooks.npmInstallHook
           ];
@@ -52,65 +52,41 @@
             openssl
             gtk3
             glib
+            glib-networking
             libsoup_3
             webkitgtk_4_1
+            cairo
+            gdk-pixbuf
+            librsvg
+            atk
+            at-spi2-core
           ];
 
           postPatch = ''
             cp crates/imsg-gui/frontend/package-lock.json ./package-lock.json
-            
-            # Optional: If the window is still invisible, uncomment the following line
-            # to force-disable transparency in Tauri, which bypasses the WebKit alpha bug:
-            # sed -i 's/"transparent": true/"transparent": false/g' crates/imsg-gui/tauri.conf.json
+            cargo run --offline --example export_bindings -p imsg-gui
           '';
 
           npmDeps = npmDeps;
           dontNpmBuild = true;
 
-          preBuild = ''
-            cargo run --offline --example export_bindings -p imsg-gui
-          '';
-
           buildPhase = ''
-            runHook preBuild
-
             cargo build --release --locked --offline -p imsg
-
-            cd crates/imsg-gui
-            npm run build --prefix frontend
+            pushd crates/imsg-gui > /dev/null
             cargo tauri build --no-bundle
-            cd ../..
-
+            popd > /dev/null
             runHook postBuild
           '';
 
           installPhase = ''
             runHook preInstall
-
-            mkdir -p $out/bin
-
-            gui_bin=$(find "$NIX_BUILD_TOP/source/target" -type f -name imsg-gui -executable -print -quit)
-            cli_bin=$(find "$NIX_BUILD_TOP/source/target" -type f -name imsg -executable -print -quit)
-
-            if [ -z "$gui_bin" ] || [ -z "$cli_bin" ]; then
-              echo "ERROR: Executables not found."
-              exit 1
-            fi
-
-            cp "$gui_bin" "$out/bin/imsg-gui"
-            cp "$cli_bin" "$out/bin/imsg"
-
+            install -Dm755 target/release/imsg-gui $out/bin/imsg-gui
+            install -Dm755 target/release/imsg $out/bin/imsg
             runHook postInstall
           '';
 
           postFixup = ''
-            # 1. Patch the binary to look for graphics drivers in the active system path
-            # This fixes the "Failed to create GBM buffer" and Mesa/NVIDIA clashes.
             addDriverRunpath $out/bin/imsg-gui
-
-            # 2. Wrap the binary to disable the buggy DMA-BUF renderer by default
-            wrapProgram $out/bin/imsg-gui \
-              --set WEBKIT_DISABLE_DMABUF_RENDERER 1
           '';
 
           meta = {

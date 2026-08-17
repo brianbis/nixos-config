@@ -17,5 +17,6 @@
     ./vllm.nix
     ./llamacpp.nix
     ./host.nix
+    ./hushmic-scheduler.nix
   ];
 }

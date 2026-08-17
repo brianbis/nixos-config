@@ -85,16 +85,103 @@ let
       reason = true;
       attachments = true;
     };
-    qwen38 = {
+    qwen38_thinking_xhigh = {
       providerName = "llamacpp";
-      id = "qwen3-8-27b-q8_0";
-      name = "Qwen3.8-27B Q8_0 (GGUF)";
+      id = "qwen3-8-27b-q8_0-thinking-xhigh";
+      name = "Qwen3.8-27B Q8_0 Thinking Xhigh";
       url = headroomProxyUrl;
-      # Repo advertises 262144-token context.
+      # Repo advertises 262144-token context; matches the llama.cpp router's
+      # --ctx-size. The KV cache lives in system RAM (--no-kv-offload), so the
+      # full context fits alongside the ~27 GiB weights on the 32 GB card.
       context = 262144;
       maxTok = 8192;
       reason = true;
       attachments = true;
+      thinkingBudget = -1;
+    };
+
+    qwen38_thinking_medium = {
+      providerName = "llamacpp";
+      id = "qwen3-8-27b-q8_0-thinking-medium";
+      name = "Qwen3.8-27B Q8_0 Thinking Medium";
+      url = headroomProxyUrl;
+      context = 262144;
+      maxTok = 8192;
+      reason = true;
+      attachments = true;
+      thinkingBudget = -1;
+    };
+
+    qwen38_thinking_low = {
+      providerName = "llamacpp";
+      id = "qwen3-8-27b-q8_0-thinking-low";
+      name = "Qwen3.8-27B Q8_0 Thinking Low";
+      url = headroomProxyUrl;
+      context = 262144;
+      maxTok = 8192;
+      reason = true;
+      attachments = true;
+      thinkingBudget = -1;
+    };
+
+    qwen38_thinking_none = {
+      providerName = "llamacpp";
+      id = "qwen3-8-27b-q8_0-thinking-none";
+      name = "Qwen3.8-27B Q8_0 Thinking None";
+      url = headroomProxyUrl;
+      context = 262144;
+      maxTok = 8192;
+      reason = true;
+      attachments = true;
+      thinkingBudget = -1;
+    };
+
+    qwen38_instruct_xhigh = {
+      providerName = "llamacpp";
+      id = "qwen3-8-27b-q8_0-instruct-xhigh";
+      name = "Qwen3.8-27B Q8_0 Instruct Xhigh";
+      url = headroomProxyUrl;
+      context = 262144;
+      maxTok = 8192;
+      reason = true;
+      attachments = true;
+      thinkingBudget = -1;
+    };
+
+    qwen38_instruct_medium = {
+      providerName = "llamacpp";
+      id = "qwen3-8-27b-q8_0-instruct-medium";
+      name = "Qwen3.8-27B Q8_0 Instruct Medium";
+      url = headroomProxyUrl;
+      context = 262144;
+      maxTok = 8192;
+      reason = true;
+      attachments = true;
+      thinkingBudget = -1;
+    };
+
+    qwen38_instruct_low = {
+      providerName = "llamacpp";
+      id = "qwen3-8-27b-q8_0-instruct-low";
+      name = "Qwen3.8-27B Q8_0 Instruct Low";
+      url = headroomProxyUrl;
+      context = 262144;
+      maxTok = 8192;
+      reason = true;
+      attachments = true;
+      thinkingBudget = -1;
+    };
+
+    qwen38_instruct_none = {
+      providerName = "llamacpp";
+      id = "qwen3-8-27b-q8_0-instruct-none";
+      name = "Qwen3.8-27B Q8_0 Instruct None";
+      url = headroomProxyUrl;
+      context = 262144;
+      maxTok = 8192;
+      reason = true;
+      attachments = true;
+      thinkingBudget = -1;
     };
     deepseekPro = {
       providerName = "deepseek";
@@ -276,6 +363,8 @@ let
         base_url = "${m.url}/v1";
         api_key = p.api_key;
         models = (acc.${m.providerName}.models or []) ++ [ (crushModelEntry m) ];
+      } // lib.optionalAttrs (m.providerName == "llamacpp" && m ? thinkingBudget) {
+        extra_body = { thinking_budget_tokens = m.thinkingBudget; };
       };
     }) { } allModels;
 

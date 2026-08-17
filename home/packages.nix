@@ -145,4 +145,18 @@ let
   xdg.dataFile."konsole/OLED.colorscheme".source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/konsole/OLED.colorscheme";
 
 xdg.dataFile."konsole/OLED.profile".source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/konsole/OLED.profile";
+
+  xdg.desktopEntries.imsg-gui = {
+    name = "imsg";
+    genericName = "iMessage client";
+    exec = "env WEBKIT_DISABLE_DMABUF_RENDERER=1 imsg-gui";
+    icon = "imsg";
+    categories = [ "Network" "InstantMessaging" ];
+    terminal = false;
+    settings = {
+      Keywords = "phone link;imessage;phone;iphone";
+    };
+  };
+
+  home.sessionVariables.WEBKIT_DISABLE_DMABUF_RENDERER = "1";
 }

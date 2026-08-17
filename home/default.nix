@@ -11,6 +11,7 @@
     ./sidra.nix
     ./spectacle.nix
     ./dotfiles.nix
+    ./minuspod.nix
     plasma-manager.homeModules.plasma-manager
   ];
 

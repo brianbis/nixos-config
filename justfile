@@ -36,11 +36,9 @@ auto-stage:
 
 # NixOS build & rebuild
 switch:
-    sudo rm -f result result-*
     just auto-stage
     sudo nix build --no-link .#agents-md --print-out-paths | xargs -I{} sudo cp {} agents.md
     sudo nixos-rebuild switch --flake .
-    sudo rm -f result result-*
 
 build:
     just auto-stage
