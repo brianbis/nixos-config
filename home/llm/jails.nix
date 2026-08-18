@@ -130,13 +130,14 @@ let
   ] ++ [ (readonly "/run/agenix/deepseek-api-key") ] ++ lspAdds;
 
   # Common libs/CLI tools injected into every jail.
-  mkToolJail = { name, pkg, dirs, system }:
+  mkToolJail = { name, pkg, dirs, system, systemExtraPkgs ? [ ], systemExtraMounts ? [ ] }:
     jail "jailed-${name}${if system then "-system" else ""}"
       pkg
       (with jail.combinators;
         baseJailOptions system ++
         dirs ++
-        [ (add-pkg-deps commonPkgs) ]);
+        [ (add-pkg-deps (commonPkgs ++ (if system then systemExtraPkgs else [ ]))) ]
+        ++ (if system then systemExtraMounts else [ ]));
 
   # Per-tool read/write dirs. Paths are absolute under userHome because
   # us-and-sudo must see identical mounts; a runtime ~ would diverge (sudo
@@ -207,14 +208,15 @@ let
   });
 
   # Build a (user, system) jail pair for a tool.
-  # tool = { name, pkg, dirs, systemDirs ? [ ] }
+  # tool = { name, pkg, dirs, systemDirs ? [ ], systemExtraPkgs ? [ ], systemExtraMounts ? [ ] }
+  # systemExtra* apply only to the root-run system variant.
   # When systemDirs is given it replaces the user's home dirs (so bwrap-as-root
   # never has to traverse $HOME, which is 700); otherwise the system variant
   # reuses the same dirs as the user variant.
-  makeTool = { name, pkg, dirs, systemDirs ? [ ] }:
+  makeTool = { name, pkg, dirs, systemDirs ? [ ], systemExtraPkgs ? [ ], systemExtraMounts ? [ ] }:
     [
       (mkToolJail { inherit name pkg dirs; system = false; })
-      (mkToolJail { inherit name pkg; dirs = if systemDirs == [ ] then dirs else systemDirs; system = true; })
+      (mkToolJail { inherit name pkg systemExtraPkgs systemExtraMounts; dirs = if systemDirs == [ ] then dirs else systemDirs; system = true; })
     ];
 
   jails =
@@ -225,6 +227,15 @@ let
          pkg = withDeepSeekKey crushUnbanned "crush";
          dirs = crushDirs;
          systemDirs = systemCrushDirs;
+         # Debug tooling for the system jail: pgrep/pidof, the PipeWire and
+         # WirePlumber CLIs (pw-top, pw-dump, wpctl) for inspecting audio
+         # stream state, plus read-only /sys (cpufreq governor) and /run/user
+         # (session PipeWire socket, reachable as root).
+         systemExtraPkgs = with pkgs; [ procps pipewire wireplumber ];
+         systemExtraMounts = with jail.combinators; [
+           (readonly "/sys")
+           (readonly "/run/user")
+         ];
        }
     ++ makeTool { name = "opencode"; pkg = withDeepSeekKey (agent "opencode") "opencode"; dirs = opencodeDirs; }
     # NOTE: claude-code bundles its own bubblewrap bash sandbox (the

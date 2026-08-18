@@ -116,9 +116,9 @@ in {
         "--port" (toString childPort)
         "--max-context" "80000"
         "--kv-capacity" "auto"
-        "--max-concurrency" "2"
-        "--spec" "mtp"
-        "--draft-tokens" "3"
+        "--max-concurrency" "1"
+        #"--spec" "mtp"
+        #"--draft-tokens" "3"
         "--lm-head-draft"
         "--request-log-jsonl" requestLog
       ];

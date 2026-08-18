@@ -201,6 +201,7 @@ async def relay(c_reader, c_writer, h_reader, h_writer, buffered, state):
                 data = await h_reader.read(65536)
                 if not data:
                     return
+                state.last_rx = time.monotonic()
                 c_writer.write(data)
                 await c_writer.drain()
 
