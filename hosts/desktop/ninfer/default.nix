@@ -117,8 +117,8 @@ in {
         "--max-context" "80000"
         "--kv-capacity" "auto"
         "--max-concurrency" "1"
-        #"--spec" "mtp"
-        #"--draft-tokens" "3"
+        "--spec" "mtp"
+        "--draft-tokens" "3"
         "--lm-head-draft"
         "--request-log-jsonl" requestLog
       ];
