@@ -120,6 +120,11 @@ in {
         "--spec" "mtp"
         "--draft-tokens" "3"
         "--lm-head-draft"
+        "--no-thinking"
+        "--temperature" "0.7"
+        "--top-p" "0.8"
+        "--top-k" "20"
+        "--presence-penalty" "1.5"
         "--request-log-jsonl" requestLog
       ];
 
