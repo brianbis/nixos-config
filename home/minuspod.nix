@@ -51,6 +51,12 @@ let
   #    inline-snapshot, ...) is flaky/broken on python 3.12 at this nixpkgs pin;
   #    MinusPod only needs the library, so skip its tests.
   #  - inline-snapshot: drops the docs test that breaks on python 3.12 here.
+  #
+  # Both omissions exist because these packages build inside Nix's sandboxed
+  # build environment (sandboxing/safety enabled): their tests need network
+  # access and/or write outside $out, which the sandbox blocks, so they can
+  # never pass in a hermetic build. MinusPod only consumes the libraries at
+  # runtime; correctness is verified there instead.
   minuspodPython = pkgs.python312.override {
     packageOverrides = self: super: {
       ctranslate2 = super.ctranslate2.override {

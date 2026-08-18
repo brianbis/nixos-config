@@ -183,6 +183,29 @@ let
       attachments = true;
       thinkingBudget = -1;
     };
+
+    qwen38heretic_q6k = {
+      providerName = "llamacpp";
+      id = "qwen3-8-27b-heretic-q6_k";
+      name = "Qwen3.8-27B Heretic RVN Abliterated Uncensored Q6_K";
+      url = headroomProxyUrl;
+      # RVN-Q6_K.gguf is ~20.6 GiB; like the base Qwen it keeps KV in system
+      # RAM (no-kv-offload) so the full 262K context fits on the 32 GB card.
+      context = 131072;
+      maxTok = 80000;
+      reason = true;
+      attachments = true;
+    };
+    qwen38_nvfp4_ninfer = {
+      providerName = "ninfer";
+      id = "qwen3.8-27b";
+      name = "Qwen3.8-27B NVFP4 NInfer";
+      url = "http://127.0.0.1:8080";
+      context = 131072;
+      maxTok = 8192;
+      reason = true;
+      attachments = false;
+    };
     deepseekPro = {
       providerName = "deepseek";
       id = "deepseek-v4-pro";
@@ -215,6 +238,9 @@ let
     vllm_nvfp4.name = "vLLM NVFP4 (local)";
     vllm_nvfp4.type = "openai-compat";
     vllm_nvfp4.api_key = "sk-local";
+    ninfer.name = "NInfer (local)";
+    ninfer.type = "openai-compat";
+    ninfer.api_key = "sk-local";
     deepseek.name = "DeepSeek";
     deepseek.type = "openai-compat";
     deepseek.api_key = "sk-local";

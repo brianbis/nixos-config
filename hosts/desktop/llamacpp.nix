@@ -35,6 +35,14 @@ let
     "Qwen3.8-27B-Q8_0.gguf"
   ];
 
+  # Qwen3.8-27B Heretic RVN (ARA abliterated / uncensored) is also a single-file
+  # text model, so it lives flat in modelsDir beside the base Qwen. The :Q6_K
+  # quant ships under the repo's RVN- filename prefix (~20.6 GiB).
+  hereticRepo = "0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF";
+  hereticIncludes = [
+    "RVN-Q6_K.gguf"
+  ];
+
   # Build the activation script fragment that downloads one repo's include
   # files into a dir, only when a file is missing. Idempotent across switches.
   download = name: repo: dir: includes: ''
@@ -76,6 +84,10 @@ let
   #    forces KV into RAM (no-kv-offload): its ~27 GiB Q8_0 weights nearly fill
   #    the 32 GB card, so GPU KV OOMs at any real context. This keeps Glimmer's
   #    KV on the GPU, which previously had to be sacrificed for Qwen.
+  #  - [qwen3-8-27b-q8_0-instruct-*] same weights, instruct-style sampling.
+  #  - [qwen3-8-27b-heretic-q6_k] registers the abliterated RVN Q6_K under the
+  #    catalog's model id; same no-kv-offload treatment as the base Qwen (its
+  #    ~20.6 GiB weights + full-context GPU KV would OOM the 32 GB card).
   modelsPreset = pkgs.writeText "llamacpp-models-preset.ini" ''
     version = 1
 
@@ -176,6 +188,14 @@ let
     presence-penalty = 1.5
     chat-template-kwargs = {"reasoning_effort":"none"}
 
+    [qwen3-8-27b-heretic-q6_k]
+    model = ${modelsDir}/RVN-Q6_K.gguf
+    ctx-size = 131072
+    top-k = 20
+    temp = 1.0
+    top-p = 0.95
+    presence-penalty = 0.0
+    chat-template-kwargs = {"reasoning_effort":"xhigh"}
   '';
 
   dwellSeconds = 30;
@@ -186,6 +206,8 @@ in {
   system.activationScripts.museModels.text = download "llamacpp-muse" museRepo museDir museIncludes;
 
   system.activationScripts.qwenModels.text = download "llamacpp-qwen" qwenRepo modelsDir qwenIncludes;
+
+  system.activationScripts.hereticModel.text = download "llamacpp-heretic" hereticRepo modelsDir hereticIncludes;
 
   system.activationScripts.dflashModel.text = download "llamacpp-dflash" draftRepo draftDir draftIncludes;
 
@@ -200,7 +222,7 @@ in {
   # drafter and renames the Qwen id to match the model catalog. The headroom
   # proxy upstreams requests here.
   systemd.services.llamacpp-muse = {
-    description = "llama.cpp router (Muse-Glimmer-30B, Qwen3.8-27B)";
+    description = "llama.cpp router (Muse-Glimmer-30B, Qwen3.8-27B, Heretic-RVN)";
     # Auto-starts at boot, stays online. Models sleep after idle to free VRAM.
     wantedBy = [ "multi-user.target" ];
     requires = [ "network-online.target" ];

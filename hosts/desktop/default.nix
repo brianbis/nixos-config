@@ -16,6 +16,7 @@
     ./steam.nix
     ./vllm.nix
     ./llamacpp.nix
+    ./ninfer
     ./host.nix
     ./hushmic-scheduler.nix
   ];
