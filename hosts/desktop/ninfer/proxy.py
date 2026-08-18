@@ -143,6 +143,7 @@ async def ensure_child(state):
             started = time.monotonic()
             proc = subprocess.Popen(args.child_command)
             state.child = proc
+            state.last_rx = time.monotonic()
             ready = False
             while time.monotonic() < deadline:
                 rc = proc.poll()
@@ -319,6 +320,8 @@ async def watchdog(state):
             close_conns(state)
             continue
         if state.in_flight:
+            continue
+        if not state.child_ready:
             continue
         idle = time.monotonic() - state.last_rx
         if idle >= state.args.idle_seconds:
