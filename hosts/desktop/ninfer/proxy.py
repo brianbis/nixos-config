@@ -108,6 +108,9 @@ class RuntimeState:
         default_factory=set
     )
 
+    # Number of active client handlers currently being processed.
+    active_handlers: int = 0
+
     # One lock governs every child lifecycle transition.
     lifecycle_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
@@ -335,7 +338,16 @@ async def unload_child(
         # Re-check all conditions while holding the lifecycle lock.
         if state.in_flight:
             return
-
+        if state.active_handlers:
+            return
+        # The request log is authoritative for server-side request state, but
+        # the proxy also knows something the log cannot reliably express:
+        # there is an active client <-> child streaming connection.
+        #
+        # Never unload while a relay exists. This covers long model "thinking"
+        # periods where neither side is transferring bytes.
+        if state.connections:
+            return
         idle = time.monotonic() - state.last_client_activity
 
         if idle < state.args.idle_seconds:
@@ -480,10 +492,16 @@ async def relay(
     state: RuntimeState,
 ) -> None:
     """
-    Bidirectional byte relay.
+    Bidirectional streaming relay.
 
-    The connection is deliberately one-request-per-connection. We close both
-    sides as soon as either direction reaches EOF.
+    The two directions have independent lifetimes.
+
+    In particular, EOF from the client does NOT mean the response is done.
+    A client can finish uploading its request while the model continues
+    streaming a response.
+
+    The connection is closed once both directions have completed, or if
+    either side encounters an actual I/O failure.
     """
 
     pair = (client_writer, child_writer)
@@ -492,55 +510,83 @@ async def relay(
     try:
         state.last_client_activity = time.monotonic()
 
+        # read_headers() may have consumed bytes belonging to the request
+        # body. Those bytes are included in initial_request by the caller.
         child_writer.write(initial_request)
         await child_writer.drain()
 
         async def client_to_child() -> None:
-            while True:
-                data = await client_reader.read(READ_CHUNK)
+            try:
+                while True:
+                    data = await client_reader.read(READ_CHUNK)
 
-                if not data:
-                    return
+                    if not data:
+                        # The client has finished sending its request.
+                        #
+                        # Do NOT tear down the child->client direction.
+                        # Half-close the child's write side if supported.
+                        transport = child_writer.transport
 
-                state.last_client_activity = time.monotonic()
+                        if transport is not None:
+                            with contextlib.suppress(Exception):
+                                transport.write_eof()
 
-                child_writer.write(data)
-                await child_writer.drain()
+                        return
+
+                    state.last_client_activity = time.monotonic()
+
+                    child_writer.write(data)
+                    await child_writer.drain()
+
+            except (ConnectionError, asyncio.IncompleteReadError):
+                return
 
         async def child_to_client() -> None:
-            while True:
-                data = await child_reader.read(READ_CHUNK)
+            try:
+                while True:
+                    data = await child_reader.read(READ_CHUNK)
 
-                if not data:
-                    return
+                    if not data:
+                        return
 
-                client_writer.write(data)
-                await client_writer.drain()
+                    client_writer.write(data)
+                    await client_writer.drain()
 
-        tasks = {
-            asyncio.create_task(client_to_child()),
-            asyncio.create_task(child_to_client()),
-        }
+            except (ConnectionError, asyncio.IncompleteReadError):
+                return
 
-        done, pending = await asyncio.wait(
-            tasks,
-            return_when=asyncio.FIRST_COMPLETED,
+        upload_task = asyncio.create_task(
+            client_to_child(),
+            name="client-to-child",
         )
 
-        for task in pending:
-            task.cancel()
-
-        await asyncio.gather(
-            *pending,
-            return_exceptions=True,
+        download_task = asyncio.create_task(
+            child_to_client(),
+            name="child-to-client",
         )
 
-        # Surface exceptions from the completed task.
-        for task in done:
-            exception = task.exception()
+        try:
+            # IMPORTANT:
+            #
+            # Do not use FIRST_COMPLETED here.
+            #
+            # The client upload can finish while the child continues
+            # streaming the response.
+            await asyncio.gather(
+                upload_task,
+                download_task,
+            )
 
-            if exception is not None:
-                raise exception
+        finally:
+            for task in (upload_task, download_task):
+                if not task.done():
+                    task.cancel()
+
+            await asyncio.gather(
+                upload_task,
+                download_task,
+                return_exceptions=True,
+            )
 
     finally:
         state.connections.discard(pair)
@@ -549,7 +595,8 @@ async def relay(
             writer.close()
 
         await asyncio.gather(
-            *(writer.wait_closed() for writer in (client_writer, child_writer)),
+            client_writer.wait_closed(),
+            child_writer.wait_closed(),
             return_exceptions=True,
         )
 
@@ -604,6 +651,7 @@ async def handle_client(
 
         # Any non-health request is real client activity.
         state.last_client_activity = time.monotonic()
+        state.active_handlers += 1
 
         try:
             await ensure_child(state)
@@ -707,6 +755,8 @@ async def handle_client(
         )
 
     finally:
+        if state.active_handlers > 0:
+            state.active_handlers -= 1
         writer.close()
 
         with contextlib.suppress(Exception):
@@ -874,7 +924,12 @@ async def watchdog(
 
         if state.in_flight:
             continue
-
+        if state.active_handlers:
+            continue
+        # A live relay means the child is servicing a client, even if there
+        # has been no socket activity for a long time.
+        if state.connections:
+            continue
         idle = time.monotonic() - state.last_client_activity
 
         if idle < state.args.idle_seconds:
