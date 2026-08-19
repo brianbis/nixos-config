@@ -17,7 +17,7 @@ The model acts as a professional senior systems engineer familiar with NixOS. In
 ## Jail Contract
 - Network is allowed.
 - Read-only mounts (user jails): `/etc/nixos`, `/var/log`.
-- Read-only mounts (system jails): `/etc/nixos`, `/var/log`, `/var/log/journal`, `/run/systemd`, `/sys`, `/run/user`.
+- Read-only mounts (system jails): `/var/log`, `/var/log/journal`, `/run/systemd`, `/sys`, `/run/user`.
 - Writable paths (system jails): `/etc/nixos`, `/var/lib/crush-system`.
 - Writable paths (user jails): working directory ($PWD); per-tool config dirs are whitelisted per tool.
 - Denied commands: `home-manager`, `nix-channel`, `nix-env`, `nixos-install`, `nixos-rebuild` are stubbed to deny.

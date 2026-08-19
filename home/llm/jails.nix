@@ -137,10 +137,9 @@ let
   # - secretMounts: sensitive paths (agenix secrets) that must NOT be named
   #   in the generated doc; they are attached by the justfile after the
   #   declarative build step.
-  baseMounts = system: [ "/etc/nixos" "/var/log" ] ++ (if system then [
-    "/var/log/journal"
-    "/run/systemd"
-  ] else [ ]) ++ (if system then [ "/sys" "/run/user" ] else [ ]);
+  baseMounts = system: (lib.optional (!system) "/etc/nixos") ++ [ "/var/log" ]
+    ++ (if system then [ "/var/log/journal" "/run/systemd" ] else [ ])
+    ++ (if system then [ "/sys" "/run/user" ] else [ ]);
 
   # agenix secret file(s) mounted read-only into every jail. Kept out of
   # baseMounts on purpose: naming the secret path in agents.md would leak

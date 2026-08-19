@@ -114,17 +114,16 @@ in {
         "${modelsDir}/${ninferModelFile}"
         "--host" "127.0.0.1"
         "--port" (toString childPort)
-        "--max-context" "80000"
-        "--kv-capacity" "auto"
+        "--kv-dtype" "int8"
+        "--max-context" "210000"
+        "--default-max-tokens" "81920"
+        "--pending-timeout-ms" "900000"
+        "--prefill-chunk" "1024"
         "--max-concurrency" "1"
+        "--max-pending-requests" "6"
         "--spec" "mtp"
         "--draft-tokens" "3"
         "--lm-head-draft"
-        "--no-thinking"
-        "--temperature" "0.7"
-        "--top-p" "0.8"
-        "--top-k" "20"
-        "--presence-penalty" "1.5"
         "--request-log-jsonl" requestLog
       ];
 

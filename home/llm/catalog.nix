@@ -201,8 +201,8 @@ let
       id = "qwen3.8-27b";
       name = "Qwen3.8-27B NVFP4 NInfer";
       url = "http://127.0.0.1:8080";
-      context = 80000;
-      maxTok = 65536;
+      context = 210000;
+      maxTok = 81920;
       reason = true;
       attachments = false;
     };
