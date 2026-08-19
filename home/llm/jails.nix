@@ -69,6 +69,10 @@ let
     findutils
     gzip
     unzip
+    # Read-only host journal access for system jails: unit states, linger
+    # activation, core-pin guard warnings. The binary is present in all
+    # jails but only works in system jails (user jails lack /run/systemd).
+    systemd
     gnutar
     diffutils
     strace
@@ -127,7 +131,14 @@ let
     (set-env "NIX_CONFIG"
       "experimental-features = nix-command flakes")
     (set-env "NIXPKGS" pkgs.path)
-  ] ++ [ (readonly "/run/agenix/deepseek-api-key") ] ++ lspAdds;
+  ] ++ [ (readonly "/run/agenix/deepseek-api-key") ]
+    # Read-only host log access so system jails can inspect service state
+    # (e.g. /var/log/hushmic probe ring) without a dedicated mount per unit.
+    ++ [ (readonly "/var/log") ]
+    # journalctl needs the journal + systemd runtime dir. System jails only:
+    # user jails have no /run/systemd and the binary would be useless there.
+    ++ (if system then [ (readonly "/var/log/journal") (readonly "/run/systemd") ] else [ ])
+    ++ lspAdds;
 
   # Common libs/CLI tools injected into every jail.
   mkToolJail = { name, pkg, dirs, system, systemExtraPkgs ? [ ], systemExtraMounts ? [ ] }:
@@ -214,15 +225,18 @@ let
   # never has to traverse $HOME, which is 700); otherwise the system variant
   # reuses the same dirs as the user variant.
   makeTool = { name, pkg, dirs, systemDirs ? [ ], systemExtraPkgs ? [ ], systemExtraMounts ? [ ] }:
-    [
-      (mkToolJail { inherit name pkg dirs; system = false; })
-      (mkToolJail { inherit name pkg systemExtraPkgs systemExtraMounts; dirs = if systemDirs == [ ] then dirs else systemDirs; system = true; })
-    ];
+    let
+      userJail = mkToolJail { inherit name pkg dirs; system = false; };
+      systemJail = mkToolJail { inherit name pkg systemExtraPkgs systemExtraMounts; dirs = if systemDirs == [ ] then dirs else systemDirs; system = true; };
+    in {
+      "${name}-jail" = userJail;
+      "${name}-jail-system" = systemJail;
+    };
 
-  jails =
-    makeTool { name = "aider"; pkg = pkgs.aider-chat; dirs = aiderDirs;
-               systemDirs = [ (with jail.combinators; (readonly deepseekSecret)) ]; }
-    ++ makeTool {
+  jailsByTool =
+    (makeTool { name = "aider"; pkg = pkgs.aider-chat; dirs = aiderDirs;
+                systemDirs = [ (with jail.combinators; (readonly deepseekSecret)) ]; })
+    // (makeTool {
          name = "crush";
          pkg = withDeepSeekKey crushUnbanned "crush";
          dirs = crushDirs;
@@ -236,19 +250,29 @@ let
            (readonly "/sys")
            (readonly "/run/user")
          ];
-       }
-    ++ makeTool { name = "opencode"; pkg = withDeepSeekKey (agent "opencode") "opencode"; dirs = opencodeDirs; }
-    # NOTE: claude-code bundles its own bubblewrap bash sandbox (the
-    # llm-agents package adds bwrap+socat to PATH). Nested bwrap can fail
-    # inside our jail; if Claude's sandbox errors, disable it via settings.
-    ++ makeTool {
+       })
+    // (makeTool { name = "opencode"; pkg = withDeepSeekKey (agent "opencode") "opencode"; dirs = opencodeDirs; })
+    // (makeTool {
          name = "claude";
          pkg = agent "claude-code";
          dirs = claudeDirs;
          systemDirs = systemClaudeDirs;
-       };
+       });
+
+  # Flat list of all jail packages (home.packages expects a list).
+  jails = builtins.attrValues jailsByTool;
+
+  # Short aliases for the crush jail pair: `jc` (user) and `jcs` (system,
+  # run via sudo so it can read/write /etc/nixos). Wrappers exec the actual
+  # jail binaries from `jailsByTool`, so they always track the real packages.
+  jc = pkgs.writeShellScriptBin "jc" ''
+    exec ${jailsByTool."crush-jail"}/bin/jailed-crush "$@"
+  '';
+  jcs = pkgs.writeShellScriptBin "jcs" ''
+    exec sudo ${jailsByTool."crush-jail-system"}/bin/jailed-crush-system "$@"
+  '';
 
 in
 {
-  inherit jails headroomDeepseekWrapper commonPkgs;
+  inherit jails headroomDeepseekWrapper commonPkgs jc jcs;
 }

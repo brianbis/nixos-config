@@ -257,6 +257,13 @@ let
       args = [ "--stdio" ];
       fileTypes = [ "nix" ];
       rootMarkers = [ "flake.nix" "shell.nix" "default.nix" ];
+      # probe.sh sits next to .nix files and crush opens it in this workspace;
+      # without this exclusion nil parses it as Nix and floods diagnostics.
+      initOptions = {
+        nil = {
+          diagnostics.excludedFiles = [ "hosts/desktop/hushmic/probe.sh" ];
+        };
+      };
     };
     go = {
       pkg = gopls;
@@ -350,7 +357,9 @@ let
       inherit (entry) command;
       file_types = entry.fileTypes;
       root_markers = entry.rootMarkers;
-    } // lib.optionalAttrs (entry ? args) { inherit (entry) args; }))
+    }
+    // lib.optionalAttrs (entry ? args) { inherit (entry) args; }
+    // lib.optionalAttrs (entry ? initOptions) { init_options = entry.initOptions; }))
     (lib.filterAttrs (lang: _: builtins.elem lang toolLsps) lsps);
 
   # Convenience: every catalog model, and model lists filtered by upstream.

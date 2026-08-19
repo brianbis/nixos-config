@@ -22,7 +22,7 @@ let
   };
 in
 {
-  home.packages = jail-config.jails;
+  home.packages = jail-config.jails ++ [ jail-config.jc jail-config.jcs ];
 
   # Ensure the jailed agents' writable dirs exist as tracked empty files so
   # home-manager creates the parent directories for us (bubblewrap mount points).

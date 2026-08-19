@@ -47,6 +47,8 @@ let
     # Pattern via file so the watcher's own argv never carries it (which made
     # find-based scans self-match and pinned the governor to performance).
     sp=/var/log/hushmic/steam-pattern
+    # /var/log/hushmic is created by hushmic-probe's LogsDirectory; mkdir -p
+    # only covers the brief window before that unit has started at boot.
     mkdir -p /var/log/hushmic
     printf '%s\n' 'steamapps/common/|steamapps/compatdata/|compatdata/[0-9]+/.*\.(exe|EXE)|wine(64|32)' > "$sp.tmp"
     mv -f "$sp.tmp" "$sp"

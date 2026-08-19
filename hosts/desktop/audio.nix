@@ -121,10 +121,9 @@
   # on exit it restores the previous default input and reaps its filter-chain.
   systemd.user.services.hushmic = {
     description = "HushMic real-time microphone noise suppression (headless)";
-    wantedBy = [ "default.target" ];
-    after = [ "graphical-session-pre.target" "pipewire.service" ];
+    wantedBy = [ "basic.target" ];
+    after = [ "pipewire.service" ];
     wants = [ "pipewire.service" ];
-    partOf = [ "graphical-session.target" ];
 
       serviceConfig = {
         Type = "simple";
