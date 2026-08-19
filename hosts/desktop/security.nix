@@ -43,6 +43,11 @@ in
           owner = "root";
           group = "llm";
           mode = "0440";
+        } else if file == "imsg-mac.age" then {
+          file = "${secretsDir}/${file}";
+          owner = "b";
+          group = "users";
+          mode = "0400";
         } else {
           file = "${secretsDir}/${file}";
           owner = "root";

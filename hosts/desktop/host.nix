@@ -31,22 +31,14 @@ in
     # udev rule fires at cpufreq device registration (before any systemd
     # service), which is the only window where scaling_governor is writable.
     # If HWP re-locks it, the core-pin guard logs it once and gives up.
-    ACTION=="add", SUBSYSTEM=="cpufreq", KERNEL=="cpu[67]", ATTR{scaling_governor}="performance"
-    ACTION=="add", SUBSYSTEM=="cpufreq", KERNEL=="cpu[67]", ATTR{energy_performance_preference}="performance"
+    ACTION=="add", SUBSYSTEM=="cpu", KERNEL=="cpu[67]", ATTR{cpufreq/scaling_governor}="performance"
+    ACTION=="add", SUBSYSTEM=="cpu", KERNEL=="cpu[67]", ATTR{cpufreq/energy_performance_preference}="performance"
   '';
   # TLP periodically re-asserts its governor (powersave on AC), which made the
   # CPU governor flap mid-audio-stream. hushmic-audio-cores + hushmic-core-pin
   # (see hushmic/scheduler.nix) own the audio cores (cpu6/7); steam-gaming-mode
   # (see steam.nix) owns the all-core gaming boost.
   services.tlp.enable = false;
-  # thermald (the 2.5.12 rewrite in nixpkgs) is mobile-only: at startup it
-  # reads /sys/firmware/acpi/pm_profile and exits with status 1 unless it is
-  # 2 or 8. This box is a 13900K desktop (pm_profile=1), so the unit died at
-  # every boot with "Non mobile platform, exiting..". The rewrite also takes
-  # XML config only, so the old INI tuning no longer applies. The kernel still
-  # provides thermal protection: ACPI trip points drive intel_pstate passive
-  # cooling, and HWP/TCC hard-throttle on overtemp.
-  services.thermald.enable = false;
 
   users.users."${users.b.username}" = {
     isNormalUser = true;

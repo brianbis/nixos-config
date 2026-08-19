@@ -38,4 +38,17 @@
   "browser.startup.page" = 3;
   "browser.sessionstore.max_resumed_crashes" = -1;
   dom.webserial.enabled = true;
+
+  # --- Disable GPU / VRAM usage ---
+  "layers.acceleration.disabled" = true;
+  "gfx.webrender.enabled" = false;
+  "gfx.webrender.force-disabled" = true;
+  "gfx.webrender.all" = false;
+  "layers.offmainthreadcomposition.enabled" = false;
+  "webgl.disabled" = true;
+  "webgl2.disabled" = true;
+  "media.ffmpeg.vaapi.enabled" = false;
+  "media.hardware-video-decoding.enabled" = false;
+  "media.hardware-video-decoding.force-enabled" = false;
+  "gfx.xrender.enabled" = true;
 }

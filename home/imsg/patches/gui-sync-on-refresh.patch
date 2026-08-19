@@ -1,0 +1,77 @@
+diff --git a/crates/imsg-gui/frontend/src/messages/application/use-conversation.ts b/crates/imsg-gui/frontend/src/messages/application/use-conversation.ts
+index a555b0a..1937f8b 100644
+--- a/crates/imsg-gui/frontend/src/messages/application/use-conversation.ts
++++ b/crates/imsg-gui/frontend/src/messages/application/use-conversation.ts
+@@ -42,6 +42,7 @@ interface PollArgs {
+ }
+ 
+ const pollMessages = async ({ address, cancelled, dispatch }: PollArgs): Promise<void> => {
++  await commands.syncMessagesNow(address)
+   // eslint-disable-next-line unicorn/no-null
+   const result = await commands.listMessages(null, false, address, null, MESSAGE_LIMIT, 0)
+   if (cancelled.current) {
+diff --git a/crates/imsg-gui/frontend/src/messages/application/use-threads.ts b/crates/imsg-gui/frontend/src/messages/application/use-threads.ts
+index e82fc99..e42a232 100644
+--- a/crates/imsg-gui/frontend/src/messages/application/use-threads.ts
++++ b/crates/imsg-gui/frontend/src/messages/application/use-threads.ts
+@@ -32,7 +32,17 @@ interface PollArgs {
+   dispatch: React.Dispatch<Action>
+ }
+ 
++const getDeviceAddress = async (): Promise<string | undefined> => {
++  // eslint-disable-next-line unicorn/no-null
++  const config = await commands.configShow(null)
++  return config.status === 'ok' ? config.data.device_address : undefined
++}
++
+ const pollThreads = async ({ cancelled, dispatch }: PollArgs): Promise<void> => {
++  const address = await getDeviceAddress()
++  if (address) {
++    await commands.syncMessagesNow(address)
++  }
+   const result = await commands.threads()
+   if (cancelled.current) {
+     return
+diff --git a/crates/imsg-gui/src/commands.rs b/crates/imsg-gui/src/commands.rs
+index b0cb3de..31b628d 100644
+--- a/crates/imsg-gui/src/commands.rs
++++ b/crates/imsg-gui/src/commands.rs
+@@ -16,6 +16,7 @@ pub mod discover;
+ pub mod gate;
+ pub mod reads;
+ pub mod send;
++pub mod sync_now;
+ 
+ use serde::Serialize;
+ use specta::Type;
+@@ -123,6 +124,7 @@ pub fn builder<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
+             daemon::broker_status,
+             send::send,
+             delete::delete,
++            sync_now::sync_messages_now,
+         ])
+         .semantic_types(
+             specta_typescript::semantic::Configuration::default().enable_lossless_bigints(),
+diff --git a/crates/imsg-gui/src/commands/sync_now.rs b/crates/imsg-gui/src/commands/sync_now.rs
+new file mode 100644
+index 0000000..f727f84
+--- /dev/null
++++ b/crates/imsg-gui/src/commands/sync_now.rs
+@@ -0,0 +1,17 @@
++//! Messages "refresh": trigger an immediate one-shot store-sync via the broker.
++//!
++//! Mirrors `contacts::sync_contacts_now`. The GUI's refresh / polling only re-reads
++//! the local store (`list_messages` / `threads`), which never shows new messages by
++//! itself; this command is what actually fetches from the phone.
++use super::CommandError;
++
++/// Runs a one-shot MAP sync through the broker at `addr`, returning the report.
++///
++/// # Errors
++///
++/// Returns [`CommandError`] if the broker can't be reached or rejects the request.
++#[tauri::command]
++#[specta::specta]
++pub async fn sync_messages_now(addr: String) -> Result<String, CommandError> {
++    Ok(broker_client::sync(&addr, None).await?)
++}

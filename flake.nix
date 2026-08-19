@@ -182,6 +182,7 @@
           ];
 
           home-manager.useGlobalPkgs = true;
+          home-manager.backupFileExtension = ".bak";
 
           home-manager.extraSpecialArgs = {
             inherit
@@ -199,6 +200,7 @@
             };
 
             deepseekSecret = config.age.secrets.deepseek-api-key.path;
+            imsgMacSecret = config.age.secrets.imsg-mac.path;
           };
 
           home-manager.users.b = import ./home;

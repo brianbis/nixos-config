@@ -18,6 +18,6 @@
     ./llamacpp.nix
     ./ninfer
     ./host.nix
-    ./hushmic
+    # ./hushmic
   ];
 }

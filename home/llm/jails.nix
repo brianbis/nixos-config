@@ -235,6 +235,7 @@ let
         -e '/"xh",/d' -e '/"firewall-cmd",/d' -e '/"ifconfig",/d' \
         -e '/"ip",/d' -e '/"iptables",/d' -e '/"netstat",/d' \
         -e '/"pfctl",/d' -e '/"route",/d' -e '/"ufw",/d' \
+        -e '/"systemctl",/d' \
         internal/agent/tools/bash.go
       # Hardcoded in the system prompt template (tool_usage), separate from the
       # bash.go blocklist. Remove the stale "never use curl in bash" instruction

@@ -11,6 +11,7 @@ in
     ./sts.nix
     ./llm
     ./discord.nix
+    ./imsg
     ./sidra.nix
     ./spectacle.nix
     ./dotfiles.nix
