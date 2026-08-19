@@ -62,7 +62,7 @@
 
     # package.nix uses deprecated/removed xorg.libX11-style names.
     # Build the package locally from the patched copy instead.
-    hushmic = pkgs.callPackage ./hosts/desktop/hushmic.nix { };
+    hushmic = pkgs.callPackage ./hosts/desktop/hushmic/package.nix { };
 
     # pkgs with headroom overlay for agents-md.
     agentsPkgs = import nixpkgs {

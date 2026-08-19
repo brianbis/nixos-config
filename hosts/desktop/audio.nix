@@ -1,12 +1,28 @@
 { pkgs, ... }:
 
+# Mic chain: MOTU M4 Mic1 -> hushmic (DPDFNet LADSPA via its own PipeWire
+# filter-chain) -> virtual "hushmic" source. The old DeepFilter filter-chain
+# (99-deepfilter) is gone; hushmic fully supersedes it and owns the mic path.
+#
+# hushmic runs as a systemd USER service in headless mode (--enable-once: no
+# tray, no window, just the audio pipeline until SIGTERM). It is pinned to
+# cpu6/7 (the 5.8 GHz P-cores), which hushmic/scheduler.nix holds at
+# performance governor + EPP permanently.
 {
   services.pulseaudio.enable = false;
 
   security.rtkit.enable = true;
 
+  # Limit shader compiler thread storms from Steam/Proton/Vulkan
+  # to keep audio cores free.
+  environment.sessionVariables = {
+    MESA_MAX_SHADER_COMPILER_THREADS = "4";
+    RADV_SHADER_CACHE = "1";
+    # DXVK/VKD3D
+    DXVK_ASYNC = "1";
+  };
+
   environment.systemPackages = with pkgs; [
-    deepfilternet
     hushmic
   ];
 
@@ -17,41 +33,6 @@
     alsa.support32Bit = true;
 
     pulse.enable = true;
-    extraConfig.pipewire."99-deepfilter" = {
-      "context.modules" = [
-        {
-          name = "libpipewire-module-filter-chain";
-          args = {
-            "node.description" = "DeepFilter Filtered Microphone";
-            "media.name" = "DeepFilter Filtered Microphone";
-            "filter.graph" = {
-              "nodes" = [
-                {
-                  type = "ladspa";
-                  name = "deep_filter";
-                  plugin = "${pkgs.deepfilternet}/lib/ladspa/libdeep_filter_ladspa.so";
-                  label = "deep_filter_mono";
-                  control = {
-                    "Attenuation Limit (dB)" = 100.0;
-                  };
-                }
-              ];
-            };
-            "audio.position" = [ "MONO" ];
-            "capture.props" = {
-              "node.name" = "capture.deepfilter_input";
-              "node.passive" = true;
-              # wpctl inspect @DEFAULT_AUDIO_SOURCE@ | grep -oP 'node.name = "\K[^"]+'
-              "target.object" = "alsa_input.usb-MOTU_M4_M4AE15CAEJ-00.HiFi__Mic1__source";
-            };
-            "playback.props" = {
-              "node.name" = "deepfilter_clean_mic";
-              "media.class" = "Audio/Source";
-            };
-          };
-        }
-      ];
-    };
 
     wireplumber = {
       enable = true;
@@ -133,5 +114,28 @@
         };
       };
     };
+  };
+
+  # Headless hushmic: DPDFNet noise suppression as a virtual mic.
+  # --enable-once skips tray/window/sockets entirely and blocks until SIGTERM;
+  # on exit it restores the previous default input and reaps its filter-chain.
+  systemd.user.services.hushmic = {
+    description = "HushMic real-time microphone noise suppression (headless)";
+    wantedBy = [ "default.target" ];
+    after = [ "graphical-session-pre.target" "pipewire.service" ];
+    wants = [ "pipewire.service" ];
+    partOf = [ "graphical-session.target" ];
+
+      serviceConfig = {
+        Type = "simple";
+        ExecStart = "${pkgs.hushmic}/bin/hushmic --enable-once";
+        Restart = "on-failure";
+        RestartSec = 3;
+
+        CPUAffinity = [ 6 7 ];
+        Nice = -10;
+        CPUWeight = 1000;
+        OOMScoreAdjust = -1000;
+      };
   };
 }

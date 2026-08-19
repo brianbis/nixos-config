@@ -33,6 +33,7 @@ import os
 import signal
 import socket
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, field
 from typing import Optional
@@ -430,6 +431,39 @@ def parse_request_line(headers: bytes) -> tuple[str, str, str]:
     return method, target, version
 
 
+def rewrite_headers(headers: bytes) -> bytes:
+    """
+    Normalize the request headers before forwarding them to the child.
+
+    The proxy uses one TCP connection per client request. The child server used
+    here (ninfer-serve / cpp-httplib) otherwise honors HTTP keep-alive and keeps
+    the accepted socket open after responding, which would leave the child side
+    of the relay open forever and prevent unloading. Force the child to close
+    its side once it has replied so the relay can complete.
+    """
+
+    if b"\r\n\r\n" in headers:
+        head, body = headers.split(b"\r\n\r\n", 1)
+    else:
+        head, body = headers, b""
+
+    lines = head.split(b"\r\n")
+
+    kept = []
+
+    for line in lines:
+        name, _, _ = line.partition(b":")
+        if name.strip().lower() == b"connection":
+            continue
+        kept.append(line)
+
+    # Always force the child to close: dropping an incoming keep-alive header
+    # is not enough because HTTP/1.1 defaults to keep-alive when absent.
+    kept.append(b"Connection: close")
+
+    return b"\r\n".join(kept) + b"\r\n\r\n" + body
+
+
 def make_error_response(
     status: int,
     reason: str,
@@ -643,11 +677,11 @@ async def handle_client(
             )
             return
 
-        # Cold health is local and must not start the model.
+        # Health checks are always local and must never count as client
+        # activity or start the model.
         if method == "GET" and target == "/health":
-            if state.lifecycle != ChildState.READY:
-                await handle_local_health(writer)
-                return
+            await handle_local_health(writer)
+            return
 
         # Any non-health request is real client activity.
         state.last_client_activity = time.monotonic()
@@ -724,7 +758,7 @@ async def handle_client(
             writer,
             child_reader,
             child_writer,
-            headers,
+            rewrite_headers(headers),
             state,
         )
 
@@ -1171,7 +1205,7 @@ def main() -> None:
     configure_logging()
 
     args = parse_args(
-        os.sys.argv[1:]
+        sys.argv[1:]
     )
 
     try:

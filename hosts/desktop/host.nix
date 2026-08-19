@@ -23,8 +23,9 @@
   services.lact.enable = true;
   services.power-profiles-daemon.enable = false;
   # TLP periodically re-asserts its governor (powersave on AC), which made the
-  # CPU governor flap mid-audio-stream. hushmic-cpu-boost (audio-cpu-watcher,
-  # see hushmic-scheduler.nix) is the single owner of governor + EPP.
+  # CPU governor flap mid-audio-stream. hushmic-audio-cores + hushmic-core-pin
+  # (see hushmic/scheduler.nix) own the audio cores (cpu6/7); steam-gaming-mode
+  # (see steam.nix) owns the all-core gaming boost.
   services.tlp.enable = false;
   services.thermald.enable = true;
   services.udev.extraRules = ''
