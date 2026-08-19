@@ -1,4 +1,4 @@
-{ lib, pkgs, ... }:
+{ ... }:
 
 let
   users = import ../../home/users.nix;
@@ -39,23 +39,14 @@ in
   # (see hushmic/scheduler.nix) own the audio cores (cpu6/7); steam-gaming-mode
   # (see steam.nix) owns the all-core gaming boost.
   services.tlp.enable = false;
-  # thermald is left in place for thermal protection, but its actions are
-  # restricted to max-frequency capping only. The default config also writes
-  # cpufreq governor/EPP on thermal events, which flapped the hushmic audio
-  # cores (cpu6/7) that hushmic-audio-cores owns (see hushmic/scheduler.nix).
-  services.thermald = {
-    enable = true;
-    configFile = pkgs.writeText "thermald.conf" ''
-      [DEFAULT]
-      platform-id=0
-
-      [THERMAL-0]
-      BROKEN-GOVERNOR=1
-      GOVERNOR=
-      EPP=
-      MAXIMUM-PROC-FREQ=4500000
-    '';
-  };
+  # thermald (the 2.5.12 rewrite in nixpkgs) is mobile-only: at startup it
+  # reads /sys/firmware/acpi/pm_profile and exits with status 1 unless it is
+  # 2 or 8. This box is a 13900K desktop (pm_profile=1), so the unit died at
+  # every boot with "Non mobile platform, exiting..". The rewrite also takes
+  # XML config only, so the old INI tuning no longer applies. The kernel still
+  # provides thermal protection: ACPI trip points drive intel_pstate passive
+  # cooling, and HWP/TCC hard-throttle on overtemp.
+  services.thermald.enable = false;
 
   users.users."${users.b.username}" = {
     isNormalUser = true;

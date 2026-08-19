@@ -8,8 +8,8 @@
 # seconds of low-clock artifacts when a session begins. Everything else stays
 # on powersave/balance_power. TLP is disabled in host.nix; power-profiles-daemon
 # is disabled too (it was the actor that kept drifting the pins); thermald is
-# left in place but its thermal actions are restricted to max-frequency capping
-# only (no governor/EPP writes), so it cannot flap the audio cores either.
+# disabled entirely (the 2.5.12 rewrite in nixpkgs is mobile-only and exits at
+# boot on this desktop, see host.nix), so it cannot flap the audio cores.
 let
   # The dedicated audio cores: highest-turbo P-cores on this machine. Single
   # source of truth for every module that touches them (scheduler, steam.nix,
