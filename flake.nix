@@ -36,9 +36,6 @@
     # Jailed LLM tooling
     jail-nix.url = "sourcehut:~alexdavid/jail.nix";
     llm-agents.url = "github:numtide/llm-agents.nix";
-
-    # Real-time microphone noise suppression (DPDFNet + PipeWire virtual mic)
-    
   };
 
   outputs = {
@@ -56,45 +53,59 @@
     system = "x86_64-linux";
 
     # Base package set used by the NixOS configuration.
+    # The headroom overlay is applied here (not only in nixosConfigurations)
+    # so that pkgs.headroom exists for every consumer of this flake's pkgs —
+    # including the standalone `agents-md` doc build, which must evaluate
+    # jails.nix without a second nixpkgs instance.
     pkgs = import nixpkgs {
       inherit system;
+
+      overlays = [
+        # headroom-ai: context compression layer for the jailed LLM agents.
+        (final: prev: {
+          python3 = prev.python3.override {
+            packageOverrides = pyfinal: pyprev: {
+              ast-grep-cli =
+                pyfinal.callPackage ./home/llm/ast-grep-cli.nix {
+                  ast-grep = prev.ast-grep;
+                };
+            };
+          };
+
+          headroom =
+            final.python3.pkgs.callPackage ./home/llm/headroom.nix {
+              python = final.python3;
+            };
+        })
+      ];
     };
 
     # package.nix uses deprecated/removed xorg.libX11-style names.
     # Build the package locally from the patched copy instead.
     hushmic = pkgs.callPackage ./hosts/desktop/hushmic/package.nix { };
 
-    # pkgs with headroom overlay for agents-md.
-    agentsPkgs = import nixpkgs {
-      inherit system;
 
-      overlays = [
-        (final: prev: {
-          headroom =
-            final.python3.pkgs.callPackage ./home/llm/headroom.nix {
-              python = final.python3;
-            };
-
-          python3 = prev.python3.override {
-            packageOverrides = pyfinal: pyprev: {
-              headroom =
-                pyfinal.callPackage ./home/llm/headroom.nix {
-                  python = pyfinal;
-                };
-            };
-          };
-        })
-      ];
-    };
   in
   {
     formatter.${system} =
       nixpkgs.legacyPackages.${system}.nixfmt-rfc-style;
 
-    packages.${system} = {
+    packages.${system} = let
+      # Shared catalog for agents-md generation (needs pkgs and jail-nix only)
+      sharedForAgents = import ./home/llm/catalog.nix {
+        inherit (nixpkgs.lib) lib;
+        inherit pkgs jail-nix;
+      };
+
+      # Same user home as declared in home/users.nix, so the generated
+      # doc's mounts match the real jails.
+      userHome = (import ./home/users.nix).b.homeDirectory;
+    in {
       agents-md =
-        agentsPkgs.callPackage ./home/llm/agents-gen/agents-md.nix {
+        pkgs.callPackage ./home/llm/agents-gen/agents-md.nix {
           inherit jail-nix llm-agents;
+          shared = sharedForAgents;
+          inherit userHome;
         };
 
       imsg = inputs.imsg.packages.${system}.default;
@@ -121,6 +132,8 @@
             })
 
             # headroom-ai: context compression layer for the jailed LLM agents.
+            # (Also applied to the base `pkgs` in the let-block so the
+            # standalone agents-md doc build can evaluate jails.nix.)
             (final: prev: {
               python3 = prev.python3.override {
                 packageOverrides = pyfinal: pyprev: {

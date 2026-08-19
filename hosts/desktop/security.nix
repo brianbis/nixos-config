@@ -3,7 +3,6 @@
 let
   secretsDir = ../../secrets;
 
-  # List all files in secrets/ ending with .age
   secretFiles = builtins.filter
     (name: lib.hasSuffix ".age" name)
     (builtins.attrNames (builtins.readDir secretsDir));
@@ -30,7 +29,6 @@ in
     };
   };
 
-  # Agenix secret management
   age = {
     identityPaths = [
       "/var/lib/agenix/key.txt"

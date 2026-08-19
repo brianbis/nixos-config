@@ -91,10 +91,7 @@ in
 
   virtualisation.oci-containers.containers = {
 
-    #
-    # Gemma 4 31B NVFP4 Turbo
-    # RTX 5090 / Blackwell target
-    #
+    # Gemma 4 31B NVFP4 Turbo (RTX 5090 / Blackwell target)
     vllm-gemma4-nvfp4-turbo = mkVllm {
       image = "docker.io/vllm/vllm-openai:cu130-nightly";
 
@@ -123,9 +120,7 @@ in
     };
 
 
-    #
     # Gemma 4 26B AWQ fallback
-    #
     vllm-gemma4-awq = mkVllm {
       image = "docker.io/vllm/vllm-openai:v0.26.0";
 

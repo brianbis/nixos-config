@@ -1,8 +1,6 @@
 {
-  # Allow userChrome.css customization
   "toolkit.legacyUserProfileCustomizations.stylesheets" = true;
   "browser.newtabpage.activity-stream.feeds.section.topstories" = false;
-  # Allow fullscreen without widget restrictions
   "full-screen-api.ignore-widgets" = true;
   "full-screen-api.warning.timeout" = 0;
   "browser.uiCustomization.state" = builtins.readFile ./toolbar-state.json;

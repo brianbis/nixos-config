@@ -1,12 +1,13 @@
 { lib, pkgs, ... }:
 
+let
+  users = import ../../home/users.nix;
+in
 {
-  # Machine Identity & Baseline
   networking.hostName = "nixos";
   time.timeZone = "America/Phoenix";
   system.stateVersion = "26.05";
 
-  # Nix Configuration
   nix.settings.experimental-features = [
     "nix-command"
     "flakes"
@@ -18,7 +19,6 @@
     options = "--delete-older-than 30d";
   };
 
-  # Locale & User Settings
   i18n.defaultLocale = "en_US.UTF-8";
   services.lact.enable = true;
   services.power-profiles-daemon.enable = false;
@@ -57,9 +57,9 @@
     '';
   };
 
-  users.users."b" = {
+  users.users."${users.b.username}" = {
     isNormalUser = true;
-    description = "b";
+    description = users.b.username;
     extraGroups = [
       "networkmanager"
       "wheel"

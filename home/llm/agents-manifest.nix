@@ -1,70 +1,65 @@
-{ lib, pkgs, jail-nix, llm-agents, ... }:
+{ lib, pkgs, shared, jail-nix, llm-agents, userHome }:
 
 let
-  # Import jail config to extract common packages and mounts, only if jail-nix is available
-  jailCfgTry = if jail-nix != null then builtins.tryEval (import ./jails.nix {
-    inherit lib pkgs jail-nix llm-agents;
-    deepseekSecret = null;
-    shared = { rtkRewriteHook = ""; };
-    userHome = "/home/b";
-  }) else { success = true; value = { commonPkgs = []; }; };
-  jailCfg = if jailCfgTry.success then jailCfgTry.value else { commonPkgs = []; };
+  # Import jail config with a dummy deepseek secret; we only need the pure
+  # helpers for rendering the doc. The real jails use the same values, so the
+  # doc stays in sync with the actual mounts / denied commands.
+  jailCfg = import ./jails.nix {
+    inherit lib pkgs jail-nix llm-agents shared userHome;
+    deepseekSecret = "";
+  };
+
+  forbiddenNixCmds = jailCfg.forbiddenNixCmds;
+  baseMounts = jailCfg.baseMounts;
 in
-rec {
-  # System model
-  headroomPortsCfg = {
-    local = 8787;
-    cloud = 8788;
-    claude = 8789;
-  };
-
-  # Jail contract
-  jail = {
-    commonPackages = jailCfg.commonPkgs or [];
-    writablePaths = {
-      user = [
-        "~/.config/crush"
-        "~/.local/share/crush"
-        "~/.config/opencode"
-        "~/.local/share/opencode"
-        "~/.claude"
-      ];
-      system = [
-        "/var/lib/crush-system/.config"
-        "/var/lib/crush-system/.local/share"
-      ];
-    };
-    deniedCommands = [ "nixos-rebuild" "nixos-install" "home-manager" "nix-env" "nix-channel" ];
-  };
-
-  # Tool contracts
-  tools = {
-    headroom = {
-      compress = "headroom_compress(content) → compressed + hash + token metrics";
-      retrieve = "headroom_retrieve(hash, query?) → original";
-      stats = "headroom_stats";
-      note = "Compression is lossy for repeated tokens; keep hash for retrieval";
-    };
-    edit = {
-      success = "silent";
-      requires = "exact match including whitespace";
-      verify = "view or git diff";
-    };
-  };
-
-  # Asset policy
-  assetPolicy = "Prefer raw files in dotfiles/ referenced via mkOutOfStoreSymlink. Nix stays declarative.";
-
+{
   # Formatted strings for template substitution
   formatted = {
-    headroomPortsStr = ":${toString headroomPortsCfg.local} local, :${toString headroomPortsCfg.cloud} cloud, :${toString headroomPortsCfg.claude} Claude";
-    commonPackages = let
-      names = map (p:
-        if p ? name then p.name
-        else if p ? pname then p.pname
-        else "pkg"
-      ) jail.commonPackages;
-    in lib.concatStringsSep ", " names;
-    deniedCommands = lib.concatStringsSep ", " (map (c: "`${c}`") jail.deniedCommands);
+    # Ports are canonical in catalog.nix
+    headroomLocalPort = toString shared.headroomPort;
+    headroomCloudPort = toString shared.headroomCloudPort;
+    headroomClaudePort = toString shared.headroomClaudePort;
+    headroomLocalUrl = "http://127.0.0.1:${toString shared.headroomPort}/health";
+
+    # System paths from catalog
+    systemStateDir = shared.systemStateDir;
+
+    # User home directory (same value the real jails use, passed in by the caller)
+    userHome = userHome;
+
+    # Model directory from hosts/desktop/llamacpp.nix (single source of truth)
+    modelsDir = "/var/lib/llama/models";
+
+    # Konsole scrollback is set in dotfiles/konsole/OLED.profile
+    konsoleScrollback = "500000";
+
+    # Read-only mounts for user jails (system jails get extra mounts).
+    # Deliberately excludes secretMounts: the agenix secret path is rendered
+    # separately via {{secretMounts}} so it can be kept out of this list.
+    readonlyMountsUser = lib.concatStringsSep ", " (map (p: "`${p}`") (baseMounts false));
+    readonlyMountsSystem = lib.concatStringsSep ", " (map (p: "`${p}`") (baseMounts true));
+
+    # Writable paths for system jails, from the same list that builds the
+    # actual jails. User jails get $PWD at runtime (mount-cwd), which is not
+    # a static path and so stays a literal in the template.
+    writablePathsSystem = lib.concatStringsSep ", " (map (p: "`${p}`") jailCfg.writablePathsSystem);
+
+    # Common packages, unversioned (doc names from jails.nix commonPkgSpecs)
+    # for stable diffs. Single source of truth: edit jails.nix only.
+    commonPackages = lib.concatStringsSep ", " jailCfg.commonPkgNames;
+
+    # Denied commands from the single source of truth in jails.nix
+    deniedCommands = lib.concatStringsSep ", " (map (c: "`${c}`") (builtins.attrNames forbiddenNixCmds));
+
+    # Tool contracts (unchanged)
+    headroomNote = "Compression is lossy for repeated tokens; keep hash for retrieval";
   };
+
+  # Keep original sections for compatibility
+  tools.headroom.compress = "headroom_compress(content) → compressed + hash + token metrics";
+  tools.headroom.retrieve = "headroom_retrieve(hash, query?) → original";
+  tools.headroom.stats = "headroom_stats";
+  tools.edit.success = "silent";
+  tools.edit.requires = "exact match including whitespace";
+  tools.edit.verify = "view or git diff";
 }

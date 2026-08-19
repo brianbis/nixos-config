@@ -124,7 +124,6 @@ let
     heroic
     gamescope
 
-    # Language servers
     nil
     gopls
     pyright

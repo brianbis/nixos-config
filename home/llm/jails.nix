@@ -54,91 +54,119 @@ let
     ) forbiddenNixCmds;
   };
 
-  commonPkgs = with pkgs; [
-    bashInteractive
-    curl
-    wget
-    jq
-    git
-    which
-    ripgrep
-    gnugrep
-    gnused
-    gawkInteractive
-    ps
-    findutils
-    gzip
-    unzip
+  # Single source of truth for the packages injected into every jail.
+  # Each spec carries a stable doc name (what agents.md renders) and a
+  # resolver to the actual derivation, so the doc generator can list names
+  # without evaluating any package (no overlay required at doc-build time).
+  commonPkgSpecs = [
+    { name = "bashInteractive"; pkg = pkgs.bashInteractive; }
+    { name = "curl"; pkg = pkgs.curl; }
+    { name = "wget"; pkg = pkgs.wget; }
+    { name = "jq"; pkg = pkgs.jq; }
+    { name = "git"; pkg = pkgs.git; }
+    { name = "which"; pkg = pkgs.which; }
+    { name = "ripgrep"; pkg = pkgs.ripgrep; }
+    { name = "gnugrep"; pkg = pkgs.gnugrep; }
+    { name = "gnused"; pkg = pkgs.gnused; }
+    { name = "gawkInteractive"; pkg = pkgs.gawkInteractive; }
+    { name = "ps"; pkg = pkgs.ps; }
+    { name = "findutils"; pkg = pkgs.findutils; }
+    { name = "gzip"; pkg = pkgs.gzip; }
+    { name = "unzip"; pkg = pkgs.unzip; }
     # Read-only host journal access for system jails: unit states, linger
     # activation, core-pin guard warnings. The binary is present in all
     # jails but only works in system jails (user jails lack /run/systemd).
-    systemd
-    gnutar
-    diffutils
-    strace
-    openssl
-    cfr
-    tcpdump
-    mitmproxy
-    jdk21
+    { name = "systemd"; pkg = pkgs.systemd; }
+    { name = "gnutar"; pkg = pkgs.gnutar; }
+    { name = "diffutils"; pkg = pkgs.diffutils; }
+    { name = "strace"; pkg = pkgs.strace; }
+    { name = "openssl"; pkg = pkgs.openssl; }
+    { name = "cfr"; pkg = pkgs.cfr; }
+    { name = "tcpdump"; pkg = pkgs.tcpdump; }
+    { name = "mitmproxy"; pkg = pkgs.mitmproxy; }
+    { name = "jdk21"; pkg = pkgs.jdk21; }
 
     # rtk: Rust Token Killer, compresses noisy command output before it hits
     # the context window, usable by any jailed agent (in nixpkgs).
-    rtk
+    { name = "rtk"; pkg = pkgs.rtk; }
     # headroom: context optimization layer that compresses everything an agent
     # reads. Not in nixpkgs / llm-agents; built from ./home/llm/headroom.nix.
-    headroom
+    { name = "headroom"; pkg = pkgs.headroom; }
 
     # Nix CLI so jailed agents can search nixpkgs (`nix search nixpkgs <term>`)
     # and eval packages against the source mounted read-only below.
-    nix
+    { name = "nix"; pkg = pkgs.nix; }
 
     # Shadow system-activating nix CLIs (nixos-rebuild, home-manager, nix-env,
     # nix-channel, nixos-install) with stubs that refuse to run.
-    nixGuard
+    { name = "nixGuard"; pkg = nixGuard; }
 
     # Database CLI clients shared by every jailed tool.
-    sqlite
-    postgresql
-    mariadb.client
+    { name = "sqlite"; pkg = pkgs.sqlite; }
+    { name = "postgresql"; pkg = pkgs.postgresql; }
+    { name = "mariadb.client"; pkg = pkgs.mariadb.client; }
 
-    (python3.withPackages (ps: [
-      ps.cryptography
-      ps.dnslib
-      ps.requests
-    ]))
+    {
+      name = "python3";
+      pkg = pkgs.python3.withPackages (ps: [
+        ps.cryptography
+        ps.dnslib
+        ps.requests
+      ]);
+    }
   ];
+
+  commonPkgs = map (spec: spec.pkg) commonPkgSpecs;
+  commonPkgNames = map (spec: spec.name) commonPkgSpecs;
 
   # Base jail options: user (cwd, no /etc/nixos) vs system (/etc/nixos rw).
   # The shared LSP set (host-installed copies, from the `lsps` catalog) is
   # mounted here, once per jail, so we don't bundle a fresh per-tool closure.
+  #
+  # baseJailOptions is split into a pure mount-list builder (baseMounts) and
+  # the option-combinator wrapper so agents-manifest.nix can render the
+  # readonly mounts into agents.md without needing jail-nix at all.
+  #
+  # The nixpkgs source mount is the flake's own checkout (/etc/nixos), not
+  # pkgs.path: the agent edits this repo, so it needs the working tree
+  # mounted read-only to search / eval against it. pkgs.path would point at
+  # the pinned nixpkgs input instead, which is not what the agent edits.
+  #
+  # Read-only host mounts are kept in two lists:
+  # - baseMounts: non-sensitive paths rendered verbatim into agents.md.
+  # - secretMounts: sensitive paths (agenix secrets) that must NOT be named
+  #   in the generated doc; they are attached by the justfile after the
+  #   declarative build step.
+  baseMounts = system: [ "/etc/nixos" "/var/log" ] ++ (if system then [
+    "/var/log/journal"
+    "/run/systemd"
+  ] else [ ]) ++ (if system then [ "/sys" "/run/user" ] else [ ]);
+
+  # agenix secret file(s) mounted read-only into every jail. Kept out of
+  # baseMounts on purpose: naming the secret path in agents.md would leak
+  # the secret name into the doc. Rendered separately by the justfile.
+  secretMounts = [ deepseekSecret ];
+
+  # Full read-only mount list used by the actual jails.
+  readonlyMounts = system: baseMounts system ++ secretMounts;
+
+  # Writable paths beyond the read-only overlay. System jails get the repo
+  # and their state dir read-write; user jails get $PWD via mount-cwd (a
+  # runtime path, not statically knowable) plus per-tool dirs (see mkDirs).
+  writablePathsSystem = [ "/etc/nixos" systemStateDir ];
+
   baseJailOptions = system: with jail.combinators; [
     network
     time-zone
     no-new-session
-    # Pin HOME to the user's real home (not the invoking shell's $HOME, which
-    # sudo would reset to /root). This keeps fwd-env HOME and all the ~/ bind
-    # mounts below in agreement no matter how the jail is launched.
     (set-env "HOME" (if system then systemStateDir else userHome))
   ] ++ (if system
-    then [ (readwrite "/etc/nixos") (readwrite systemStateDir) ]
-    else [ mount-cwd ]) ++ [
-    # Mount the pinned nixpkgs source read-only so `nix search nixpkgs <term>`
-    # (which resolves nixpkgs via the default channels registry) and direct
-    # grepping of the source in $NIXPKGS both work. Enabling the flakes +
-    # nix-command experimental features is what makes `nix search` usable.
-    (readonly pkgs.path)
+    then map readwrite writablePathsSystem
+    else [ mount-cwd ]) ++ map readonly (readonlyMounts system) ++ [
     (set-env "NIX_CONFIG"
       "experimental-features = nix-command flakes")
     (set-env "NIXPKGS" pkgs.path)
-  ] ++ [ (readonly "/run/agenix/deepseek-api-key") ]
-    # Read-only host log access so system jails can inspect service state
-    # (e.g. /var/log/hushmic probe ring) without a dedicated mount per unit.
-    ++ [ (readonly "/var/log") ]
-    # journalctl needs the journal + systemd runtime dir. System jails only:
-    # user jails have no /run/systemd and the binary would be useless there.
-    ++ (if system then [ (readonly "/var/log/journal") (readonly "/run/systemd") ] else [ ])
-    ++ lspAdds;
+  ] ++ lspAdds;
 
   # Common libs/CLI tools injected into every jail.
   mkToolJail = { name, pkg, dirs, system, systemExtraPkgs ? [ ], systemExtraMounts ? [ ] }:
@@ -272,7 +300,18 @@ let
     exec sudo ${jailsByTool."crush-jail-system"}/bin/jailed-crush-system "$@"
   '';
 
-in
+  in
 {
-  inherit jails headroomDeepseekWrapper commonPkgs jc jcs;
+  inherit
+    jails
+    headroomDeepseekWrapper
+    commonPkgs
+    commonPkgNames
+    jc
+    jcs
+    forbiddenNixCmds
+    baseMounts
+    secretMounts
+    writablePathsSystem
+    ;
 }

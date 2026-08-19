@@ -1,5 +1,8 @@
 { config, pkgs, plasma-manager, ... }:
 
+let
+  users = import ./users.nix;
+in
 {
   imports = [
     ./packages.nix
@@ -15,7 +18,7 @@
     plasma-manager.homeModules.plasma-manager
   ];
 
-  home.username = "b";
-  home.homeDirectory = "/home/b";
+  home.username = users.b.username;
+  home.homeDirectory = users.b.homeDirectory;
   home.stateVersion = "26.05";
 }
