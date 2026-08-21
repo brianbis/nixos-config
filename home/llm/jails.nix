@@ -1,6 +1,9 @@
 # Builds the (user, system) jail pair for each jailed agent (crush, opencode,
-# aider, claude). This is the sandboxing layer: it wires bubblewrap mounts, injected
-# packages, HOME pinning and the shared LSP set from the catalog.
+# aider, claude, dsh). This is the sandboxing layer: it wires bubblewrap
+# mounts, injected packages, HOME pinning and the shared LSP set from the
+# catalog. User jails run as b (HOME = /home/b); system jails run as the llm
+# agent user (HOME = /home/llm, via `sudo -u llm`) so they can edit /etc/nixos
+# without being root.
 { lib, pkgs, jail-nix, llm-agents, deepseekSecret, shared, userHome }:
 
 let
@@ -8,7 +11,8 @@ let
     headroomCloudUpstreamUrl
     headroomCloudPort
     lspAdds
-    systemStateDir
+    agentHome
+    agentUsername
     ;
 
   jail = jail-nix.lib.init pkgs;
@@ -149,16 +153,17 @@ let
   # Full read-only mount list used by the actual jails.
   readonlyMounts = system: baseMounts system ++ secretMounts;
 
-  # Writable paths beyond the read-only overlay. System jails get the repo
-  # and their state dir read-write; user jails get $PWD via mount-cwd (a
-  # runtime path, not statically knowable) plus per-tool dirs (see mkDirs).
-  writablePathsSystem = [ "/etc/nixos" systemStateDir ];
+  # Writable paths beyond the read-only overlay. System jails (run as the llm
+  # agent user) get the repo and the agent's home read-write; user jails get
+  # $PWD via mount-cwd (a runtime path, not statically knowable) plus
+  # per-tool dirs (see mkDirSpecs).
+  writablePathsSystem = [ "/etc/nixos" agentHome ];
 
   baseJailOptions = system: with jail.combinators; [
     network
     time-zone
     no-new-session
-    (set-env "HOME" (if system then systemStateDir else userHome))
+    (set-env "HOME" (if system then agentHome else userHome))
   ] ++ (if system
     then map readwrite writablePathsSystem
     else [ mount-cwd ]) ++ map readonly (readonlyMounts system) ++ [
@@ -177,57 +182,41 @@ let
         [ (add-pkg-deps (commonPkgs ++ (if system then systemExtraPkgs else [ ]))) ]
         ++ (if system then systemExtraMounts else [ ]));
 
-  # Per-tool read/write dirs. Paths are absolute under userHome because
-  # us-and-sudo must see identical mounts; a runtime ~ would diverge (sudo
-  # resets $HOME to /root).
-  mkDirs = paths: map (with jail.combinators; p: readwrite p) paths;
-  aiderDirs = mkDirs [
-    "${userHome}/.config/aider"
-    "${userHome}/.aider.conf.yml"
-    "${userHome}/.gitconfig"
+  # Per-tool read/write dirs, relative to the owning home. The user jails run
+  # as b (home = userHome); the system jails run as the llm agent user (home
+  # = agentHome), a real home-manager-managed home the agent owns, so bwrap
+  # can bind-mount it directly (the old root-only state tree existed because
+  # bwrap-as-root could not traverse b's 700 home dirs). Paths are absolute
+  # because user and system mounts must be statically identical; a runtime ~
+  # would diverge (sudo resets $HOME to the target user's home).
+  mkDirSpecs = base: paths: map (with jail.combinators; p: readwrite "${base}/${p}") paths;
+  userDirSpecs = paths: mkDirSpecs userHome paths;
+  agentDirSpecs = paths: mkDirSpecs agentHome paths;
+
+  # Relative per-tool paths (dirs or files) mounted read-write into the jail.
+  aiderDirPaths = [
+    ".config/aider"
+    ".aider.conf.yml"
+    ".gitconfig"
   ];
-  crushDirs = mkDirs [
-    "${userHome}/.config/crush"
-    "${userHome}/.local/share/crush"
+  crushDirPaths = [
+    ".config/crush"
+    ".local/share/crush"
   ];
-  opencodeDirs = mkDirs [
-    "${userHome}/.config/opencode"
-    "${userHome}/.local/share/opencode"
-    "${userHome}/.local/state/opencode"
+  opencodeDirPaths = [
+    ".config/opencode"
+    ".local/share/opencode"
+    ".local/state/opencode"
   ];
-  claudeDirs = mkDirs [
-    "${userHome}/.claude"
-    "${userHome}/.claude.json"
+  claudeDirPaths = [
+    ".claude"
+    ".claude.json"
   ];
   # dsh (DeepSeek Harness) keeps all user data under a single root (~/.dsh,
   # overridable via $DSH_HOME); the jail pins HOME, so the default root is
   # what gets mounted.
-  dshDirs = mkDirs [
-    "${userHome}/.dsh"
-  ];
-
-  # System (root-run) variants keep their writable state under systemStateDir
-  # instead of the user's home, because bwrap-as-root cannot traverse the
-  # user's 700 home dirs to bind-mount them here. The config/data under
-  # systemStateDir are seeded root-only by the NixOS host module
-  # (hosts/desktop/crush-system.nix).
-  systemCrushDirs = mkDirs [
-    "${systemStateDir}/.config"
-    "${systemStateDir}/.local/share"
-  ];
-
-  # Claude Code system variant: HOME is pinned to systemStateDir, so its
-  # config dir and project-state file resolve to this root-owned tree,
-  # seeded by the host module (hosts/desktop/crush-system.nix).
-  systemClaudeDirs = mkDirs [
-    "${systemStateDir}/.claude"
-    "${systemStateDir}/.claude.json"
-  ];
-
-  # dsh system variant: same single-root pattern as the user variant, under
-  # the root-owned systemStateDir.
-  systemDshDirs = mkDirs [
-    "${systemStateDir}/.dsh"
+  dshDirPaths = [
+    ".dsh"
   ];
 
   agent = n: llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.${n};
@@ -259,66 +248,65 @@ let
   });
 
   # Build a (user, system) jail pair for a tool.
-  # tool = { name, pkg, dirs, systemDirs ? [ ], systemExtraPkgs ? [ ], systemExtraMounts ? [ ] }
-  # systemExtra* apply only to the root-run system variant.
-  # When systemDirs is given it replaces the user's home dirs (so bwrap-as-root
-  # never has to traverse $HOME, which is 700); otherwise the system variant
-  # reuses the same dirs as the user variant.
-  makeTool = { name, pkg, dirs, systemDirs ? [ ], systemExtraPkgs ? [ ], systemExtraMounts ? [ ] }:
+  # tool = { name, pkg, dirPaths, systemDirs ? (agentDirSpecs dirPaths), systemExtraPkgs ? [ ], systemExtraMounts ? [ ] }
+  # dirPaths are relative to the owning home: the user variant mounts them
+  # under userHome (b), the system variant under agentHome (the llm agent
+  # user). systemExtra* apply only to the system variant. systemDirs
+  # replaces the default agent-home dirs when a system variant needs a
+  # different mount set (e.g. aider: the secret read-only, no writable dirs).
+  makeTool = { name, pkg, dirPaths, systemDirs ? (agentDirSpecs dirPaths), systemExtraPkgs ? [ ], systemExtraMounts ? [ ] }:
     let
-      userJail = mkToolJail { inherit name pkg dirs; system = false; };
-      systemJail = mkToolJail { inherit name pkg systemExtraPkgs systemExtraMounts; dirs = if systemDirs == [ ] then dirs else systemDirs; system = true; };
+      userJail = mkToolJail { inherit name pkg; dirs = userDirSpecs dirPaths; system = false; };
+      systemJail = mkToolJail { inherit name pkg systemExtraPkgs systemExtraMounts; dirs = systemDirs; system = true; };
     in {
       "${name}-jail" = userJail;
       "${name}-jail-system" = systemJail;
     };
 
   jailsByTool =
-    (makeTool { name = "aider"; pkg = pkgs.aider-chat; dirs = aiderDirs;
+    (makeTool { name = "aider"; pkg = pkgs.aider-chat; dirPaths = aiderDirPaths;
                 systemDirs = [ (with jail.combinators; (readonly deepseekSecret)) ]; })
     // (makeTool {
          name = "crush";
          pkg = withDeepSeekKey crushUnbanned "crush";
-         dirs = crushDirs;
-         systemDirs = systemCrushDirs;
+         dirPaths = crushDirPaths;
          # Debug tooling for the system jail: pgrep/pidof, the PipeWire and
          # WirePlumber CLIs (pw-top, pw-dump, wpctl) for inspecting audio
          # stream state, plus read-only /sys (cpufreq governor) and /run/user
-         # (session PipeWire socket, reachable as root).
+         # (session PipeWire sockets). Note: b's own session dir under
+         # /run/user is 700 b:b, so inspecting b's live session from inside
+         # the jail is only possible for root; the llm agent user sees what
+         # its permissions allow.
          systemExtraPkgs = with pkgs; [ procps pipewire wireplumber ];
          systemExtraMounts = with jail.combinators; [
            (readonly "/sys")
            (readonly "/run/user")
          ];
        })
-    // (makeTool { name = "opencode"; pkg = withDeepSeekKey (agent "opencode") "opencode"; dirs = opencodeDirs; })
-    // (makeTool {
-         name = "claude";
-         pkg = agent "claude-code";
-         dirs = claudeDirs;
-         systemDirs = systemClaudeDirs;
-       })
-    // (makeTool { name = "dsh"; pkg = withDeepSeekKey (agent "dsh") "dsh"; dirs = dshDirs; systemDirs = systemDshDirs; });
+    // (makeTool { name = "opencode"; pkg = withDeepSeekKey (agent "opencode") "opencode"; dirPaths = opencodeDirPaths; })
+    // (makeTool { name = "claude"; pkg = agent "claude-code"; dirPaths = claudeDirPaths; })
+    // (makeTool { name = "dsh"; pkg = withDeepSeekKey (agent "dsh") "dsh"; dirPaths = dshDirPaths; });
 
   # Flat list of all jail packages (home.packages expects a list).
   jails = builtins.attrValues jailsByTool;
 
-  # Short aliases for the crush jail pair: `jc` (user) and `jcs` (system,
-  # run via sudo so it can read/write /etc/nixos). Wrappers exec the actual
-  # jail binaries from `jailsByTool`, so they always track the real packages.
+  # Short aliases for the crush jail pair: `jc` (user) and `jcs` (system, run
+  # as the llm agent user via `sudo -u llm` so it can read/write /etc/nixos
+  # without being root). Wrappers exec the actual jail binaries from
+  # `jailsByTool`, so they always track the real packages.
   jc = pkgs.writeShellScriptBin "jc" ''
     exec ${jailsByTool."crush-jail"}/bin/jailed-crush "$@"
   '';
   jcs = pkgs.writeShellScriptBin "jcs" ''
-    exec sudo ${jailsByTool."crush-jail-system"}/bin/jailed-crush-system "$@"
+    exec sudo -u ${agentUsername} ${jailsByTool."crush-jail-system"}/bin/jailed-crush-system "$@"
   '';
 
-  # Same pair for the dsh jail: `dsh` (user) and `dshs` (system, via sudo).
+  # Same pair for the dsh jail: `dsh` (user) and `dshs` (system, as llm).
   dsh = pkgs.writeShellScriptBin "dsh" ''
     exec ${jailsByTool."dsh-jail"}/bin/jailed-dsh "$@"
   '';
   dshs = pkgs.writeShellScriptBin "dshs" ''
-    exec sudo ${jailsByTool."dsh-jail-system"}/bin/jailed-dsh-system "$@"
+    exec sudo -u ${agentUsername} ${jailsByTool."dsh-jail-system"}/bin/jailed-dsh-system "$@"
   '';
 
   in

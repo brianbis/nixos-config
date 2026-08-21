@@ -1,14 +1,13 @@
 # Shared rendering for the jailed LLM tooling. Single source of truth for the
 # model catalog, LSP catalog, provider mapping, and the crush config builder.
-# Imported by both home/llm/default.nix (to render the per-user crush config)
-# and the NixOS host module hosts/desktop/crush-system.nix (to seed the
-# root-only /var/lib/crush-system state for the root-run "system" jail
-# variants). Keeping this here means the user and system configs stay identical
-# in content.
+# Imported by both home-manager modules (to render the per-user tool configs
+# into b's home and the llm agent user's home) and by the doc build. Keeping
+# this here means the user and system configs stay identical in content.
 { lib, pkgs, jail-nix, ... }:
 
 let
   jail = jail-nix.lib.init pkgs;
+  users = import ../users.nix;
   # Context-compression proxy layering. local llama.cpp traffic from every
   # jailed agent (crush/opencode/aider) is routed through the Headroom proxy,
   # which forwards upstream to llama-server on :8000. headroom listens on :8787.
@@ -498,26 +497,30 @@ let
     esac
   '';
 
-  # Root-owned state root for the "system" jail variants (run as root via
-  # sudo). bwrap-as-root cannot traverse the user's 700 home dirs (e.g.
-  # /home/b/.config) to bind-mount them, so the system variants keep their
-  # config + data under this root-readable tree instead, seeded by the NixOS
-  # host (root) so it can be root-only. Both the user and system configs are
-  # rendered from the same catalogs below, so content stays identical.
-  systemStateDir = "/var/lib/crush-system";
+  # Identity of the llm agent user (single source of truth: home/users.nix).
+  # The "system" jail variants run as this user via `sudo -u llm` instead of
+  # as root: they keep their config + writable state in a real home
+  # (/home/llm, managed declaratively by home-manager via
+  # home/llm/agent-home.nix) and can edit /etc/nixos because the repo is
+  # owned by llm (see hosts/desktop/host.nix). bwrap-as-llm can bind-mount
+  # the agent's own 700 home, which is why the old root-only state tree
+  # (/var/lib/crush-system) existed: bwrap-as-root could not traverse b's
+  # 700 home dirs to bind-mount a config.
+  agentHome = users.llm.homeDirectory;
+  agentUsername = users.llm.username;
 
   # Render the crush config for a given state root. The user variants live
-  # under $HOME; the system variants (run as root) under systemStateDir. Both
-  # are produced from the same shared catalogs, so content stays identical.
+  # under $HOME (b); the system variants under the llm agent user's home.
+  # Both are produced from the same shared catalogs, so content stays identical.
   crushConfigFor = base: builtins.toJSON {
     "$schema" = "https://charm.land/crush.json";
 
     # Force the per-project data dir out of the working directory. The system
-    # jail runs crush from /etc/nixos, which is root-owned; without this crash
-    # tries to mkdir /etc/nixos/.crush and fails with "permission denied".
-    # Putting state under the (rw-overlaid) state root keeps it writable in
-    # both the user and system jails, and also gives each editable copy of the
-    # tree a distinct data dir keyed by cwd.
+    # jail runs crush from /etc/nixos (the flake repo): without this, crush
+    # would mkdir /etc/nixos/.crush and the justfile's auto-stage would sweep
+    # the state into git. Putting state under the (rw) home keeps it writable
+    # in both the user and system jails, and also gives each editable copy of
+    # the tree a distinct data dir keyed by cwd.
     options.data_directory = "${base}/.local/share/crush";
     options.context_paths = [ "AGENTS.md" ];
     options.tui.transparent = true;
@@ -558,8 +561,9 @@ let
 
   # Claude Code user settings (settings.json). The env block routes the agent
   # through the Claude-facing headroom proxy to the local llama.cpp, using the
-  # catalog's default local model. Identical content is seeded for the user
-  # and root-run system jail variants.
+  # catalog's default local model. Identical content is written by
+  # home-manager into both b's home (user jails) and the llm agent user's
+  # home (system jails).
   claudeConfig = builtins.toJSON {
     env = {
       ANTHROPIC_BASE_URL = headroomClaudeProxyUrl;
@@ -568,9 +572,6 @@ let
       ANTHROPIC_SMALL_FAST_MODEL = models.gemma4awq.id;
     };
   };
-
-  # Per-system crush config (read by the root-run "system" jail variants).
-  systemCrushConfig = crushConfigFor systemStateDir;
 
 in
 {
@@ -596,9 +597,9 @@ in
     opencodeProviders
     dshSettings
     rtkRewriteHook
-    systemStateDir
+    agentHome
+    agentUsername
     crushConfigFor
     claudeConfig
-    systemCrushConfig
     ;
 }

@@ -115,8 +115,8 @@ in {
         "--host" "127.0.0.1"
         "--port" (toString childPort)
         "--kv-dtype" "bf16"
-        "--max-context" "131072"
-        "--default-max-tokens" "81920"
+        "--max-context" "131000"
+        "--default-max-tokens" "115072"
         "--pending-timeout-ms" "900000"
         "--prefill-chunk" "1024"
         "--max-concurrency" "1"

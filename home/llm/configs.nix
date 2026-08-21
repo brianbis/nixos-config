@@ -1,7 +1,8 @@
-# Renders the per-user (non-sudo) tool configs from the shared catalog:
-# crush.json, opencode.json, and aider's .aider.conf.yml. The root-only system
-# config is seeded separately by the host module (hosts/desktop/crush-system.nix)
-# from the same catalog, so user and system configs stay identical in content.
+# Renders the per-user tool configs from the shared catalog: crush.json,
+# opencode.json, and aider's .aider.conf.yml. Called once per managed home
+# (b's home for the user jails, the llm agent user's home for the system
+# jails); the crush config's data_directory/hook paths are keyed off the
+# given home, so both homes get identical content with correct paths.
 { shared, userHome }:
 
 let
@@ -15,8 +16,8 @@ let
     claudeConfig
     ;
 
-  # Per-user crush config (read by the non-sudo jail variants).
-  userCrushConfig = crushConfigFor userHome;
+  # Crush config for the home being managed (read by that home's jail variants).
+  crushConfig = crushConfigFor userHome;
 
   opencodeConfig = builtins.toJSON (opencodeProviders // {
     "$schema" = "https://opencode.ai/config.json";
@@ -54,5 +55,5 @@ let
     '';
 in
 {
-  inherit userCrushConfig opencodeConfig aiderConfig claudeConfig;
+  inherit crushConfig opencodeConfig aiderConfig claudeConfig;
 }

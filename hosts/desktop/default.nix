@@ -6,7 +6,6 @@
     ./audio.nix
     ./bluetooth.nix
     ./boot.nix
-    ./crush-system.nix
     ./monitor
     ./networking.nix
     ./nvidia.nix
@@ -18,6 +17,6 @@
     ./llamacpp.nix
     ./ninfer
     ./host.nix
-    # ./hushmic
+    ./hushmic
   ];
 }

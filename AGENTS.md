@@ -16,9 +16,10 @@ The model acts as a professional senior systems engineer familiar with NixOS. In
 
 ## Jail Contract
 - Network is allowed.
+- User jails run as the human user (home /home/b); system jails run as the `llm` agent user via `sudo -u llm` (home /home/llm), so they can edit the repo without being root.
 - Read-only mounts (user jails): `/etc/nixos`, `/var/log`.
 - Read-only mounts (system jails): `/var/log`, `/var/log/journal`, `/run/systemd`, `/sys`, `/run/user`.
-- Writable paths (system jails): `/etc/nixos`, `/var/lib/crush-system`.
+- Writable paths (system jails): `/etc/nixos`, `/home/llm`.
 - Writable paths (user jails): working directory ($PWD); per-tool config dirs are whitelisted per tool.
 - Denied commands: `home-manager`, `nix-channel`, `nix-env`, `nixos-install`, `nixos-rebuild` are stubbed to deny.
 - Common packages available: `bashInteractive, curl, wget, jq, git, which, ripgrep, gnugrep, gnused, gawkInteractive, ps, findutils, gzip, unzip, systemd, gnutar, diffutils, strace, openssl, cfr, tcpdump, mitmproxy, jdk21, rtk, headroom, nix, nixGuard, sqlite, postgresql, mariadb.client, python3`

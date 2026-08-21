@@ -193,8 +193,8 @@
               inputs
               ;
 
-            # Shared model/LSP catalog + config renderer, used by both
-            # home/llm/default.nix and hosts/desktop/crush-system.nix.
+            # Shared model/LSP catalog + config renderer, used by both home-manager
+            # modules (b's home and the llm agent user's home).
             shared = import ./home/llm/catalog.nix {
               inherit lib pkgs jail-nix;
             };
@@ -204,6 +204,11 @@
           };
 
           home-manager.users.b = import ./home;
+
+          # The llm agent user's home: the writable state root of the
+          # "system" jail variants (run as llm via `sudo -u llm`). Managed
+          # declaratively here instead of seeded by a root activation script.
+          home-manager.users.llm = import ./home/llm/agent-home.nix;
         })
       ];
 

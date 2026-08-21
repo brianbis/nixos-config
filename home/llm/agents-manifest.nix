@@ -22,7 +22,8 @@ in
     headroomLocalUrl = "http://127.0.0.1:${toString shared.headroomPort}/health";
 
     # System paths from catalog
-    systemStateDir = shared.systemStateDir;
+    agentHome = shared.agentHome;
+    agentUsername = shared.agentUsername;
 
     # User home directory (same value the real jails use, passed in by the caller)
     userHome = userHome;

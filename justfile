@@ -51,7 +51,9 @@ diff:
     nix store diff-closures /nix/var/nix/profiles/system ./result
 
 update:
-    nix flake update
+    # Runs as llm: the flake repo is owned by the llm agent user (see
+    # hosts/desktop/host.nix), so flake.lock must be written by llm.
+    sudo -u llm nix flake update
 
 save message="NixOS configuration update":
     sudo git add -A .

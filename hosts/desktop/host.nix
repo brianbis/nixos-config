@@ -1,4 +1,4 @@
-{ ... }:
+{ lib, pkgs, ... }:
 
 let
   users = import ../../home/users.nix;
@@ -55,4 +55,36 @@ in
     # reach the session socket.
     linger = true;
   };
+
+  # Jailed LLM agent user. Owns the "system" jail variants' home
+  # (/home/llm) and the flake repo (/etc/nixos): the system jails run as
+  # this user via `sudo -u llm` instead of as root, so a jail misconfig can
+  # at most write the repo and the agent's own home. The `llm` group
+  # (hosts/desktop/security.nix) is an extra group (the primary group is
+  # `users`) and grants read access to the agenix secret (root:llm 0440)
+  # and the systemd journal (root:llm 2755). No password and no SSH keys:
+  # unreachable except via `sudo -u llm`.
+  users.users."${users.llm.username}" = {
+    isNormalUser = true;
+    description = "Jailed LLM agent (system jail)";
+    home = users.llm.homeDirectory;
+    shell = pkgs.bash;
+    extraGroups = [ "llm" ];
+  };
+
+  # The flake repo is owned by the llm agent user so the system jails (run
+  # as llm) can edit it; root keeps full write access. Re-asserted at every
+  # switch so files created as root (e.g. `sudo nix flake update`) stay
+  # writable by the agent. chown does not touch mtimes, so git's index
+  # stays valid.
+  system.activationScripts.nixosRepoOwnership.text = ''
+    chown -R ${users.llm.username}:${users.llm.username} /etc/nixos
+  '';
+
+  # A real home should be 0700 (NixOS creates homes 0755): b cannot snoop
+  # the agent's tool state. mkAfter so this runs after the users module's
+  # home-creation rule in the same tmpfiles pass.
+  systemd.tmpfiles.rules = [
+    (lib.mkAfter "z ${users.llm.homeDirectory} 0700 ${users.llm.username} ${users.llm.username} -")
+  ];
 }

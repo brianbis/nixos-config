@@ -12,7 +12,8 @@ let
     "{{headroomCloudPort}}" = manifest.formatted.headroomCloudPort;
     "{{headroomClaudePort}}" = manifest.formatted.headroomClaudePort;
     "{{headroomLocalUrl}}" = manifest.formatted.headroomLocalUrl;
-    "{{systemStateDir}}" = manifest.formatted.systemStateDir;
+    "{{agentHome}}" = manifest.formatted.agentHome;
+    "{{agentUsername}}" = manifest.formatted.agentUsername;
     "{{userHome}}" = manifest.formatted.userHome;
     "{{modelsDir}}" = manifest.formatted.modelsDir;
     "{{konsoleScrollback}}" = manifest.formatted.konsoleScrollback;

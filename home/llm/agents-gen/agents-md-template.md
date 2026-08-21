@@ -16,6 +16,7 @@ The model acts as a professional senior systems engineer familiar with NixOS. In
 
 ## Jail Contract
 - Network is allowed.
+- User jails run as the human user (home {{userHome}}); system jails run as the `{{agentUsername}}` agent user via `sudo -u {{agentUsername}}` (home {{agentHome}}), so they can edit the repo without being root.
 - Read-only mounts (user jails): {{readonlyMountsUser}}.
 - Read-only mounts (system jails): {{readonlyMountsSystem}}.
 - Writable paths (system jails): {{writablePathsSystem}}.
