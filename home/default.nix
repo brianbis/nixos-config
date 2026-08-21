@@ -14,6 +14,7 @@ in
     ./imsg
     ./sidra.nix
     ./spectacle.nix
+    ./wezterm.nix
     ./dotfiles.nix
     ./minuspod.nix
     plasma-manager.homeModules.plasma-manager

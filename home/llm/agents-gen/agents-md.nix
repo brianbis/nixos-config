@@ -26,7 +26,7 @@ let
   # checking whether removing "{{" changes the string length.
   hasLeftoverPlaceholder = builtins.stringLength (lib.replaceStrings [ "{{" ] [ "" ] result) != builtins.stringLength result;
 in
-pkgs.writeText "agents.md" (
+pkgs.writeText "AGENTS.md" (
   assert ! hasLeftoverPlaceholder;
   result
 )

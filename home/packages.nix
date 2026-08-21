@@ -87,6 +87,7 @@ let
     inputs.imsg.packages.${pkgs.system}.default
     foot
     ghostty
+    jetbrains-mono
     fuzzel
     kdePackages.kate
     kdePackages.yakuake

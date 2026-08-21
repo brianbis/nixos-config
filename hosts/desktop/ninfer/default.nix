@@ -14,8 +14,8 @@ let
     src = pkgs.fetchFromGitHub {
       owner = "Neroued";
       repo = "ninfer";
-      rev = "master";
-      hash = "sha256-fGyHdZOkKRTsarkHkUxYigZT2v1J+Fq/t3V3eOpAdL8=";
+      rev = "feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a";
+      hash = "sha256-99ci7v85ldqrgTXzcCkHtis2YBimLKuodn2vwNuXwpI=";
     };
 
     nativeBuildInputs = with pkgs; [
@@ -114,13 +114,14 @@ in {
         "${modelsDir}/${ninferModelFile}"
         "--host" "127.0.0.1"
         "--port" (toString childPort)
-        "--kv-dtype" "int8"
-        "--max-context" "210000"
+        "--kv-dtype" "bf16"
+        "--max-context" "131072"
         "--default-max-tokens" "81920"
         "--pending-timeout-ms" "900000"
         "--prefill-chunk" "1024"
         "--max-concurrency" "1"
         "--max-pending-requests" "6"
+        "--temperature" "0.7"
         "--spec" "mtp"
         "--draft-tokens" "3"
         "--lm-head-draft"

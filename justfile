@@ -38,7 +38,7 @@ auto-stage:
 switch:
     just auto-stage
     sudo nixos-rebuild switch --flake .
-    @sudo nix build --no-link .#agents-md --print-out-paths | xargs -I{} sudo cp {} agents.md
+    @sudo nix build --no-link .#agents-md --print-out-paths | xargs -I{} sudo cp {} AGENTS.md
 
 build:
     just auto-stage

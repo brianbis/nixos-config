@@ -55,7 +55,7 @@ let
   };
 
   # Single source of truth for the packages injected into every jail.
-  # Each spec carries a stable doc name (what agents.md renders) and a
+  # Each spec carries a stable doc name (what AGENTS.md renders) and a
   # resolver to the actual derivation, so the doc generator can list names
   # without evaluating any package (no overlay required at doc-build time).
   commonPkgSpecs = [
@@ -125,7 +125,7 @@ let
   #
   # baseJailOptions is split into a pure mount-list builder (baseMounts) and
   # the option-combinator wrapper so agents-manifest.nix can render the
-  # readonly mounts into agents.md without needing jail-nix at all.
+  # readonly mounts into AGENTS.md without needing jail-nix at all.
   #
   # The nixpkgs source mount is the flake's own checkout (/etc/nixos), not
   # pkgs.path: the agent edits this repo, so it needs the working tree
@@ -133,7 +133,7 @@ let
   # the pinned nixpkgs input instead, which is not what the agent edits.
   #
   # Read-only host mounts are kept in two lists:
-  # - baseMounts: non-sensitive paths rendered verbatim into agents.md.
+  # - baseMounts: non-sensitive paths rendered verbatim into AGENTS.md.
   # - secretMounts: sensitive paths (agenix secrets) that must NOT be named
   #   in the generated doc; they are attached by the justfile after the
   #   declarative build step.
@@ -142,7 +142,7 @@ let
     ++ (if system then [ "/sys" "/run/user" ] else [ ]);
 
   # agenix secret file(s) mounted read-only into every jail. Kept out of
-  # baseMounts on purpose: naming the secret path in agents.md would leak
+  # baseMounts on purpose: naming the secret path in AGENTS.md would leak
   # the secret name into the doc. Rendered separately by the justfile.
   secretMounts = [ deepseekSecret ];
 

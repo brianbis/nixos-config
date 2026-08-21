@@ -201,9 +201,9 @@ let
       id = "qwen3.8-27b";
       name = "Qwen3.8-27B NVFP4 NInfer";
       url = "http://127.0.0.1:8080";
-      context = 210000;
+      context = 131072;
       maxTok = 81920;
-      reason = true;
+      reason = false;
       attachments = false;
     };
     deepseekPro = {
@@ -482,7 +482,7 @@ let
     # both the user and system jails, and also gives each editable copy of the
     # tree a distinct data dir keyed by cwd.
     options.data_directory = "${base}/.local/share/crush";
-    options.context_paths = [ "agents.md" ];
+    options.context_paths = [ "AGENTS.md" ];
     options.tui.transparent = true;
     options.tui.compact_mode = true;
     options.tui.scrollbar = "never";

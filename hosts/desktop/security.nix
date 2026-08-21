@@ -12,8 +12,14 @@ in
 
   users.groups.llm = {};
 
+  systemd.tmpfiles.rules = [
+    "z /var/lib/agenix 0755 root root -"
+    "z /var/lib/agenix/key.txt 0440 root agekeys -"
+  ];
+
   users.users.b.extraGroups = [
     "llm"
+    "agekeys"
   ];
 
   security.sudo.extraConfig = ''
