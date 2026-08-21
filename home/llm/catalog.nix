@@ -421,10 +421,47 @@ let
       llamacpp = opencodeProvider "llamacpp";
       vllm_awq = opencodeProvider "vllm_awq";
       vllm_nvfp4 = opencodeProvider "vllm_nvfp4";
+      ninfer = opencodeProvider "ninfer";
       deepseek = opencodeProvider "deepseek";
     };
     model = "${models.gemma4awq.providerName}/${models.gemma4awq.id}";
     small_model = "${models.gemma4awq.providerName}/${models.gemma4awq.id}";
+  };
+
+  # dsh's user-settings document ($DSH_HOME/settings.yaml, hot-reloaded). dsh
+  # ships one built-in route (deepseek-official, the default model) and takes
+  # every other provider from this file's llm-pi-ai section. JSON is a YAML
+  # subset and dsh's settings-file loader accepts both, so builtins.toJSON is
+  # the renderer. One route per distinct catalog providerName, mirroring
+  # crushProviders, so a catalog edit hits dsh with the rest of the tools.
+  # Every route names DEEPSEEK_API_KEY: the jail wrapper exports it in both
+  # user and system jails, and pi-ai's openai-completions insists on a
+  # credential even for local endpoints (which ignore the header). Local
+  # routes carry the docs-recommended compat pair for OpenAI-compatible
+  # gateways; the deepseek route keeps pi-ai's own defaults (DeepSeek natively
+  # accepts the developer role and max_completion_tokens).
+  dshSettings = builtins.toJSON {
+    "llm-pi-ai" = {
+      providers = lib.mapAttrs' (pname: ms:
+        lib.nameValuePair pname {
+          displayName = providerLabel.${pname}.name;
+          apiKeyEnv = "DEEPSEEK_API_KEY";
+          api = "openai-completions";
+          baseURL = "${(builtins.head ms).url}/v1";
+          models = map (m: {
+            id = m.id;
+            name = m.name;
+            contextWindow = m.context;
+            maxTokens = m.maxTok;
+          } // (if pname == "deepseek" then { } else {
+            compat = {
+              supportsDeveloperRole = false;
+              maxTokensField = "max_tokens";
+            };
+          })) ms;
+        })
+        (lib.groupBy (m: m.providerName) allModels);
+    };
   };
 
   # Crush PreToolUse hook that rewrites bash commands to use rtk for token
@@ -557,6 +594,7 @@ in
     crushProviders
     opencodeProvider
     opencodeProviders
+    dshSettings
     rtkRewriteHook
     systemStateDir
     crushConfigFor

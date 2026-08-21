@@ -199,6 +199,12 @@ let
     "${userHome}/.claude"
     "${userHome}/.claude.json"
   ];
+  # dsh (DeepSeek Harness) keeps all user data under a single root (~/.dsh,
+  # overridable via $DSH_HOME); the jail pins HOME, so the default root is
+  # what gets mounted.
+  dshDirs = mkDirs [
+    "${userHome}/.dsh"
+  ];
 
   # System (root-run) variants keep their writable state under systemStateDir
   # instead of the user's home, because bwrap-as-root cannot traverse the
@@ -216,6 +222,12 @@ let
   systemClaudeDirs = mkDirs [
     "${systemStateDir}/.claude"
     "${systemStateDir}/.claude.json"
+  ];
+
+  # dsh system variant: same single-root pattern as the user variant, under
+  # the root-owned systemStateDir.
+  systemDshDirs = mkDirs [
+    "${systemStateDir}/.dsh"
   ];
 
   agent = n: llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.${n};
@@ -285,7 +297,8 @@ let
          pkg = agent "claude-code";
          dirs = claudeDirs;
          systemDirs = systemClaudeDirs;
-       });
+       })
+    // (makeTool { name = "dsh"; pkg = withDeepSeekKey (agent "dsh") "dsh"; dirs = dshDirs; systemDirs = systemDshDirs; });
 
   # Flat list of all jail packages (home.packages expects a list).
   jails = builtins.attrValues jailsByTool;
@@ -300,6 +313,14 @@ let
     exec sudo ${jailsByTool."crush-jail-system"}/bin/jailed-crush-system "$@"
   '';
 
+  # Same pair for the dsh jail: `dsh` (user) and `dshs` (system, via sudo).
+  dsh = pkgs.writeShellScriptBin "dsh" ''
+    exec ${jailsByTool."dsh-jail"}/bin/jailed-dsh "$@"
+  '';
+  dshs = pkgs.writeShellScriptBin "dshs" ''
+    exec sudo ${jailsByTool."dsh-jail-system"}/bin/jailed-dsh-system "$@"
+  '';
+
   in
 {
   inherit
@@ -309,6 +330,8 @@ let
     commonPkgNames
     jc
     jcs
+    dsh
+    dshs
     forbiddenNixCmds
     baseMounts
     secretMounts

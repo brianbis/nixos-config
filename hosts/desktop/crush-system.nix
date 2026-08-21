@@ -11,7 +11,7 @@
 
 let
   shared = import ../../home/llm/catalog.nix { inherit lib pkgs jail-nix; };
-  inherit (shared) systemStateDir systemCrushConfig claudeConfig rtkRewriteHook;
+  inherit (shared) systemStateDir systemCrushConfig claudeConfig rtkRewriteHook dshSettings;
 in
 {
   # Root-only, root-owned state tree. Permission 0755 keeps it readable (and the
@@ -25,6 +25,7 @@ in
     "d ${systemStateDir}/.local/share 0755 root root - -"
     "d ${systemStateDir}/.local/share/crush 0755 root root - -"
     "d ${systemStateDir}/.claude 0755 root root - -"
+    "d ${systemStateDir}/.dsh 0755 root root - -"
   ];
 
   # Seed the root-owned crush.json + rtk hook at every switch, before any jail
@@ -33,7 +34,8 @@ in
     mkdir -p \
       ${systemStateDir}/.config/crush/hooks \
       ${systemStateDir}/.local/share/crush \
-      ${systemStateDir}/.claude
+      ${systemStateDir}/.claude \
+      ${systemStateDir}/.dsh
 
     # Claude Code state file: only created if missing so session history
     # survives re-activation.
@@ -51,5 +53,11 @@ in
     ${rtkRewriteHook}
     RTK_EOF
     chmod 0755 ${systemStateDir}/.config/crush/hooks/rtk-rewrite.sh
+
+    # dsh user-settings document (llm-pi-ai provider routes from the shared
+    # model catalog), same content as the user's ~/.dsh/settings.yaml.
+    cat > ${systemStateDir}/.dsh/settings.yaml <<'DSH_EOF'
+    ${dshSettings}
+    DSH_EOF
   '';
 }
