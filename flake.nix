@@ -109,6 +109,14 @@
         };
 
       imsg = inputs.imsg.packages.${system}.default;
+
+      # Local CA + leaf certificate for the Caddy-served *.local service
+      # names (see hosts/desktop/local-ca.nix).
+      local-services-ca =
+        (import ./hosts/desktop/local-ca.nix {
+          inherit pkgs;
+          lib = nixpkgs.lib;
+        }).ca;
     };
 
     nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {

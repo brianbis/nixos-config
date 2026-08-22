@@ -18,5 +18,6 @@
     ./ninfer
     ./host.nix
     ./hushmic
+    ./caddy.nix
   ];
 }
