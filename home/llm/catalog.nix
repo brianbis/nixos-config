@@ -471,26 +471,9 @@ let
     };
   };
 
-  # dsh web profile's patch layer ($DSH_HOME/profiles/web/cordis.patch.yml).
-  # dsh composes each profile as bundle layers -> this file -> the $DSH_HOME
-  # home patch -> --patch overlays, and the running server hot-reloads this
-  # file through its HMR watcher (the plain-file + cmp-guard write in
-  # jail-home.nix keeps the watcher quiet). dsh creates the file only when
-  # missing (initProfile) and never rewrites it, so the activation owns it.
-  #
-  # Disables the client's model-settings plugin: it hosts the versioned
-  # internal-testing welcome notice (the recurring "Continue" dialog) whose
-  # acknowledgement is process-local when the GUI is reached over a
-  # non-loopback trusted host, so it reappears on every blank session. It
-  # also owns the Models settings page, which is redundant here because the
-  # provider routes are declared in dshSettings above.
-  dshWebProfilePatch = ''
-    # dsh web profile patch layer - rendered declaratively from /etc/nixos
-    # (home/llm/catalog.nix, dshWebProfilePatch) and written by home-manager
-    # at activation. Edit the catalog, not this file.
-    - id: ui-settings-models
-      disabled: true
-  '';
+  # The dsh web profile's patch layer ($DSH_HOME/profiles/web/cordis.patch.yml)
+  # is a static dotfile - dotfiles/dsh/cordis.patch.yml, installed by
+  # home/llm/jail-home.nix (writeDshWebProfilePatch); see its header for the why.
 
   # Crush PreToolUse hook that rewrites bash commands to use rtk for token
   # savings, transparently (the model still sees its original command; crush
@@ -625,7 +608,6 @@ in
     opencodeProvider
     opencodeProviders
     dshSettings
-    dshWebProfilePatch
     rtkRewriteHook
     agentHome
     agentUsername

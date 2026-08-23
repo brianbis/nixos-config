@@ -1,0 +1,13 @@
+# dsh web profile patch layer, installed to ~/.dsh/profiles/web/cordis.patch.yml
+# by home-manager (home/llm/jail-home.nix, writeDshWebProfilePatch) as a plain
+# file with a cmp guard: dsh hot-reloads this file through its HMR watcher and
+# can write it itself (Loader tree write-back), so it must not be a symlink.
+#
+# Disables the client's model-settings plugin: it hosts the versioned
+# internal-testing welcome notice (the recurring "Continue" dialog) whose
+# acknowledgement is process-local when the GUI is reached over a
+# non-loopback trusted host, so it reappears on every blank session. It
+# also owns the Models settings page, which is redundant here because the
+# provider routes are declared in dshSettings (home/llm/catalog.nix).
+- id: ui-settings-models
+  disabled: true

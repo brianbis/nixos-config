@@ -8,6 +8,13 @@
 let
   userHome = config.home.homeDirectory;
   tool-configs = import ./configs.nix { inherit shared userHome; };
+  # dsh web profile's patch layer: static dotfile content (see the file
+  # header for the why), installed by writeDshWebProfilePatch below.
+  dshWebProfilePatch = builtins.readFile ../../dotfiles/dsh/cordis.patch.yml;
+  # Embed the content as one single-quoted shell word: each embedded
+  # apostrophe becomes '\'' so free-form comment text can never break the
+  # script's quoting (a bare '...' embedding died on the first apostrophe).
+  shellQuote = s: "'" + builtins.replaceStrings [ "'" ] [ "'\\''" ] s + "'";
 in
 {
   # Ensure the jailed agents' writable dirs exist as tracked empty files so
@@ -94,8 +101,9 @@ in
   # dsh's web-profile patch layer ($HOME/.dsh/profiles/web/cordis.patch.yml):
   # the per-profile user layer of dsh's patch composition (bundle layers ->
   # this file -> $HOME/.dsh/cordis.patch.yml -> --patch overlays). It disables
-  # the client's model-settings plugin - see catalog.nix, dshWebProfilePatch,
-  # for the why. Same plain-file + cmp-guard write as writeDshSettings: dsh
+  # the client's model-settings plugin - see the dotfile header
+  # (dotfiles/dsh/cordis.patch.yml) for the why. Plain-file + cmp-guard write
+  # (as in writeDshSettings): dsh
   # hot-reloads this file through its HMR watcher (which watches the nearest
   # existing ancestor, so it also picks up the file if this activation lands
   # before dsh has ever booted), and the guard keeps the watcher quiet when
@@ -106,7 +114,7 @@ in
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD mkdir -p $HOME/.dsh/profiles/web
 
-      $DRY_RUN_CMD printf '%s\n' '${shared.dshWebProfilePatch}' \
+      $DRY_RUN_CMD printf '%s' ${shellQuote dshWebProfilePatch} \
         > $HOME/.dsh/profiles/web/cordis.patch.yml.tmp
       if [ -f $HOME/.dsh/profiles/web/cordis.patch.yml ] \
         && cmp -s $HOME/.dsh/profiles/web/cordis.patch.yml.tmp \
