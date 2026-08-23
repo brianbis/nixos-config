@@ -428,10 +428,10 @@ let
   };
 
   # dsh's user-settings document ($DSH_HOME/settings.yaml, hot-reloaded). dsh
-  # ships one built-in route (deepseek-official, the default model) and takes
-  # every other provider from this file's llm-pi-ai section. JSON is a YAML
-  # subset and dsh's settings-file loader accepts both, so builtins.toJSON is
-  # the renderer. One route per distinct catalog providerName, mirroring
+  # ships one built-in route (deepseek-official, the composition default) and
+  # takes every other provider from this file's llm-pi-ai section. JSON is a
+  # YAML subset and dsh's settings-file loader accepts both, so builtins.toJSON
+  # is the renderer. One route per distinct catalog providerName, mirroring
   # crushProviders, so a catalog edit hits dsh with the rest of the tools.
   # Every route names DEEPSEEK_API_KEY: the jail wrapper exports it in both
   # user and system jails, and pi-ai's openai-completions insists on a
@@ -461,7 +461,36 @@ let
         })
         (lib.groupBy (m: m.providerName) allModels);
     };
+    # Default agent model (dsh-agent-default-model section). The profile's
+    # composition base defaults to the built-in deepseek-official route; this
+    # user-settings layer is read live and wins, so new sessions start on the
+    # local NVFP4 route.
+    "agent-default-model" = {
+      provider = models.qwen38_nvfp4_ninfer.providerName;
+      model = models.qwen38_nvfp4_ninfer.id;
+    };
   };
+
+  # dsh web profile's patch layer ($DSH_HOME/profiles/web/cordis.patch.yml).
+  # dsh composes each profile as bundle layers -> this file -> the $DSH_HOME
+  # home patch -> --patch overlays, and the running server hot-reloads this
+  # file through its HMR watcher (the plain-file + cmp-guard write in
+  # jail-home.nix keeps the watcher quiet). dsh creates the file only when
+  # missing (initProfile) and never rewrites it, so the activation owns it.
+  #
+  # Disables the client's model-settings plugin: it hosts the versioned
+  # internal-testing welcome notice (the recurring "Continue" dialog) whose
+  # acknowledgement is process-local when the GUI is reached over a
+  # non-loopback trusted host, so it reappears on every blank session. It
+  # also owns the Models settings page, which is redundant here because the
+  # provider routes are declared in dshSettings above.
+  dshWebProfilePatch = ''
+    # dsh web profile patch layer - rendered declaratively from /etc/nixos
+    # (home/llm/catalog.nix, dshWebProfilePatch) and written by home-manager
+    # at activation. Edit the catalog, not this file.
+    - id: ui-settings-models
+      disabled: true
+  '';
 
   # Crush PreToolUse hook that rewrites bash commands to use rtk for token
   # savings, transparently (the model still sees its original command; crush
@@ -596,6 +625,7 @@ in
     opencodeProvider
     opencodeProviders
     dshSettings
+    dshWebProfilePatch
     rtkRewriteHook
     agentHome
     agentUsername

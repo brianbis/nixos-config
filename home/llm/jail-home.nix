@@ -90,4 +90,31 @@ in
         $DRY_RUN_CMD mv -f $HOME/.dsh/settings.yaml.tmp $HOME/.dsh/settings.yaml
       fi
     '';
+
+  # dsh's web-profile patch layer ($HOME/.dsh/profiles/web/cordis.patch.yml):
+  # the per-profile user layer of dsh's patch composition (bundle layers ->
+  # this file -> $HOME/.dsh/cordis.patch.yml -> --patch overlays). It disables
+  # the client's model-settings plugin - see catalog.nix, dshWebProfilePatch,
+  # for the why. Same plain-file + cmp-guard write as writeDshSettings: dsh
+  # hot-reloads this file through its HMR watcher (which watches the nearest
+  # existing ancestor, so it also picks up the file if this activation lands
+  # before dsh has ever booted), and the guard keeps the watcher quiet when
+  # the content is unchanged. dsh bootstraps the rest of the profile dir
+  # (package.json, pnpm-workspace.yaml) on first boot and creates the patch
+  # file only when missing, so this activation owns the file outright.
+  home.activation.writeDshWebProfilePatch =
+    lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      $DRY_RUN_CMD mkdir -p $HOME/.dsh/profiles/web
+
+      $DRY_RUN_CMD printf '%s\n' '${shared.dshWebProfilePatch}' \
+        > $HOME/.dsh/profiles/web/cordis.patch.yml.tmp
+      if [ -f $HOME/.dsh/profiles/web/cordis.patch.yml ] \
+        && cmp -s $HOME/.dsh/profiles/web/cordis.patch.yml.tmp \
+          $HOME/.dsh/profiles/web/cordis.patch.yml; then
+        $DRY_RUN_CMD rm -f $HOME/.dsh/profiles/web/cordis.patch.yml.tmp
+      else
+        $DRY_RUN_CMD mv -f $HOME/.dsh/profiles/web/cordis.patch.yml.tmp \
+          $HOME/.dsh/profiles/web/cordis.patch.yml
+      fi
+    '';
 }
