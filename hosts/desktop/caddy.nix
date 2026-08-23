@@ -11,6 +11,12 @@ in
     # backends are loopback-only; bind Caddy to loopback as well so
     # naming the endpoints does not widen any service's exposure. Port 80
     # is used only for the automatic HTTP -> HTTPS redirect.
+    #
+    # Tailnet access to the GUI does not go through Caddy: `tailscale
+    # serve` (networking.nix) serves the name dsh.tail835824.ts.net (from
+    # the svc:dsh service name) on the Tailscale IP with a Let's Encrypt
+    # certificate provisioned by the Tailscale control plane. Caddy is the
+    # local front door only (https://dsh.local, local CA).
     virtualHosts = lib.mapAttrs' (
       name: port:
       lib.nameValuePair name {

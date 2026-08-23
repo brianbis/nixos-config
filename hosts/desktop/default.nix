@@ -19,5 +19,6 @@
     ./host.nix
     ./hushmic
     ./caddy.nix
+    ./dsh-web.nix
   ];
 }

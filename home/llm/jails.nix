@@ -313,6 +313,10 @@ let
 {
   inherit
     jails
+    # Per-tool (user, system) jail pair attrset. Exported so the NixOS system
+    # module can run a specific jail directly (dsh-web.service runs
+    # "dsh-jail-system") without re-deriving the jail pair.
+    jailsByTool
     headroomDeepseekWrapper
     commonPkgs
     commonPkgNames

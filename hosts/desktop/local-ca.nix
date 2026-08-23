@@ -33,6 +33,11 @@ let
     "deepseek.local" = 8788; # Headroom compression proxy -> DeepSeek cloud
     "claude.local"   = 8789; # Headroom compression proxy -> Claude Code
     "dsh.local"      = 3080; # DeepSeek Harness web GUI
+    # Deliberately NOT here: dsh.tail835824.ts.net (the GUI's tailnet
+    # serve name, from the svc:dsh service in
+    # hosts/desktop/networking.nix) is served by `tailscale serve` with a
+    # Let's Encrypt certificate from the Tailscale control plane, not by
+    # Caddy with this local CA.
     "print.local"    = 631;  # CUPS web interface
   };
 
