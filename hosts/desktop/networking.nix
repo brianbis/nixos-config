@@ -5,7 +5,10 @@
 
   services.tailscale = {
     enable = true;
-    authKeyFile = "/run/secrets/tailscale/authkey";
+    # agenix decrypts the tailscale-authkey secret to /run/agenix/ (the default
+    # age.secretsDir), not /run/secrets/ — the old literal path was stale and
+    # would break any (re-)auth. Track the real path so it follows agenix.
+    authKeyFile = config.age.secrets."tailscale-authkey".path;
 
     # Tailscale Services (svc:dsh, below) can only be hosted by tagged
     # nodes ("service hosts must be tagged nodes"). Tags are requested
@@ -128,8 +131,15 @@
     '';
   };
 
-  # The default NixOS firewall trusts only loopback, so every new tailnet
-  # connection to the Tailscale IP would be dropped — including the Serve
+  # Enable the firewall. This was previously never set (the option defaults
+  # to false), so the allowedTCPPorts below were inert and the host was
+  # reachable on ALL ports from the LAN and the tailnet. With it on, the only
+  # inbound accepted is loopback (always trusted) plus the Serve ports on
+  # tailscale0 below.
+  networking.firewall.enable = true;
+
+  # The NixOS firewall trusts only loopback, so every new tailnet connection
+  # to the Tailscale IP is dropped unless allowed — including the Serve
   # listener above. Open exactly the Serve ports on tailscale0 (443 + the
   # 80 -> 443 redirect; Tailscale SSH/cp also use 443). If the whole tailnet
   # should reach all host ports (e.g. for tailnet SSH), replace this with

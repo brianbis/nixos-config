@@ -13,16 +13,15 @@
 #   - 40437 (v4) / 40980 (v6): bound to the Tailscale address
 #     (100.110.118.13) rather than loopback; already reachable on the
 #     tailnet and the service behind them is unknown.
-#   - Unidentified ad-hoc listeners (not declared in this flake; could not
-#     be attributed to a process from the agent jail):
+#   - Discord/Steam local listeners (app-local IPC/web, not flake-managed;
+#     identified 2026-08-24). Deliberately NOT given named endpoints —
+#     they're GUI-app internals, not services worth a friendly name:
 #       6463     Go HTTP server, JSON API ({"code":0,"message":"Not Found"})
 #       27060    Jetty/Java HTTP (default 404 page)
 #       36671    Jetty/Java HTTP (default 404 page)
 #       45361    Jetty/Java HTTP (default 404 page)
 #       27036    raw TCP on 0.0.0.0, closes connections immediately
 #       57343    accepts connections, never responds
-#     TODO: investigate what these are and add them here if they are
-#     services worth a named endpoint.
 { pkgs, lib }:
 
 let
