@@ -36,6 +36,12 @@
     # Jailed LLM tooling
     jail-nix.url = "sourcehut:~alexdavid/jail.nix";
     llm-agents.url = "github:numtide/llm-agents.nix";
+
+    # GPU-accelerated Whisper transcription (on-demand VRAM residency)
+    whisper-service = {
+      url = "path:hosts/desktop/whisper-service";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = {
@@ -47,6 +53,7 @@
     nur,
     jail-nix,
     llm-agents,
+    whisper-service,
     ...
   }@inputs:
   let
@@ -127,8 +134,30 @@
         agenix.nixosModules.default
         home-manager.nixosModules.home-manager
 
+        # GPU-accelerated Whisper transcription (on-demand VRAM residency)
+        ./hosts/desktop/whisper-service/module.nix
+
         ({ config, pkgs, lib, ... }: {
           nixpkgs.config.allowUnfree = true;
+
+          # Whisper: socket-activated; the service process only exists between
+          # a request and the model's release. With autoStop the whole process
+          # exits after the 120s idle window (VRAM *and* host memory freed,
+          # "reduce to almost 0") and the socket unit re-activates it on the
+          # next connection. All four NVIDIA device nodes are required (uvm
+          # included) or ctranslate2 falls back to CPU.
+          services.whisper-service = {
+            enable = true;
+            package = whisper-service.packages.${system}.whisper-service;
+            model = "large-v3";
+            port = 8790;
+            idleTimeout = 120;
+            autoStop = true;
+            # Host NVIDIA driver package; its /lib (libcuda.so.1) is added to
+            # the service's LD_LIBRARY_PATH so ctranslate2's runtime dlopen of
+            # the driver stub resolves and CUDA initialises.
+            nvidiaDriver = config.hardware.nvidia.package;
+          };
 
           nixpkgs.overlays = [
             nur.overlays.default

@@ -7,8 +7,8 @@
 # package so the material can be inspected or installed on other devices.
 #
 # Deliberately NOT named:
-#   - 8081  NInfer engine: internal child of the 8080 proxy; fronting it
-#     directly would bypass the proxy's on-demand model load/unload.
+#   - 8081  NInfer engine: internal child of the 8080 wrapper; fronting it
+#     directly would bypass the wrapper's on-demand model load/unload.
 #   - 22    OpenSSH: not HTTP, so no https:// endpoint.
 #   - 40437 (v4) / 40980 (v6): bound to the Tailscale address
 #     (100.110.118.13) rather than loopback; already reachable on the
@@ -28,7 +28,7 @@
 let
   services = {
     "llm.local"      = 8000; # llama.cpp router / vLLM (OpenAI-compatible API)
-    "ninfer.local"   = 8080; # NInfer proxy (Qwen3.8-27B NVFP4)
+    "ninfer.local"   = 8080; # NInfer engine (Qwen3.8-27B NVFP4, socket-activated)
     "headroom.local" = 8787; # Headroom compression proxy -> local llama.cpp
     "deepseek.local" = 8788; # Headroom compression proxy -> DeepSeek cloud
     "claude.local"   = 8789; # Headroom compression proxy -> Claude Code
