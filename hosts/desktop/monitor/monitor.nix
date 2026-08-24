@@ -1,6 +1,6 @@
-# Assumes this file lives at ./monitor/default.nix with the Python
-# scripts alongside it at ./monitor/scripts/*.py — adjust the paths
-# below if you put them somewhere else.
+# Lives at ./monitor/monitor.nix (imported by ./monitor/default.nix),
+# with the Python scripts alongside at ./monitor/scripts/*.py — adjust the
+# paths below if you move them.
 { pkgs, ... }:
 
 let

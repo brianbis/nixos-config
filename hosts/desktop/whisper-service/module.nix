@@ -167,7 +167,7 @@ in
 
       environment = {
         # config.py appends "/whisper-service" to XDG_CACHE_HOME, so the cache
-        # root becomes /var/cache/whisper-service (matching preStart + README).
+        # root becomes /var/cache/whisper-service (matching CacheDirectory).
         XDG_CACHE_HOME = "/var/cache";
       };
     };

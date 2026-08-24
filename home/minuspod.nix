@@ -180,7 +180,7 @@ in {
   home.sessionVariables = {
     MINUSPOD_LLM_PROVIDER = "openai";
     MINUSPOD_LLM_BASE_URL = "http://127.0.0.1:8787/v1";
-    MINUSPOD_LLM_MODEL = "qwen3-8-27b-q8_0";
+    MINUSPOD_LLM_MODEL = "qwen3-8-27b-q8_0-thinking-xhigh";
     MINUSPOD_TRANSCRIBE_PROVIDER = "local";
     MINUSPOD_MASTER_PASSPHRASE = "change-me";
   };

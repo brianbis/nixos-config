@@ -79,11 +79,12 @@ let
   #  - [*] default: KV cache offloaded to GPU for every model.
   #  - [muse-glimmer-30B] merges the DFlash drafter onto the auto-discovered
   #    muse preset (which already sets model + mmproj from the subdir scan).
-  #  - [qwen3-8-27b-q8_0] registers Qwen under the catalog's model id (the auto
-  #    id "Qwen3.8-27B-Q8_0" does not match what headroom/agents send) and
-  #    forces KV into RAM (no-kv-offload): its ~27 GiB Q8_0 weights nearly fill
-  #    the 32 GB card, so GPU KV OOMs at any real context. This keeps Glimmer's
-  #    KV on the GPU, which previously had to be sacrificed for Qwen.
+  #  - [qwen3-8-27b-q8_0-thinking-*] registers the Qwen thinking variants
+  #    under the catalog's model ids (the auto id "Qwen3.8-27B-Q8_0" does not
+  #    match what headroom/agents send) and forces KV into RAM (no-kv-offload):
+  #    the ~27 GiB Q8_0 weights nearly fill the 32 GB card, so GPU KV OOMs at
+  #    any real context. This keeps Glimmer's KV on the GPU, which previously
+  #    had to be sacrificed for Qwen.
   #  - [qwen3-8-27b-q8_0-instruct-*] same weights, instruct-style sampling.
   #  - [qwen3-8-27b-heretic-q6_k] registers the abliterated RVN Q6_K under the
   #    catalog's model id; same no-kv-offload treatment as the base Qwen (its

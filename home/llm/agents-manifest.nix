@@ -51,16 +51,5 @@ in
 
     # Denied commands from the single source of truth in jails.nix
     deniedCommands = lib.concatStringsSep ", " (map (c: "`${c}`") (builtins.attrNames forbiddenNixCmds));
-
-    # Tool contracts (unchanged)
-    headroomNote = "Compression is lossy for repeated tokens; keep hash for retrieval";
   };
-
-  # Keep original sections for compatibility
-  tools.headroom.compress = "headroom_compress(content) → compressed + hash + token metrics";
-  tools.headroom.retrieve = "headroom_retrieve(hash, query?) → original";
-  tools.headroom.stats = "headroom_stats";
-  tools.edit.success = "silent";
-  tools.edit.requires = "exact match including whitespace";
-  tools.edit.verify = "view or git diff";
 }

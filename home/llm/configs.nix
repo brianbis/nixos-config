@@ -29,19 +29,16 @@ let
       openai-api-base: ${headroomProxyUrl}/v1
       openai-api-key: ${providerLabel.${models.gemma4awq.providerName}.api_key}
 
-      # Convenient local model shortcuts (from the shared model catalog). Only
-      # the model served by the backend you actually started is reachable.
-      alias:
-        awq: "${models.gemma4awq.providerName}/${models.gemma4awq.id}"
-        nvfp4: "${models.gemma4nvfp4.providerName}/${models.gemma4nvfp4.id}"
-        muse: "${models.muse.providerName}/${models.muse.id}"
-
       # DeepSeek cloud endpoint via the Headroom proxy
       deepseek-api-base: ${headroomCloudProxyUrl}/v1
       deepseek-api-key: ${providerLabel.deepseek.api_key}
 
-      # Cloud model shortcuts (from the shared model catalog)
+      # Model shortcuts (from the shared model catalog). Only the model served
+      # by the backend you actually started is reachable.
       alias:
+        awq: "${models.gemma4awq.providerName}/${models.gemma4awq.id}"
+        nvfp4: "${models.gemma4nvfp4.providerName}/${models.gemma4nvfp4.id}"
+        muse: "${models.muse.providerName}/${models.muse.id}"
         pro: "${models.deepseekPro.providerName}/${models.deepseekPro.id}"
         flash: "${models.deepseekFlash.providerName}/${models.deepseekFlash.id}"
 

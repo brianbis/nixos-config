@@ -130,10 +130,15 @@
               pkgs.lib.sourceByRegex ./. [
               # lib.match is a full match, so the directory itself and its
               # contents need separate regexes:
-              #   "whisper_service"      -> keeps the package directory
-              #   "whisper_service/.*"   -> keeps the .py files inside it
+              #   "whisper_service"          -> keeps the package directory
+              #   "whisper_service/.*\.py"   -> keeps only the .py files inside
+              #                                it: a broad .* would also sweep
+              #                                in local __pycache__/*.pyc
+              #                                (git-ignored working-tree junk)
+              #                                and ship stale bytecode in the
+              #                                built package
               "whisper_service"
-              "whisper_service/.*"
+              "whisper_service/.*\.py"
               "setup.py"
               "README.md"
             ];

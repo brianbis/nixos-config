@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import gc
 import logging
-import os
 import shutil
 import subprocess
 import threading

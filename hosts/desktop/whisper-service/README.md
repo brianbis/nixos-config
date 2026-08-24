@@ -74,22 +74,8 @@ The service auto-detects the GPU: if `ctranslate2.get_cuda_device_count() > 0` i
 uses `cuda` + `float16`, otherwise it falls back to `cpu` + `int8`.
 
 If you run this inside a sandbox/container that lacks `/dev/nvidia*` device nodes
-(even though the host has an NVIDIA driver), pass the devices through. On NixOS:
-
-```nix
-# /etc/nixos/configuration.nix (or wherever the jail/container is defined)
-services.whisper-service = {
-  enable = true;
-  # for a bubblewrap-style jail: add to the bwrap args
-  #   --dev-bind /dev/nvidia0 /dev/nvidia0
-  #   --dev-bind /dev/nvidiactl /dev/nvidiactl
-  #   --dev-bind /dev/nvidia-uvm /dev/nvidia-uvm
-  #   --dev-bind /dev/nvidia-uvm-tools /dev/nvidia-uvm-tools
-  # (and /dev/dri/renderD128 if using the DRM render node)
-};
-```
-
-or, ad hoc from the host:
+(even though the host has an NVIDIA driver), pass the devices through — e.g. for
+a bubblewrap-style jail, add to the bwrap args:
 
 ```bash
 sudo bwrap --bind /dev/nvidia0 /dev/nvidia0 \
@@ -98,6 +84,8 @@ sudo bwrap --bind /dev/nvidia0 /dev/nvidia0 \
            --bind /dev/nvidia-uvm-tools /dev/nvidia-uvm-tools \
            ... <your usual bwrap args>
 ```
+
+(plus `--bind /dev/dri/renderD128 /dev/dri/renderD128` if using the DRM render node)
 
 Verify with `GET /status` → `"cuda_devices_visible": 1` and `"nvidia_smi"` showing
 the GPU. `GET /status` also reports process RSS so you can watch the model come

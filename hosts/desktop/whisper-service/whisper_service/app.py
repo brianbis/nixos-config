@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import anyio
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from . import __version__
