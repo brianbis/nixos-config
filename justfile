@@ -1,7 +1,9 @@
 set shell := ["bash", "-cu"]
 
 secrets-dir := "secrets"
-identity-key := "/var/lib/agenix/key.txt"
+# The agenix identity is the TPM-unsealed key (hosts/desktop/security.nix).
+# These recipes run under sudo, so root can read the 0400 tmpfs key.
+identity-key := "/run/agenix-tpm/key.txt"
 
 secret-edit name:
     @mkdir -p {{secrets-dir}}

@@ -1,4 +1,4 @@
-{ lib, inputs, ... }:
+{ lib, pkgs, inputs, ... }:
 
 let
   secretsDir = ../../secrets;
@@ -12,14 +12,43 @@ in
 
   users.groups.llm = {};
 
-  systemd.tmpfiles.rules = [
-    "z /var/lib/agenix 0755 root root -"
-    "z /var/lib/agenix/key.txt 0440 root agekeys -"
-  ];
+  # TPM2 unseal: the age key is sealed in the TPM bound to PCRs 0,2,3
+  # (bootloader/kernel/initrd); every boot this script unseals the key line
+  # into tmpfs before agenix's own activation script decrypts the secrets.
+  # It must be an activation script (not a systemd unit) because with
+  # systemd.sysusers disabled — required, since b/llm are normal users —
+  # agenix decrypts in the initrd, before the main systemd starts.
+  # TCTI is pinned to the device: tpm2-abrmd is not running at boot.
+  # Runbook (sealing, rotation, recovery): docs/secrets.md.
+  system.activationScripts.tpmUnseal = {
+    text = ''
+      set -e
+      export TPM2TOOLS_TCTI=device:/dev/tpmrm0
+      for i in $(seq 1 100); do
+        [ -e /dev/tpmrm0 ] && break
+        sleep 0.1
+      done
+      [ -e /dev/tpmrm0 ] || { echo "agenix-tpm: TPM device not available" >&2; exit 1; }
+      mkdir -p /run/agenix-tpm
+      chmod 700 /run/agenix-tpm
+      ${pkgs.tpm2-tools}/bin/tpm2_createprimary -c /run/agenix-tpm/primary.ctx -Q
+      ${pkgs.tpm2-tools}/bin/tpm2_load -C /run/agenix-tpm/primary.ctx \
+        -u /var/lib/agenix-tpm/seal.pub \
+        -r /var/lib/agenix-tpm/seal.priv \
+        -c /run/agenix-tpm/seal.ctx -Q
+      ${pkgs.tpm2-tools}/bin/tpm2_unseal -c /run/agenix-tpm/seal.ctx -p pcr:sha256:0,2,3 \
+        -o /run/agenix-tpm/key.txt
+      chmod 0400 /run/agenix-tpm/key.txt
+      rm -f /run/agenix-tpm/primary.ctx /run/agenix-tpm/seal.ctx
+    '';
+    deps = [ "specialfs" ];
+  };
+  # Order the unseal before agenix's own activation script (which decrypts the
+  # secrets) in both the initrd (boot) and the main system (switch).
+  system.activationScripts.agenixInstall.deps = lib.mkAfter [ "tpmUnseal" ];
 
   users.users.b.extraGroups = [
     "llm"
-    "agekeys"
   ];
 
   security.sudo.extraConfig = ''
@@ -36,8 +65,10 @@ in
   };
 
   age = {
+    # The identity is the TPM-unsealed key. Rollback/recovery if a boot fails
+    # to unseal (PCR drift): see docs/secrets.md.
     identityPaths = [
-      "/var/lib/agenix/key.txt"
+      "/run/agenix-tpm/key.txt"
     ];
 
     secrets = builtins.listToAttrs (map (file: {

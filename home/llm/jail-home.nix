@@ -11,6 +11,16 @@ let
   # dsh web profile's patch layer: static dotfile content (see the file
   # header for the why), installed by writeDshWebProfilePatch below.
   dshWebProfilePatch = builtins.readFile ../../dotfiles/dsh/cordis.patch.yml;
+  # dsh's locally-authored agent preset: a whole copy of the shipped
+  # `standard` preset with the compaction summarizer's output budget raised
+  # to 32768 tokens (see the dotfile header for the why). The user preset
+  # root is scanned after the shipped root (first-root-wins per id), so the
+  # copy cannot shadow `standard`; the default switch lives in catalog.nix's
+  # dshSettings (agent-presets namespace). Installed by writeDshAgentPreset.
+  dshAgentPresetFiles = {
+    "agent.cordis.yml" = builtins.readFile ../../dotfiles/dsh/agent-presets/standard-compact32k/agent.cordis.yml;
+    "preset.yml" = builtins.readFile ../../dotfiles/dsh/agent-presets/standard-compact32k/preset.yml;
+  };
   # Embed the content as one single-quoted shell word: each embedded
   # apostrophe becomes '\'' so free-form comment text can never break the
   # script's quoting (a bare '...' embedding died on the first apostrophe).
@@ -123,6 +133,43 @@ in
       else
         $DRY_RUN_CMD mv -f $HOME/.dsh/profiles/web/cordis.patch.yml.tmp \
           $HOME/.dsh/profiles/web/cordis.patch.yml
+      fi
+    '';
+
+  # dsh's locally-authored agent preset ($HOME/.dsh/.agent-presets/standard-compact32k/):
+  # the user preset root dsh's roster scans for locally authored presets
+  # (discovery re-reads the roots on every resolve, so no restart is needed for
+  # a new session to see it). Plain-file + cmp-guard write (as in
+  # writeDshSettings / writeDshWebProfilePatch): the standing preset mount
+  # watches the composition file's stamp, so an unchanged-content swap would
+  # churn the watcher and re-mount the preset for nothing. The preset id is a
+  # directory name (PRESET_ID: lowercase alnum + dashes); the copy cannot
+  # shadow the shipped `standard` (first-root-wins, shipped root first), so
+  # the default switch is the agent-presets settings namespace in dshSettings.
+  home.activation.writeDshAgentPreset =
+    lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      $DRY_RUN_CMD mkdir -p $HOME/.dsh/.agent-presets/standard-compact32k
+
+      $DRY_RUN_CMD printf '%s' ${shellQuote dshAgentPresetFiles."agent.cordis.yml"} \
+        > $HOME/.dsh/.agent-presets/standard-compact32k/agent.cordis.yml.tmp
+      if [ -f $HOME/.dsh/.agent-presets/standard-compact32k/agent.cordis.yml ] \
+        && cmp -s $HOME/.dsh/.agent-presets/standard-compact32k/agent.cordis.yml.tmp \
+          $HOME/.dsh/.agent-presets/standard-compact32k/agent.cordis.yml; then
+        $DRY_RUN_CMD rm -f $HOME/.dsh/.agent-presets/standard-compact32k/agent.cordis.yml.tmp
+      else
+        $DRY_RUN_CMD mv -f $HOME/.dsh/.agent-presets/standard-compact32k/agent.cordis.yml.tmp \
+          $HOME/.dsh/.agent-presets/standard-compact32k/agent.cordis.yml
+      fi
+
+      $DRY_RUN_CMD printf '%s' ${shellQuote dshAgentPresetFiles."preset.yml"} \
+        > $HOME/.dsh/.agent-presets/standard-compact32k/preset.yml.tmp
+      if [ -f $HOME/.dsh/.agent-presets/standard-compact32k/preset.yml ] \
+        && cmp -s $HOME/.dsh/.agent-presets/standard-compact32k/preset.yml.tmp \
+          $HOME/.dsh/.agent-presets/standard-compact32k/preset.yml; then
+        $DRY_RUN_CMD rm -f $HOME/.dsh/.agent-presets/standard-compact32k/preset.yml.tmp
+      else
+        $DRY_RUN_CMD mv -f $HOME/.dsh/.agent-presets/standard-compact32k/preset.yml.tmp \
+          $HOME/.dsh/.agent-presets/standard-compact32k/preset.yml
       fi
     '';
 }

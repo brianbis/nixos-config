@@ -1,5 +1,8 @@
 let
-  adminPubKey = "age13vhqfs4f288fl2haqsr6g8nd2r0e7e0sjy2a7jr94dhvu6p8cpyq2a9hz6";
+  # Rotated 2026-08-24: the previous key (age13vhqf…) was exposed in a
+  # terminal transcript during TPM sealing validation and is treated as
+  # compromised. All secrets/*.age were re-encrypted to this recipient.
+  adminPubKey = "age1j6qcyjz8409hrm7qhtqt7fxrg9vump4pvmkltjs0vahr6ef5darqcvasmj";
 in
 {
   "secrets/tailscale-authkey.age".publicKeys = [ adminPubKey ];

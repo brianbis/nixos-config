@@ -22,6 +22,13 @@ in
   i18n.defaultLocale = "en_US.UTF-8";
   services.lact.enable = true;
   services.power-profiles-daemon.enable = false;
+  boot.kernelModules = [ "tpm_tis" "tpm_crb" ];
+  # Load the TPM modules in the initrd too: the agenix age-key unseal runs as
+  # an initrd activation script (hosts/desktop/security.nix) before the main
+  # systemd starts, so the TPM device must exist by then.
+  boot.initrd.kernelModules = [ "tpm_tis" "tpm_crb" ];
+  security.tpm2.enable = true;
+  security.tpm2.abrmd.enable = true;
   # Keep USB input devices (keyboard/mouse) awake: the default autosuspend
   # drops them after idle, causing input lag on wake.
   services.udev.extraRules = ''
@@ -81,10 +88,16 @@ in
     chown -R ${users.llm.username}:${users.llm.username} /etc/nixos
   '';
 
-  # A real home should be 0700 (NixOS creates homes 0755): b cannot snoop
-  # the agent's tool state. mkAfter so this runs after the users module's
-  # home-creation rule in the same tmpfiles pass.
+  # Real homes should be 0700 (NixOS creates them 0755). llm's: b cannot snoop
+  # the agent's tool state. b's: it holds unencrypted resurrect session state
+  # (terminal scrollback, dotfiles/wezterm.lua) — keep it out of reach of the
+  # llm agent and other users. The llm group is declared in security.nix; b
+  # has no user-private group, so its home is grouped to the always-present
+  # `users` group (irrelevant for a 0700 dir — only owner + mode matter).
+  # mkAfter so these run after the users module's home-creation rule in the
+  # same tmpfiles pass.
   systemd.tmpfiles.rules = [
+    (lib.mkAfter "z ${users.b.homeDirectory} 0700 ${users.b.username} users -")
     (lib.mkAfter "z ${users.llm.homeDirectory} 0700 ${users.llm.username} ${users.llm.username} -")
   ];
 }

@@ -497,10 +497,28 @@ let
     # Default agent model (dsh-agent-default-model section). The profile's
     # composition base defaults to the built-in deepseek-official route; this
     # user-settings layer is read live and wins, so new sessions start on the
-    # local NVFP4 route.
+    # local NVFP4 route. reasoningEffort mirrors the live settings.yaml (the
+    # GUI's effort selector persists it); without it the next activation
+    # would drop the field - behavior stays "low" via ninfer's
+    # --reasoning-effort server default, but the GUI selector would lose it.
     "agent-default-model" = {
       provider = models.qwen38_nvfp4_ninfer.providerName;
       model = models.qwen38_nvfp4_ninfer.id;
+      reasoningEffort = "low";
+    };
+    # Default agent preset (dsh-agent-presets section). The shipped `standard`
+    # preset compacts with the plugin's default 8192-token summarizer budget,
+    # which the thinking default model routinely blows: the compaction call
+    # sends no per-request reasoning_effort, so thinking tokens share the
+    # budget with the checkpoint text and a large share of compactions
+    # truncate ("summarization truncated at the token cap"), leaving the
+    # session stuck re-triggering compaction. `standard-compact32k` is a
+    # locally authored copy of `standard` with the budget raised to 32768
+    # (dotfiles/dsh/agent-presets/, installed by writeDshAgentPreset in
+    # jail-home.nix); the user preset root cannot shadow the shipped
+    # `standard` id, so the default is switched here.
+    "agent-presets" = {
+      default = "standard-compact32k";
     };
   };
 

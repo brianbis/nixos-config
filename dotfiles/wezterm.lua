@@ -10,41 +10,15 @@ local config = wezterm.config_builder()
 -- directory name keeps "YedPool" so the dev.wezterm helper can locate the
 -- plugin among the installed ones; the helper itself is still fetched once
 -- from GitHub.
--- State JSONs (which include scrollback) are encrypted with age, reusing the
--- agenix identity key on disk. User b is granted read access to it via the
--- agekeys group (see hosts/desktop/security.nix). The public key is derived
--- from the key file's age-keygen comment at startup.
+-- State JSONs (which include scrollback) are stored unencrypted in
+-- ~/.local/share/resurrect/state/; /home/b is 0700 (hosts/desktop/host.nix
+-- tmpfiles rule), so only b can read them. (They were previously encrypted
+-- with the agenix master key, which required b to have read access to that
+-- key on disk — incompatible with the TPM-backed key, cutover 2026-08-24.)
 local resurrect = require 'YedPool-Wezurrect'
-
-local age_key_path = '/var/lib/agenix/key.txt'
 
 resurrect.state_manager.change_state_save_dir(
     os.getenv('HOME') .. '/.local/share/resurrect/state/')
-
-local function age_public_key(key_path)
-    local f = io.open(key_path, 'r')
-    if not f then
-        wezterm.log_error('resurrect: cannot read age key ' .. key_path
-            .. ', session state will be unencrypted')
-        return nil
-    end
-
-    local content = f:read('a')
-    f:close()
-
-    return (content:match('#%s*public key:%s*(age1[0-9a-z]+)'))
-end
-
-local age_pub = age_public_key(age_key_path)
-
-if age_pub then
-    resurrect.state_manager.set_encryption({
-        enable = true,
-        method = 'age',
-        private_key = age_key_path,
-        public_key = age_pub,
-    })
-end
 
 resurrect.setup(config, {
     keybindings = false,
