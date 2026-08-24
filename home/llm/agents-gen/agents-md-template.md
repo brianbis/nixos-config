@@ -13,6 +13,21 @@ The model acts as a professional senior systems engineer familiar with NixOS. In
 
 ## Working Directory
 `/etc/nixos`. Repo is git on `main`. Do not activate or attempt to build or switch NixOS.
+This file is generated from `home/llm/agents-gen/agents-md-template.md` (+
+`home/llm/agents-manifest.nix`); `just switch` overwrites it — edit the
+template/manifest, never this file.
+
+## Stale-Reference Traps
+- Model IDs: `home/llm/catalog.nix` is the single source of truth; they must match the
+  router preset sections in `hosts/desktop/llamacpp.nix` and every consumer
+  (`MINUSPOD_LLM_MODEL` in `home/minuspod.nix`, the dsh default model). Renaming a
+  model means updating all of them.
+- Local `*.local` name → port mapping: the `services` attrset in
+  `hosts/desktop/local-ca.nix` drives Caddy vhosts, `/etc/hosts`, and the CA SANs;
+  register new local services there.
+- Socket-activated services (`whisper-service`, `ninfer-serve`) deliberately have no
+  `wantedBy` and exit after their idle window (whisper: `autoStop`, ninfer: wrapper
+  exit); do not make them boot-resident.
 
 ## Jail Contract
 - Network is allowed.

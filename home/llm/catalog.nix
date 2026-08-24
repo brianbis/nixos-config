@@ -204,6 +204,18 @@ let
       maxTok = 200000;
       reason = false;
       attachments = false;
+      # Thinking levels the Qwen3.8-27B chat template supports (the engine's
+      # ReasoningEffortCapabilities: low/medium/xhigh). Declaring them makes
+      # dsh materialize the model as a reasoning model, so the web UI offers
+      # the effort selector. A selected level is sent as the request's
+      # reasoning_effort and wins over the serve binary's --reasoning-effort
+      # low default; an unselected request sends nothing and falls back to
+      # that default.
+      reasoningEfforts = {
+        low = "low";
+        medium = "medium";
+        xhigh = "xhigh";
+      };
     };
     deepseekPro = {
       providerName = "deepseek";
@@ -447,17 +459,38 @@ let
           apiKeyEnv = "DEEPSEEK_API_KEY";
           api = "openai-completions";
           baseURL = "${(builtins.head ms).url}/v1";
-          models = map (m: {
-            id = m.id;
-            name = m.name;
-            contextWindow = m.context;
-            maxTokens = m.maxTok;
-          } // (if pname == "deepseek" then { } else {
-            compat = {
-              supportsDeveloperRole = false;
-              maxTokensField = "max_tokens";
-            };
-          })) ms;
+          models = map (m:
+             let
+               # Base local-gateway compat pair (every non-deepseek route).
+               # Reasoning models additionally select the deepseek wire format:
+               # it is the only openai-completions shape that emits a top-level
+               # `reasoning_effort` (the field ninfer parses); its companion
+               # `thinking: {type}` is an unknown field ninfer ignores. Both
+               # halves are flat, so the shallow `//` is a union.
+               compat =
+                 (if pname == "deepseek" then { } else {
+                   supportsDeveloperRole = false;
+                   maxTokensField = "max_tokens";
+                 })
+                 // (if m ? reasoningEfforts then {
+                   thinkingFormat = "deepseek";
+                   supportsReasoningEffort = true;
+                 } else { });
+             in
+             {
+               id = m.id;
+               name = m.name;
+               contextWindow = m.context;
+               maxTokens = m.maxTok;
+             }
+             // lib.optionalAttrs (compat != { }) { inherit compat; }
+             // lib.optionalAttrs (m ? reasoningEfforts) {
+               # Expose the declared thinking levels so dsh materializes the
+               # model as a reasoning model (the web UI's effort selector
+               # reads this).
+               reasoningEfforts = m.reasoningEfforts;
+             }
+           ) ms;
         })
         (lib.groupBy (m: m.providerName) allModels);
     };

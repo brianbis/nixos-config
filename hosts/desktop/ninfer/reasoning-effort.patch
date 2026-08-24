@@ -1,0 +1,127 @@
+diff --git a/src/serve/generation_service.cpp b/src/serve/generation_service.cpp
+index b1c78d1..b9c8209 100644
+--- a/src/serve/generation_service.cpp
++++ b/src/serve/generation_service.cpp
+@@ -244,6 +244,11 @@ GenerationService::GenerationService(ServeOptions options, LoadProgress load_pro
+     engine_options.load_progress            = std::move(load_progress);
+     engine_              = std::make_unique<ninfer::Engine>(std::move(engine_options));
+     prompt_capabilities_ = engine_->prompt_capabilities();
++    if (options_.default_reasoning_effort &&
++        !prompt_capabilities_.reasoning_effort.supports(*options_.default_reasoning_effort)) {
++        throw std::invalid_argument(
++            "default reasoning effort is not supported by the loaded chat template");
++    }
+     request_capacity_    = std::make_shared<RequestCapacity>(
+         static_cast<std::size_t>(options_.max_concurrency) + options_.max_pending_requests);
+ }
+diff --git a/src/serve/request_log.cpp b/src/serve/request_log.cpp
+index b2dd984..e7f5a63 100644
+--- a/src/serve/request_log.cpp
++++ b/src/serve/request_log.cpp
+@@ -99,6 +99,18 @@ const char* kv_capacity_mode_name(ninfer::KvCapacityMode mode) {
+     return mode == ninfer::KvCapacityMode::Automatic ? "auto" : "explicit";
+ }
+ 
++const char* reasoning_effort_name(ninfer::ReasoningEffort effort) {
++    switch (effort) {
++    case ninfer::ReasoningEffort::Low:
++        return "low";
++    case ninfer::ReasoningEffort::Medium:
++        return "medium";
++    case ninfer::ReasoningEffort::XHigh:
++        return "xhigh";
++    }
++    return "unknown";
++}
++
+ const char* proposal_head_name(ninfer::ProposalHead proposal) {
+     return proposal == ninfer::ProposalHead::Optimized ? "optimized" : "full";
+ }
+@@ -454,6 +466,10 @@ std::string format_server_start_json(
+                               {"request_log_jsonl", options.request_log_jsonl},
+                               {"default_output_tokens", options.default_max_tokens},
+                               {"default_thinking", options.enable_thinking},
++                              {"default_reasoning_effort",
++                               options.default_reasoning_effort
++                                   ? Json(reasoning_effort_name(*options.default_reasoning_effort))
++                                   : Json(nullptr)},
+                               {"default_preserve_thinking", options.preserve_thinking}};
+     record["artifact"] = Json{{"path", options.artifact_path},
+                               {"size_bytes", std::move(artifact_size)},
+diff --git a/src/serve/serve_options.cpp b/src/serve/serve_options.cpp
+index c991e2c..bdd1a68 100644
+--- a/src/serve/serve_options.cpp
++++ b/src/serve/serve_options.cpp
+@@ -74,7 +74,8 @@ std::string serve_usage_text(const char* argv0) {
+            "[--kv-dtype bf16|int8] [--spec mtp|dflash --draft-tokens N] "
+            "[--default-max-tokens N] "
+            "[--vision] [--no-cuda-graph] [--no-prefix-reuse] "
+-           "[--lm-head-draft] [--no-thinking] [--preserve-thinking] [--cors] "
++           "[--lm-head-draft] [--no-thinking] [--reasoning-effort low|medium|xhigh] "
++           "[--preserve-thinking] [--cors] "
+            "[--temperature F] [--top-p F] [--top-k N] [--min-p F] [--presence-penalty F] "
+            "[--frequency-penalty F] [--seed N] [--greedy]\n"
+            "       serves OpenAI Responses/Chat Completions and Anthropic Messages endpoints\n"
+@@ -96,6 +97,9 @@ std::string serve_usage_text(const char* argv0) {
+            " MiB of sizing headroom\n"
+            "       --no-prefix-reuse disables compatible-prefix caching (enabled by default)\n"
+            "       --preserve-thinking retains closed-turn assistant reasoning in later prompts\n"
++           "       --reasoning-effort sets the default reasoning effort for requests that omit "
++           "one; it applies only while thinking is enabled, and a per-request effort always "
++           "wins\n"
+            "       sampler defaults come from the loaded model and resolved thinking mode; "
+            "server flags and request fields override individual values.\n"
+            "       --greedy forces temperature 0 (exact argmax).\n";
+@@ -231,6 +235,18 @@ ServeOptions parse_serve_options(int argc, char** argv) {
+             options.speculative.proposal_head = ProposalHead::Optimized;
+         } else if (arg == "--no-thinking") {
+             options.enable_thinking = false;
++        } else if (arg == "--reasoning-effort") {
++            const std::string value = require_value("--reasoning-effort");
++            if (value == "low") {
++                options.default_reasoning_effort = ninfer::ReasoningEffort::Low;
++            } else if (value == "medium") {
++                options.default_reasoning_effort = ninfer::ReasoningEffort::Medium;
++            } else if (value == "xhigh") {
++                options.default_reasoning_effort = ninfer::ReasoningEffort::XHigh;
++            } else {
++                throw std::invalid_argument("invalid reasoning-effort: " + value +
++                                            " (expected low, medium, or xhigh)");
++            }
+         } else if (arg == "--preserve-thinking") {
+             options.preserve_thinking = true;
+         } else if (arg == "--cors") {
+diff --git a/src/serve/serve_options.h b/src/serve/serve_options.h
+index b6db8e4..6bfb066 100644
+--- a/src/serve/serve_options.h
++++ b/src/serve/serve_options.h
+@@ -47,6 +47,9 @@ struct ServeOptions {
+     bool allow_prefix_reuse = true;
+     bool enable_thinking =
+         true; // default thinking mode for the generation prompt (--no-thinking opts out)
++    // Default reasoning effort for requests that omit one (--reasoning-effort);
++    // applies only while thinking is enabled. A per-request effort always wins.
++    std::optional<ninfer::ReasoningEffort> default_reasoning_effort;
+     bool preserve_thinking = false;
+     int default_max_tokens = kDefaultMaxTokens;
+     bool enable_cors       = false; // send permissive CORS headers for browser UIs
+diff --git a/src/serve/translate.cpp b/src/serve/translate.cpp
+index 51d674d..943f98f 100644
+--- a/src/serve/translate.cpp
++++ b/src/serve/translate.cpp
+@@ -109,7 +109,14 @@ ResolvedPromptSemantics resolve_prompt_semantics(const GenerationRequest& reques
+         .reasoning_effort  = std::nullopt,
+         .preserve_thinking = request.preserve_thinking.value_or(server.preserve_thinking),
+     };
+-    if (!request.reasoning_effort) { return result; }
++    if (!request.reasoning_effort) {
++        // The server default applies only while thinking is enabled; an
++        // explicit request effort always wins over it.
++        if (result.enable_thinking && server.default_reasoning_effort) {
++            result.reasoning_effort = *server.default_reasoning_effort;
++        }
++        return result;
++    }
+ 
+     const RequestedReasoningEffort requested = *request.reasoning_effort;
+     const bool enables_thinking              = requested != RequestedReasoningEffort::None;

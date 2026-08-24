@@ -21,6 +21,7 @@ let
     nativeBuildInputs = with pkgs; [
       cmake
       ninja
+      patch
       pkg-config
       cudaPackages_13_1.cudatoolkit
     ];
@@ -30,6 +31,15 @@ let
       curl
       cudaPackages_13_1.cudatoolkit
     ];
+
+    # The pinned upstream rev has no server-side default for reasoning effort
+    # (only --no-thinking / --preserve-thinking). This patch adds a
+    # --reasoning-effort low|medium|xhigh flag so the serve binary can default
+    # Qwen3.8 to brief thinking without per-request wiring. A per-request
+    # effort still wins over the flag.
+    postPatch = ''
+      patch -p1 -N < ${./reasoning-effort.patch}
+    '';
 
     configurePhase = ''
       cmake -S . -B build \
@@ -82,6 +92,7 @@ let
     "--spec" "mtp"
     "--draft-tokens" "3"
     "--lm-head-draft"
+    "--reasoning-effort" "low"
     "--request-log-jsonl" requestLog
   ];
 

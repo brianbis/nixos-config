@@ -6,8 +6,9 @@
 # system jails run as this user via `sudo -u llm` instead of as root, so the
 # agent's worst case is "can write /etc/nixos + its own home", and its home
 # is managed declaratively by home-manager (home/llm/agent-home.nix). The
-# primary group is the existing `llm` group (hosts/desktop/security.nix),
-# which grants read access to the agenix secret and the systemd journal.
+# `llm` group (hosts/desktop/security.nix) is an extra group of the user
+# (the primary group is `users`), and grants read access to the agenix
+# secret and the systemd journal.
 {
   b = {
     username = "b";
