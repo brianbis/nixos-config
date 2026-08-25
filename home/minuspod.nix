@@ -154,7 +154,8 @@ let
       license = licenses.mit;
     };
   };
-in {
+in
+{
   home.packages = [ minuspod ];
 
   # Runtime configuration for the local LLM proxy (see home/llm).

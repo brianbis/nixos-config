@@ -1,0 +1,11 @@
+// markdownlint config for this repo.
+// fix: true so the hook auto-fixes (replaces the --fix CLI flag, keeping
+// the pre-commit entry short); MD013 (line length) is off: prose wrapping
+// is an editorial decision, not something a formatter should reflow.
+{
+  "fix": true,
+  "config": {
+    "default": true,
+    "MD013": false
+  }
+}

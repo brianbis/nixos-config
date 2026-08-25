@@ -27,8 +27,22 @@ log = logging.getLogger("whisper_service.app")
 SHUTDOWN_LOCK_TIMEOUT = 30.0
 
 AUDIO_EXTS = {
-    ".wav", ".mp3", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".wma",
-    ".webm", ".mp4", ".mov", ".mkv", ".avi", ".m4b", ".amr", ".3gp",
+    ".wav",
+    ".mp3",
+    ".m4a",
+    ".aac",
+    ".ogg",
+    ".opus",
+    ".flac",
+    ".wma",
+    ".webm",
+    ".mp4",
+    ".mov",
+    ".mkv",
+    ".avi",
+    ".m4b",
+    ".amr",
+    ".3gp",
 }
 
 
@@ -47,14 +61,18 @@ def _fmt_ts_vtt(t: float) -> str:
 def _to_srt(segments: list[dict[str, Any]]) -> str:
     out: list[str] = []
     for i, seg in enumerate(segments, 1):
-        out.append(f"{i}\n{_fmt_ts_srt(seg['start'])} --> {_fmt_ts_srt(seg['end'])}\n{seg['text']}\n")
+        out.append(
+            f"{i}\n{_fmt_ts_srt(seg['start'])} --> {_fmt_ts_srt(seg['end'])}\n{seg['text']}\n"
+        )
     return "\n".join(out)
 
 
 def _to_vtt(segments: list[dict[str, Any]]) -> str:
     out = ["WEBVTT\n"]
     for seg in segments:
-        out.append(f"{_fmt_ts_vtt(seg['start'])} --> {_fmt_ts_vtt(seg['end'])}\n{seg['text']}\n")
+        out.append(
+            f"{_fmt_ts_vtt(seg['start'])} --> {_fmt_ts_vtt(seg['end'])}\n{seg['text']}\n"
+        )
     return "\n".join(out)
 
 
@@ -71,7 +89,10 @@ def create_app(state: AppState | None = None) -> FastAPI:
     async def lifespan(_: FastAPI):
         log.info(
             "whisper-service %s starting: model=%s device=%s idle_timeout=%.0fs",
-            __version__, state.cfg.model, state.manager.device, state.cfg.idle_timeout,
+            __version__,
+            state.cfg.model,
+            state.manager.device,
+            state.cfg.idle_timeout,
         )
 
         def _term(signum: int, _frame: Any) -> None:
@@ -148,7 +169,9 @@ def create_app(state: AppState | None = None) -> FastAPI:
         cfg = state.cfg
         local: list[str] = []
         if cfg.model_dir.is_dir():
-            local = sorted(p.name for p in cfg.model_dir.iterdir() if (p / "model.bin").exists())
+            local = sorted(
+                p.name for p in cfg.model_dir.iterdir() if (p / "model.bin").exists()
+            )
         return {
             "object": "list",
             "data": [
@@ -156,7 +179,11 @@ def create_app(state: AppState | None = None) -> FastAPI:
                     "id": m,
                     "object": "model",
                     "owned_by": "local",
-                    "local": (cfg.model_dir / m / "model.bin").exists() if m in local else False,
+                    "local": (
+                        (cfg.model_dir / m / "model.bin").exists()
+                        if m in local
+                        else False
+                    ),
                 }
                 for m in ([cfg.model] + [m for m in local if m != cfg.model])
             ],
@@ -310,9 +337,7 @@ def run_server(cfg: Config, state: AppState | None = None) -> int:
         config = uvicorn.Config(app, log_level="info")
         inherited = [socket_mod.socket(fileno=3)]
     else:
-        config = uvicorn.Config(
-            app, host=cfg.host, port=cfg.port, log_level="info"
-        )
+        config = uvicorn.Config(app, host=cfg.host, port=cfg.port, log_level="info")
 
     server = uvicorn.Server(config)
 
@@ -337,7 +362,8 @@ def run_server(cfg: Config, state: AppState | None = None) -> int:
 
     log.info(
         "starting uvicorn: socket_activated=%s auto_stop=%s",
-        _socket_activated(), cfg.auto_stop,
+        _socket_activated(),
+        cfg.auto_stop,
     )
     asyncio.run(server.serve(sockets=inherited or None))
     return 0

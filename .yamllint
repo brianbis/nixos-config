@@ -1,0 +1,4 @@
+# yamllint config for this repo (auto-discovered from the repo root).
+# Relaxed: this repo's YAML is config (dsh patch layers), not data; strict
+# keeps it from rotting.
+extends: relaxed

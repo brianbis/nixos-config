@@ -78,21 +78,35 @@ let
   childCommand = [
     "${ninfer}/bin/ninfer-serve"
     "${modelsDir}/${ninferModelFile}"
-    "--host" "127.0.0.1"
-    "--port" (toString childPort)
-    "--kv-dtype" "int8"
-    "--max-context" "240000"
-    "--default-max-tokens" "200000"
-    "--pending-timeout-ms" "900000"
-    "--prefill-chunk" "1024"
-    "--max-concurrency" "1"
-    "--max-pending-requests" "128"
-    "--temperature" "0.7"
-    "--spec" "mtp"
-    "--draft-tokens" "3"
+    "--host"
+    "127.0.0.1"
+    "--port"
+    (toString childPort)
+    "--kv-dtype"
+    "int8"
+    "--max-context"
+    "240000"
+    "--default-max-tokens"
+    "200000"
+    "--pending-timeout-ms"
+    "900000"
+    "--prefill-chunk"
+    "1024"
+    "--max-concurrency"
+    "1"
+    "--max-pending-requests"
+    "128"
+    "--temperature"
+    "0.7"
+    "--spec"
+    "mtp"
+    "--draft-tokens"
+    "3"
     "--lm-head-draft"
-    "--reasoning-effort" "low"
-    "--request-log-jsonl" requestLog
+    "--reasoning-effort"
+    "low"
+    "--request-log-jsonl"
+    requestLog
   ];
 
   ninferModelRepo = "neroued/Qwen3.8-27B-nvfp4-NInfer";
@@ -110,20 +124,33 @@ let
   childCommandA3B = [
     "${ninfer}/bin/ninfer-serve"
     "${modelsDir}/${ninferModelFileA3B}"
-    "--host" "127.0.0.1"
-    "--port" (toString childPortA3B)
-    "--kv-dtype" "int8"
-    "--max-context" "262144"
-    "--default-max-tokens" "200000"
-    "--pending-timeout-ms" "900000"
-    "--prefill-chunk" "1024"
-    "--max-concurrency" "1"
-    "--max-pending-requests" "128"
-    "--temperature" "0.7"
-    "--spec" "mtp"
-    "--draft-tokens" "3"
+    "--host"
+    "127.0.0.1"
+    "--port"
+    (toString childPortA3B)
+    "--kv-dtype"
+    "int8"
+    "--max-context"
+    "262144"
+    "--default-max-tokens"
+    "200000"
+    "--pending-timeout-ms"
+    "900000"
+    "--prefill-chunk"
+    "1024"
+    "--max-concurrency"
+    "1"
+    "--max-pending-requests"
+    "128"
+    "--temperature"
+    "0.7"
+    "--spec"
+    "mtp"
+    "--draft-tokens"
+    "3"
     "--lm-head-draft"
-    "--request-log-jsonl" "${logDir}/requests-a3b.jsonl"
+    "--request-log-jsonl"
+    "${logDir}/requests-a3b.jsonl"
   ];
 
   downloadNinferModel = name: repo: dir: file: ''
@@ -145,7 +172,8 @@ let
     fi
   '';
 
-in {
+in
+{
   environment.systemPackages = [ ninfer ];
 
   systemd.tmpfiles.rules = [
@@ -182,12 +210,18 @@ in {
       ExecStart = lib.concatStringsSep " " ([
         "${pkgs.python3}/bin/python3"
         "${ninferWrapper}"
-        "--child-port" (toString childPort)
-        "--idle-seconds" (toString idleSeconds)
-        "--ready-timeout" "1800"
-        "--shutdown-timeout" "30"
-        "--kill-timeout" "10"
-        "--request-log" requestLog
+        "--child-port"
+        (toString childPort)
+        "--idle-seconds"
+        (toString idleSeconds)
+        "--ready-timeout"
+        "1800"
+        "--shutdown-timeout"
+        "30"
+        "--kill-timeout"
+        "10"
+        "--request-log"
+        requestLog
         "--"
       ]
       ++ childCommand);
@@ -225,12 +259,18 @@ in {
       ExecStart = lib.concatStringsSep " " ([
         "${pkgs.python3}/bin/python3"
         "${ninferWrapper}"
-        "--child-port" (toString childPortA3B)
-        "--idle-seconds" (toString idleSeconds)
-        "--ready-timeout" "1800"
-        "--shutdown-timeout" "30"
-        "--kill-timeout" "10"
-        "--request-log" "${logDir}/requests-a3b.jsonl"
+        "--child-port"
+        (toString childPortA3B)
+        "--idle-seconds"
+        (toString idleSeconds)
+        "--ready-timeout"
+        "1800"
+        "--shutdown-timeout"
+        "30"
+        "--kill-timeout"
+        "10"
+        "--request-log"
+        "${logDir}/requests-a3b.jsonl"
         "--"
       ]
       ++ childCommandA3B);

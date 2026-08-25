@@ -119,7 +119,9 @@ class ModelManager:
             if self._device is None:
                 pref = self.cfg.device_allowed
                 if pref == "cuda" and self._cuda_count == 0:
-                    log.warning("WHISPER_DEVICE=cuda requested but no CUDA device visible; using CPU")
+                    log.warning(
+                        "WHISPER_DEVICE=cuda requested but no CUDA device visible; using CPU"
+                    )
                     self._device = "cpu"
                 elif pref == "auto":
                     self._device = "cuda" if self._cuda_count > 0 else "cpu"
@@ -178,16 +180,20 @@ class ModelManager:
                 self._last_used = time.monotonic()
                 return
             if self._model is not None:
-                log.info("Switching model %s -> %s (releasing old weights)", self._model_name, name)
+                log.info(
+                    "Switching model %s -> %s (releasing old weights)",
+                    self._model_name,
+                    name,
+                )
                 self._release_locked()
-            from faster_whisper import WhisperModel  # deferred: import cost + keeps startup light
+            from faster_whisper import (
+                WhisperModel,
+            )  # deferred: import cost + keeps startup light
 
             device = self.device
             compute = self.compute_type
             path = self._resolve_model_path(name)
-            log.info(
-                "Loading whisper model %r into %s (%s) ...", name, device, compute
-            )
+            log.info("Loading whisper model %r into %s (%s) ...", name, device, compute)
             t0 = time.monotonic()
             self._model = WhisperModel(
                 path,
@@ -203,7 +209,10 @@ class ModelManager:
             self._load_time = time.monotonic() - t0
             log.info(
                 "Model %r resident on %s in %.1fs (rss=%.0fMB)",
-                name, device, self._load_time, process_rss_mb(),
+                name,
+                device,
+                self._load_time,
+                process_rss_mb(),
             )
 
     def _release_locked(self) -> None:
@@ -260,7 +269,9 @@ class ModelManager:
             if idle >= self.cfg.idle_timeout:
                 log.info(
                     "Idle for %.0fs (timeout %.0fs); unloading model to free %s memory",
-                    idle, self.cfg.idle_timeout, self._device or "device",
+                    idle,
+                    self.cfg.idle_timeout,
+                    self._device or "device",
                 )
                 self._release_locked()
                 released = True

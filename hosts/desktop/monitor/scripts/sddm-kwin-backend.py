@@ -72,23 +72,15 @@ def resolve_output_index(name, display):
     ]
 
     if not matches:
-        error(
-            f"could not find KWin output for {name!r}: "
-            f"{display['connector']}"
-        )
+        error(f"could not find KWin output for {name!r}: " f"{display['connector']}")
 
     if len(matches) != 1:
-        error(
-            f"KWin connector {display['connector']} is ambiguous "
-            f"for {name!r}"
-        )
+        error(f"KWin connector {display['connector']} is ambiguous " f"for {name!r}")
 
     old_index, output = matches[0]
 
     if old_index not in old_to_new_index:
-        error(
-            f"output for {name!r} was a stale Unknown-* placeholder"
-        )
+        error(f"output for {name!r} was a stale Unknown-* placeholder")
 
     return old_to_new_index[old_index], output
 

@@ -242,8 +242,7 @@ async def start_child(state: State) -> None:
 
             if time.monotonic() >= deadline:
                 raise TimeoutError(
-                    f"child did not become ready within "
-                    f"{args.ready_timeout:.0f}s"
+                    f"child did not become ready within " f"{args.ready_timeout:.0f}s"
                 )
 
             if await probe_health(args.child_port):
@@ -354,9 +353,7 @@ def parse_request_line(headers: bytes) -> tuple[str, str, str]:
     first_line = headers.split(b"\r\n", 1)[0]
 
     try:
-        method, target, version = (
-            first_line.decode("latin-1").split()
-        )
+        method, target, version = first_line.decode("latin-1").split()
     except ValueError:
         raise ValueError("malformed HTTP request line")
 
@@ -434,12 +431,9 @@ async def handle_local_health(
     writer.write(
         b"HTTP/1.1 200 OK\r\n"
         b"Content-Type: application/json\r\n"
-        b"Content-Length: "
-        + str(len(HEALTH_BODY)).encode()
-        + b"\r\n"
+        b"Content-Length: " + str(len(HEALTH_BODY)).encode() + b"\r\n"
         b"Connection: close\r\n"
-        b"\r\n"
-        + HEALTH_BODY
+        b"\r\n" + HEALTH_BODY
     )
 
     await writer.drain()
@@ -1008,9 +1002,7 @@ async def shutdown(
     # Give active handlers a brief opportunity to finish.
     deadline = time.monotonic() + state.args.drain_timeout
 
-    while (
-        state.connections or state.active_handlers
-    ) and time.monotonic() < deadline:
+    while (state.connections or state.active_handlers) and time.monotonic() < deadline:
         await asyncio.sleep(0.1)
 
     # Stop the child regardless of current idle state.
@@ -1054,16 +1046,12 @@ def socket_activated_listen_socket() -> socket.socket:
     """
 
     if os.environ.get("LISTEN_PID", "").strip() != str(os.getpid()):
-        raise RuntimeError(
-            "not socket-activated (LISTEN_PID does not match this pid)"
-        )
+        raise RuntimeError("not socket-activated (LISTEN_PID does not match this pid)")
 
     fds = os.environ.get("LISTEN_FDS", "0").strip()
 
     if fds != "1":
-        raise RuntimeError(
-            f"expected exactly one inherited socket, LISTEN_FDS={fds!r}"
-        )
+        raise RuntimeError(f"expected exactly one inherited socket, LISTEN_FDS={fds!r}")
 
     # systemd passes the first (only) listening socket on fd 3.
     return socket.socket(fileno=3)
@@ -1190,9 +1178,7 @@ def parse_args(
         args.child_command = args.child_command[1:]
 
     if not args.child_command:
-        parser.error(
-            "missing child command after --"
-        )
+        parser.error("missing child command after --")
 
     if args.idle_seconds < 0:
         parser.error("--idle-seconds must be >= 0")

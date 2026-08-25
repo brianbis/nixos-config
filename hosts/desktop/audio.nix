@@ -117,16 +117,16 @@
     after = [ "pipewire.service" ];
     wants = [ "pipewire.service" ];
 
-      serviceConfig = {
-        Type = "simple";
-        ExecStart = "${pkgs.hushmic}/bin/hushmic --enable-once";
-        Restart = "on-failure";
-        RestartSec = 3;
+    serviceConfig = {
+      Type = "simple";
+      ExecStart = "${pkgs.hushmic}/bin/hushmic --enable-once";
+      Restart = "on-failure";
+      RestartSec = 3;
 
-        CPUAffinity = [ 6 7 ];
-        Nice = -10;
-        CPUWeight = 1000;
-        OOMScoreAdjust = -1000;
-      };
+      CPUAffinity = [ 6 7 ];
+      Nice = -10;
+      CPUWeight = 1000;
+      OOMScoreAdjust = -1000;
+    };
   };
 }

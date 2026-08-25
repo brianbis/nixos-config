@@ -7,4 +7,3 @@ Parent=FALLBACK/
 
 [Scrolling]
 ScrollbackLines=500000
-

@@ -24,7 +24,7 @@ How the system's secrets are created, sealed, decrypted, and recovered.
 ## Host artifacts (not in this repo)
 
 | Path | What |
-|---|---|
+| --- | --- |
 | `/var/lib/agenix-tpm/seal.pub`, `seal.priv` | The sealed key object (useless without the TPM + matching PCRs) |
 | `/var/lib/agenix-tpm/pcr.policy` | PCR policy used at seal time |
 | `/var/lib/agenix-tpm/pcr.bin` | PCR 0,2,3 values recorded at seal time (compare if unseal fails) |
@@ -35,14 +35,18 @@ How the system's secrets are created, sealed, decrypted, and recovered.
 
 1. Stage the plaintext, e.g. `/tmp/name`.
 2. Encrypt to the current recipient (`adminPubKey` in `secrets.nix`):
+
    ```bash
    age -r "$(grep adminPubKey secrets.nix | grep -oE 'age1[a-z0-9]+')" \
      -o secrets/name.age /tmp/name
    ```
+
 3. Add the recipient in `secrets.nix`:
+
    ```nix
    "secrets/name.age".publicKeys = [ adminPubKey ];
    ```
+
 4. Add the `age.secrets` entry in `hosts/desktop/security.nix`
    (owner/group/mode; the default branch is `root:root 0400`).
 5. `just switch` → the secret appears at `/run/agenix/name`. Shred the plaintext.
@@ -50,12 +54,15 @@ How the system's secrets are created, sealed, decrypted, and recovered.
 ## Rotating the age key
 
 1. Generate a new key:
+
    ```bash
    age-keygen -o /tmp/new-age-key.txt   # public key in the "# public key:" line
    ```
+
 2. Re-encrypt every blob to the new public key, decrypting with the current
    key (`/var/lib/agenix/key.txt` if it still exists, else this boot's
    `/run/agenix-tpm/key.txt`):
+
    ```bash
    KEY=/var/lib/agenix/key.txt
    for f in secrets/*.age; do
@@ -65,8 +72,10 @@ How the system's secrets are created, sealed, decrypted, and recovered.
      mv "$f.new" "$f"
    done
    ```
+
 3. Update `adminPubKey` in `secrets.nix`.
 4. Re-seal the new key (host, as root; tpm2-tools 5.8):
+
    ```bash
    sudo nix shell nixpkgs#tpm2-tools -c bash <<'EOF'
    set -e
@@ -91,13 +100,16 @@ How the system's secrets are created, sealed, decrypted, and recovered.
    tpm2_flushcontext -c /tmp/seal.ctx
    EOF
    ```
+
    Only the bare `AGE-SECRET-KEY-…` line is sealed: TPM data objects cap at
    128 bytes (the full keygen file with its comment header is 189).
 5. Install the new key as the rollback copy and shred the staging file:
+
    ```bash
    sudo install -m 0400 -o root -g root /tmp/new-age-key.txt /var/lib/agenix/key.txt
    sudo shred -u /tmp/new-age-key.txt
    ```
+
 6. `just switch`, reboot, and verify `/run/agenix/` is populated **without** a
    second switch. Then shred the old key.
 

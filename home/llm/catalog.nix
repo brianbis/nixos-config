@@ -366,14 +366,15 @@ let
   # Version of the crush lsp map restricted to the languages a given tool
   # actually needs. file_types + root_markers make crush start a server only
   # when that language shows up in the mounted project.
-  crushLspFor = toolLsps: lib.mapAttrs' (lang: entry:
-    lib.nameValuePair lang ({
-      inherit (entry) command;
-      file_types = entry.fileTypes;
-      root_markers = entry.rootMarkers;
-    }
-    // lib.optionalAttrs (entry ? args) { inherit (entry) args; }
-    // lib.optionalAttrs (entry ? initOptions) { init_options = entry.initOptions; }))
+  crushLspFor = toolLsps: lib.mapAttrs'
+    (lang: entry:
+      lib.nameValuePair lang ({
+        inherit (entry) command;
+        file_types = entry.fileTypes;
+        root_markers = entry.rootMarkers;
+      }
+      // lib.optionalAttrs (entry ? args) { inherit (entry) args; }
+      // lib.optionalAttrs (entry ? initOptions) { init_options = entry.initOptions; }))
     (lib.filterAttrs (lang: _: builtins.elem lang toolLsps) lsps);
 
   allModels = lib.attrValues models;
@@ -390,31 +391,34 @@ let
       default_max_tokens = m.maxTok;
       can_reason = m.reason;
     } // lib.optionalAttrs (m ? attachments) { supports_attachments = m.attachments; }
-      // lib.optionalAttrs (m ? costIn) {
-           cost_per_1m_in = m.costIn;
-           cost_per_1m_out = m.costOut;
-           cost_per_1m_in_cached = m.costInCached;
-           cost_per_1m_out_cached = m.costOutCached;
-         };
+    // lib.optionalAttrs (m ? costIn) {
+      cost_per_1m_in = m.costIn;
+      cost_per_1m_out = m.costOut;
+      cost_per_1m_in_cached = m.costInCached;
+      cost_per_1m_out_cached = m.costOutCached;
+    };
 
   # One crush provider per distinct upstream in the catalog, carrying that
   # upstream's base_url, key and full model list. Drives providers.deepseek
   # etc. so crush exposes exactly the catalog's models.
-  crushProviders = builtins.foldl' (acc: m:
-    let
-      p = providerLabel.${m.providerName};
-    in
-    lib.recursiveUpdate acc {
-      ${m.providerName} = {
-        name = p.name;
-        type = p.type;
-        base_url = "${m.url}/v1";
-        api_key = p.api_key;
-        models = (acc.${m.providerName}.models or []) ++ [ (crushModelEntry m) ];
-      } // lib.optionalAttrs (m.providerName == "llamacpp" && m ? thinkingBudget) {
-        extra_body = { thinking_budget_tokens = m.thinkingBudget; };
-      };
-    }) { } allModels;
+  crushProviders = builtins.foldl'
+    (acc: m:
+      let
+        p = providerLabel.${m.providerName};
+      in
+      lib.recursiveUpdate acc {
+        ${m.providerName} = {
+          name = p.name;
+          type = p.type;
+          base_url = "${m.url}/v1";
+          api_key = p.api_key;
+          models = (acc.${m.providerName}.models or [ ]) ++ [ (crushModelEntry m) ];
+        } // lib.optionalAttrs (m.providerName == "llamacpp" && m ? thinkingBudget) {
+          extra_body = { thinking_budget_tokens = m.thinkingBudget; };
+        };
+      })
+    { }
+    allModels;
 
   # opencode nests providers under provider.<name> with each model keyed by id.
   # Reuse the catalog so opencode carries the same models as crush and aider.
@@ -424,10 +428,12 @@ let
       npm = "@ai-sdk/openai-compatible";
       name = providerLabel.${pname}.name;
       options.baseURL = "${(builtins.head nms).url}/v1";
-      models = builtins.listToAttrs (map (m: {
-        name = m.id;
-        value.name = m.name;
-      }) nms);
+      models = builtins.listToAttrs (map
+        (m: {
+          name = m.id;
+          value.name = m.name;
+        })
+        nms);
     };
   opencodeProviders = {
     provider = {
@@ -447,42 +453,45 @@ let
   # credential even for local endpoints (which ignore the header).
   dshSettings = builtins.toJSON {
     "llm-pi-ai" = {
-      providers = lib.mapAttrs' (pname: ms:
-        lib.nameValuePair pname {
-          displayName = providerLabel.${pname}.name;
-          apiKeyEnv = "DEEPSEEK_API_KEY";
-          api = "openai-completions";
-          baseURL = "${(builtins.head ms).url}/v1";
-          models = map (m:
-             let
-               # Base local-gateway compat pair (every non-deepseek route).
-               # Reasoning models additionally select the deepseek wire format:
-               # the only openai-completions shape that emits a top-level `reasoning_effort` (the field ninfer parses).
-               compat =
-                 (if pname == "deepseek" then { } else {
-                   supportsDeveloperRole = false;
-                   maxTokensField = "max_tokens";
-                 })
-                 // (if m ? reasoningEfforts then {
-                   thinkingFormat = "deepseek";
-                   supportsReasoningEffort = true;
-                 } else { });
-             in
-             {
-               id = m.id;
-               name = m.name;
-               contextWindow = m.context;
-               maxTokens = m.maxTok;
-             }
-             // lib.optionalAttrs (compat != { }) { inherit compat; }
-             // lib.optionalAttrs (m ? reasoningEfforts) {
-               # Expose the declared thinking levels so dsh materializes the
-               # model as a reasoning model (the web UI's effort selector
-               # reads this).
-               reasoningEfforts = m.reasoningEfforts;
-             }
-           ) ms;
-        })
+      providers = lib.mapAttrs'
+        (pname: ms:
+          lib.nameValuePair pname {
+            displayName = providerLabel.${pname}.name;
+            apiKeyEnv = "DEEPSEEK_API_KEY";
+            api = "openai-completions";
+            baseURL = "${(builtins.head ms).url}/v1";
+            models = map
+              (m:
+                let
+                  # Base local-gateway compat pair (every non-deepseek route).
+                  # Reasoning models additionally select the deepseek wire format:
+                  # the only openai-completions shape that emits a top-level `reasoning_effort` (the field ninfer parses).
+                  compat =
+                    (if pname == "deepseek" then { } else {
+                      supportsDeveloperRole = false;
+                      maxTokensField = "max_tokens";
+                    })
+                    // (if m ? reasoningEfforts then {
+                      thinkingFormat = "deepseek";
+                      supportsReasoningEffort = true;
+                    } else { });
+                in
+                {
+                  id = m.id;
+                  name = m.name;
+                  contextWindow = m.context;
+                  maxTokens = m.maxTok;
+                }
+                // lib.optionalAttrs (compat != { }) { inherit compat; }
+                // lib.optionalAttrs (m ? reasoningEfforts) {
+                  # Expose the declared thinking levels so dsh materializes the
+                  # model as a reasoning model (the web UI's effort selector
+                  # reads this).
+                  reasoningEfforts = m.reasoningEfforts;
+                }
+              )
+              ms;
+          })
         (lib.groupBy (m: m.providerName) allModels);
     };
     # Default agent model (dsh-agent-default-model section). This user-settings

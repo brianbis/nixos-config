@@ -21,7 +21,9 @@ from .config import load_config
 from .engine import ModelManager, TranscriptionResult
 
 
-def _print_result(result: TranscriptionResult, fmt: str, model: str, language: str | None) -> None:
+def _print_result(
+    result: TranscriptionResult, fmt: str, model: str, language: str | None
+) -> None:
     if fmt == "json":
         print(
             json.dumps(
@@ -52,7 +54,9 @@ def _print_result(result: TranscriptionResult, fmt: str, model: str, language: s
 
 def cmd_transcribe(args: argparse.Namespace) -> int:
     cfg = load_config()
-    logging.basicConfig(level=args.log_level, format="%(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=args.log_level, format="%(levelname)s %(name)s: %(message)s"
+    )
     mgr = ModelManager(cfg)
     try:
         for path in args.files:
@@ -75,7 +79,14 @@ def cmd_transcribe(args: argparse.Namespace) -> int:
     return 0
 
 
-def _fetch(server: str, path: str, *, method: str = "GET", data: bytes | None = None, timeout: float = 60.0) -> str | None:
+def _fetch(
+    server: str,
+    path: str,
+    *,
+    method: str = "GET",
+    data: bytes | None = None,
+    timeout: float = 60.0,
+) -> str | None:
     """HTTP helper for the control subcommands.
 
     Returns the decoded body, or None (after printing a hint) when the
@@ -147,7 +158,9 @@ def cmd_fetch_model(args: argparse.Namespace) -> int:
     cfg = load_config()
     from faster_whisper import WhisperModel
 
-    print(f"fetching {args.model} (first use downloads + converts, this can take a while)...")
+    print(
+        f"fetching {args.model} (first use downloads + converts, this can take a while)..."
+    )
     WhisperModel(args.model, device="cpu", compute_type="int8")
     print(f"done. model now cached under {cfg.hf_home}")
     return 0
@@ -158,12 +171,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    t = sub.add_parser("transcribe", help="one-shot transcription (loads model, runs, frees VRAM)")
+    t = sub.add_parser(
+        "transcribe", help="one-shot transcription (loads model, runs, frees VRAM)"
+    )
     t.add_argument("files", nargs="+", help="audio files")
-    t.add_argument("--model", default=None, help="model name (default: $WHISPER_MODEL or large-v3)")
+    t.add_argument(
+        "--model", default=None, help="model name (default: $WHISPER_MODEL or large-v3)"
+    )
     t.add_argument("--language", default=None, help="force language (e.g. en, de)")
     t.add_argument("--format", choices=["text", "json", "srt", "vtt"], default="text")
-    t.add_argument("--vad-filter", action="store_true", help="enable silero VAD filtering")
+    t.add_argument(
+        "--vad-filter", action="store_true", help="enable silero VAD filtering"
+    )
     t.add_argument("--beam-size", type=int, default=5)
     t.add_argument("--log-level", default="INFO")
     t.set_defaults(func=cmd_transcribe)
@@ -178,12 +197,16 @@ def build_parser() -> argparse.ArgumentParser:
     st.add_argument("--server", default="http://127.0.0.1:8790")
     st.set_defaults(func=cmd_status)
 
-    l = sub.add_parser("load", help="load the model now (pre-warm VRAM on the running server)")
+    l = sub.add_parser(
+        "load", help="load the model now (pre-warm VRAM on the running server)"
+    )
     l.add_argument("--model", default=None)
     l.add_argument("--server", default="http://127.0.0.1:8790")
     l.set_defaults(func=cmd_load)
 
-    u = sub.add_parser("unload", help="release the model (free VRAM) on the running server")
+    u = sub.add_parser(
+        "unload", help="release the model (free VRAM) on the running server"
+    )
     u.add_argument("--server", default="http://127.0.0.1:8790")
     u.set_defaults(func=cmd_unload)
 

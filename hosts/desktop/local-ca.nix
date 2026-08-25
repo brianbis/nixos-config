@@ -12,18 +12,18 @@
 
 let
   services = {
-    "llm.local"      = 8000; # llama.cpp router / vLLM (OpenAI-compatible API)
-    "ninfer.local"   = 8080; # NInfer engine (Qwen3.8-27B NVFP4, socket-activated)
+    "llm.local" = 8000; # llama.cpp router / vLLM (OpenAI-compatible API)
+    "ninfer.local" = 8080; # NInfer engine (Qwen3.8-27B NVFP4, socket-activated)
     "ninfer-a3b.local" = 8082; # NInfer engine (Qwen3.6-35B-A3B, socket-activated)
     "headroom.local" = 8787; # Headroom compression proxy -> local llama.cpp
     "deepseek.local" = 8788; # Headroom compression proxy -> DeepSeek cloud
-    "claude.local"   = 8789; # Headroom compression proxy -> Claude Code
-    "dsh.local"      = 3080; # DeepSeek Harness web GUI
-    "searxng.local"  = 8888; # SearXNG metasearch (loopback; dsh web-search backend)
+    "claude.local" = 8789; # Headroom compression proxy -> Claude Code
+    "dsh.local" = 3080; # DeepSeek Harness web GUI
+    "searxng.local" = 8888; # SearXNG metasearch (loopback; dsh web-search backend)
     # Deliberately NOT here: dsh.tail835824.ts.net is served by `tailscale
     # serve` with a Let's Encrypt cert (Tailscale control plane), not by
     # Caddy with this local CA.
-    "print.local"    = 631;  # CUPS web interface
+    "print.local" = 631; # CUPS web interface
   };
 
   names = builtins.attrNames services;
@@ -43,36 +43,36 @@ let
     dontBuild = true;
 
     installPhase = ''
-      mkdir -p $out
+            mkdir -p $out
 
-      # ECDSA P-256, 10 years. Do NOT switch to ed25519: Firefox/NSS never
-      # offers ed25519 in TLS signature_algorithms, and Go's TLS server signs
-      # only with the cert's key type, so ed25519 breaks Firefox (curl/Chrome OK).
-      openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out ca.key
-      openssl req -x509 -new -key ca.key -sha256 -days 3650 \
-        -subj "/CN=b's Local Services CA" \
-        -out ca.crt
+            # ECDSA P-256, 10 years. Do NOT switch to ed25519: Firefox/NSS never
+            # offers ed25519 in TLS signature_algorithms, and Go's TLS server signs
+            # only with the cert's key type, so ed25519 breaks Firefox (curl/Chrome OK).
+            openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out ca.key
+            openssl req -x509 -new -key ca.key -sha256 -days 3650 \
+              -subj "/CN=b's Local Services CA" \
+              -out ca.crt
 
-      # One leaf cert for all service names. SANs are applied from the [san]
-      # section at signing time (openssl x509 -req -extfile); the CSR carries
-      # no extensions (DNS.N is not a valid CSR extension name).
-      openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out leaf.key
-      cat > san.cnf <<EOF
-[req]
-prompt = no
-distinguished_name = dn
-[dn]
-CN = local
-[san]
-subjectAltName = ${lib.concatStringsSep ", " (map (n: "DNS:" + n) names)}
-EOF
-      openssl req -new -key leaf.key -config san.cnf -out leaf.csr
-      openssl x509 -req -in leaf.csr \
-        -CA ca.crt -CAkey ca.key -CAcreateserial \
-        -days 3650 -sha256 -extfile san.cnf -extensions san \
-        -out leaf.crt
+            # One leaf cert for all service names. SANs are applied from the [san]
+            # section at signing time (openssl x509 -req -extfile); the CSR carries
+            # no extensions (DNS.N is not a valid CSR extension name).
+            openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out leaf.key
+            cat > san.cnf <<EOF
+      [req]
+      prompt = no
+      distinguished_name = dn
+      [dn]
+      CN = local
+      [san]
+      subjectAltName = ${lib.concatStringsSep ", " (map (n: "DNS:" + n) names)}
+      EOF
+            openssl req -new -key leaf.key -config san.cnf -out leaf.csr
+            openssl x509 -req -in leaf.csr \
+              -CA ca.crt -CAkey ca.key -CAcreateserial \
+              -days 3650 -sha256 -extfile san.cnf -extensions san \
+              -out leaf.crt
 
-      mv ca.crt ca.key leaf.crt leaf.key $out/
+            mv ca.crt ca.key leaf.crt leaf.key $out/
     '';
   };
 in

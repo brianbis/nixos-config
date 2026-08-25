@@ -55,7 +55,7 @@ let
       license = pkgs.lib.licenses.mit;
     };
   };
-  in
+in
 
 {
   programs.git = {
@@ -144,7 +144,7 @@ let
   ];
   xdg.dataFile."konsole/OLED.colorscheme".source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/konsole/OLED.colorscheme";
 
-xdg.dataFile."konsole/OLED.profile".source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/konsole/OLED.profile";
+  xdg.dataFile."konsole/OLED.profile".source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/konsole/OLED.profile";
 
   xdg.desktopEntries.imsg-gui = {
     name = "imsg";

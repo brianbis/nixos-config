@@ -1,8 +1,8 @@
-{
-  lib,
-  stdenv,
-  python,
-  ast-grep,
+{ lib
+, stdenv
+, python
+, ast-grep
+,
 }:
 
 let
@@ -17,16 +17,16 @@ stdenv.mkDerivation {
   dontUnpack = true;
 
   installPhase = ''
-    mkdir -p "$out/${python.sitePackages}/ast_grep_cli"
-    touch "$out/${python.sitePackages}/ast_grep_cli/__init__.py"
+        mkdir -p "$out/${python.sitePackages}/ast_grep_cli"
+        touch "$out/${python.sitePackages}/ast_grep_cli/__init__.py"
 
-    mkdir -p "$out/${python.sitePackages}/ast_grep_cli-${shimVersion}.dist-info"
+        mkdir -p "$out/${python.sitePackages}/ast_grep_cli-${shimVersion}.dist-info"
 
-    cat > "$out/${python.sitePackages}/ast_grep_cli-${shimVersion}.dist-info/METADATA" <<EOF
-Metadata-Version: 2.1
-Name: ast-grep-cli
-Version: ${shimVersion}
-EOF
+        cat > "$out/${python.sitePackages}/ast_grep_cli-${shimVersion}.dist-info/METADATA" <<EOF
+    Metadata-Version: 2.1
+    Name: ast-grep-cli
+    Version: ${shimVersion}
+    EOF
   '';
 
   propagatedBuildInputs = [

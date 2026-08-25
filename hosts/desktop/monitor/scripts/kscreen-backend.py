@@ -61,7 +61,8 @@ def resolve_mode(desired, output):
     h = desired["mode"]["height"]
     r = desired["mode"]["refresh"]
     matches = [
-        m for m in output.get("modes", [])
+        m
+        for m in output.get("modes", [])
         if m.get("size", {}).get("width") == w
         and m.get("size", {}).get("height") == h
         and m.get("refreshRate") is not None

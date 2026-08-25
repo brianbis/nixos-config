@@ -9,7 +9,7 @@ mkdir -p "$out"
 # pattern and the scan cannot self-match. Keep in sync with the
 # steam-game-watcher predicate in steam.nix.
 steam_pattern='steamapps/common/|steamapps/compatdata/|compatdata/[0-9]+/.*\.(exe|EXE)|wine(64|32)'
-printf '%s\n' "$steam_pattern" > "$out/steam-pattern.tmp"
+printf '%s\n' "$steam_pattern" >"$out/steam-pattern.tmp"
 mv -f "$out/steam-pattern.tmp" "$out/steam-pattern"
 {
   date -u +%FT%TZ
@@ -27,7 +27,14 @@ mv -f "$out/steam-pattern.tmp" "$out/steam-pattern"
   # Sched: (policy/rtprio) is NOT in /proc/PID/status on this kernel; the
   # policy lives in /proc/PID/stat field 19 and rtprio in field 20. rtlim
   # comes from /proc/PID/limits.
-  echo "sched: $(for p in $(pgrep -f 'hushmic --enable|filter-chain\.conf|pipewire' 2>/dev/null | sort -u); do [ -r "/proc/$p/stat" ] || continue; pol=$(awk '{print $19}' "/proc/$p/stat" 2>/dev/null); rtpri=$(awk '{print $20}' "/proc/$p/stat" 2>/dev/null); rtlim=$(grep 'Max realtime priority' "/proc/$p/limits" 2>/dev/null | awk '{print $5}'); cpu=$(taskset -cp "$p" 2>/dev/null | awk -F: '{print $2}'); printf '[%s]pol=%s rtpri=%s rtlim=%s cpu=%s ' "$p" "${pol:-?}" "${rtpri:-?}" "${rtlim:-?}" "${cpu:-?}"; done)"
+  echo "sched: $(for p in $(pgrep -f 'hushmic --enable|filter-chain\.conf|pipewire' 2>/dev/null | sort -u); do
+    [ -r "/proc/$p/stat" ] || continue
+    pol=$(awk '{print $19}' "/proc/$p/stat" 2>/dev/null)
+    rtpri=$(awk '{print $20}' "/proc/$p/stat" 2>/dev/null)
+    rtlim=$(grep 'Max realtime priority' "/proc/$p/limits" 2>/dev/null | awk '{print $5}')
+    cpu=$(taskset -cp "$p" 2>/dev/null | awk -F: '{print $2}')
+    printf '[%s]pol=%s rtpri=%s rtlim=%s cpu=%s ' "$p" "${pol:-?}" "${rtpri:-?}" "${rtlim:-?}" "${cpu:-?}"
+  done)"
   echo "loadavg: $(cut -d' ' -f1-3 /proc/loadavg) cpu6_mhz: $(awk '{printf "%.0f", $1/1000}' /sys/devices/system/cpu/cpu6/cpufreq/scaling_cur_freq 2>/dev/null) cpu7_mhz: $(awk '{printf "%.0f", $1/1000}' /sys/devices/system/cpu/cpu7/cpufreq/scaling_cur_freq 2>/dev/null)"
   echo "filter_cfg: $(md5sum /home/b/.config/hushmic/filter-chain.conf 2>/dev/null | cut -c1-8) $(head -c 400 /home/b/.config/hushmic/filter-chain.conf 2>/dev/null | tr '\n' '|')"
   # pw-dump as user b: XDG_RUNTIME_DIR must survive sudo or PipeWire falls
@@ -44,5 +51,5 @@ mv -f "$out/steam-pattern.tmp" "$out/steam-pattern"
   echo "cpu7_governor: $(cat /sys/devices/system/cpu/cpu7/cpufreq/scaling_governor 2>/dev/null || echo none)"
   echo "cpu7_epp: $(cat /sys/devices/system/cpu/cpu7/cpufreq/energy_performance_preference 2>/dev/null || echo none)"
   echo "governors: $(grep -h . /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null | sort | uniq -c | tr -s ' \n' ' ')"
-} > "$out/latest.tmp"
+} >"$out/latest.tmp"
 mv -f "$out/latest.tmp" "$out/latest"

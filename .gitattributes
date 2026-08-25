@@ -1,0 +1,3 @@
+# Normalize line endings to LF on check-in; git's text=auto detects
+# binaries (jfk.wav, *.age) and leaves them alone.
+* text=auto eol=lf

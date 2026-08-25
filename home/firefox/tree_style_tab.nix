@@ -10,7 +10,7 @@
       autoAttachOnOpenedWithOwner = 0;
 
       chunkedUserStyleRules0 = builtins.readFile (
-        pkgs.runCommand "tree-style-tab-css-base64" {} ''
+        pkgs.runCommand "tree-style-tab-css-base64" { } ''
           base64 -w0 ${./tree_style_tab.css} > $out
         ''
       );

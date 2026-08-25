@@ -18,7 +18,10 @@ def error(message):
 def run_json(command):
     try:
         result = subprocess.run(
-            command, check=True, capture_output=True, text=True,
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
         )
     except FileNotFoundError:
         error(f"command not found: {command[0]}")
@@ -77,7 +80,8 @@ def resolve_physical(layout, discovery_bin):
 
     for name, desired in layout.items():
         matches = [
-            d for d in displays
+            d
+            for d in displays
             if d.get("manufacturer") == desired["manufacturer"]
             and d.get("model") == desired["model"]
         ]

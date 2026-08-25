@@ -14,7 +14,7 @@ connection.
 ## How VRAM residency works
 
 | Phase | VRAM usage |
-|---|---|
+| --- | --- |
 | Process running, no model loaded (startup / after idle timeout) | **0** — only the small Python/CT2 runtime |
 | `POST /load` or first transcription request | weights load into VRAM (large-v3 fp16 ≈ 3.1 GB) |
 | Transcription in flight | resident |
@@ -94,7 +94,7 @@ and go.
 ## HTTP API
 
 | Endpoint | Description |
-|---|---|
+| --- | --- |
 | `POST /v1/audio/transcriptions` | OpenAI-compatible. Fields: `file` (any PyAV-decodable audio), `model`, `language`, `prompt`, `response_format` (`json`\|`verbose_json`\|`text`\|`srt`\|`vtt`), `vad_filter`, `temperature`, `beam_size` |
 | `POST /audio/transcriptions` | Alias of the above — use base URL `http://host:8790` or `http://host:8790/v1` in OpenAI-compatible clients; both work |
 | `GET /v1/models` | List default + locally cached models |
@@ -124,7 +124,7 @@ whisper fetch-model large-v3     # pre-download model into the cache
 ## Configuration (env vars)
 
 | Var | Default | Meaning |
-|---|---|---|
+| --- | --- | --- |
 | `WHISPER_MODEL` | `large-v3` | default model (tiny/base/small/medium/large-v3/distil-large-v3, or a local dir) |
 | `WHISPER_MODEL_DIR` | `~/.cache/whisper-service/models` | local model dir (first use downloads + converts into the HF cache) |
 | `WHISPER_HF_HOME` | `~/.cache/whisper-service/hf` | HuggingFace cache root |

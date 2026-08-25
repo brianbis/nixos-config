@@ -1,83 +1,95 @@
 { config, ... }:
 
 let
-  mkVllm = {
-    image,
-    model,
-    servedName,
-    port,
-    maxModelLen,
-    gpuMemoryUtilization ? "0.90",
-    quantization ? null,
-    kvCacheDtype ? null,
-    extraArgs ? [],
-  }:
+  mkVllm =
+    { image
+    , model
+    , servedName
+    , port
+    , maxModelLen
+    , gpuMemoryUtilization ? "0.90"
+    , quantization ? null
+    , kvCacheDtype ? null
+    , extraArgs ? [ ]
+    ,
+    }:
 
-  let
-    quantArgs =
-      if quantization != null
-      then [
-        "--quantization" quantization
-      ]
-      else [];
+    let
+      quantArgs =
+        if quantization != null
+        then [
+          "--quantization"
+          quantization
+        ]
+        else [ ];
 
-    kvArgs =
-      if kvCacheDtype != null
-      then [
-        "--kv-cache-dtype" kvCacheDtype
-      ]
-      else [];
+      kvArgs =
+        if kvCacheDtype != null
+        then [
+          "--kv-cache-dtype"
+          kvCacheDtype
+        ]
+        else [ ];
 
-  in {
-    inherit image;
+    in
+    {
+      inherit image;
 
-    autoStart = false;
+      autoStart = false;
 
-    volumes = [
-      "/var/lib/vllm/hf-cache:/root/.cache/huggingface"
-    ];
+      volumes = [
+        "/var/lib/vllm/hf-cache:/root/.cache/huggingface"
+      ];
 
-    ports = [
-      "127.0.0.1:${toString port}:8000"
-    ];
+      ports = [
+        "127.0.0.1:${toString port}:8000"
+      ];
 
-    environment = {
-      PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True";
+      environment = {
+        PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True";
+      };
+
+      environmentFiles = [
+        config.age.secrets.hf-token.path
+      ];
+
+      cmd =
+        [
+          "--model"
+          model
+          "--served-model-name"
+          servedName
+
+          "--max-model-len"
+          (toString maxModelLen)
+          "--gpu-memory-utilization"
+          gpuMemoryUtilization
+
+          "--enable-prefix-caching"
+
+          "--enable-auto-tool-choice"
+          "--tool-call-parser"
+          "gemma4"
+          "--reasoning-parser"
+          "gemma4"
+
+          "--host"
+          "0.0.0.0"
+          "--port"
+          "8000"
+        ]
+        ++ quantArgs
+        ++ kvArgs
+        ++ extraArgs;
+
+      # --shm-size, not --ipc=host: vLLM passes tensors between engine
+      # processes via /dev/shm (Docker's 64m default is too small); a
+      # private 32g shm avoids sharing the host IPC namespace.
+      extraOptions = [
+        "--device=nvidia.com/gpu=all"
+        "--shm-size=32g"
+      ];
     };
-
-    environmentFiles = [
-      config.age.secrets.hf-token.path
-    ];
-
-    cmd =
-      [
-        "--model" model
-        "--served-model-name" servedName
-
-        "--max-model-len" (toString maxModelLen)
-        "--gpu-memory-utilization" gpuMemoryUtilization
-
-        "--enable-prefix-caching"
-
-        "--enable-auto-tool-choice"
-        "--tool-call-parser" "gemma4"
-        "--reasoning-parser" "gemma4"
-
-        "--host" "0.0.0.0"
-        "--port" "8000"
-      ]
-      ++ quantArgs
-      ++ kvArgs
-      ++ extraArgs;
-
-    # --shm-size, not --ipc=host: vLLM passes tensors between engine
-    # processes via /dev/shm (Docker's 64m default is too small); a
-    # private 32g shm avoids sharing the host IPC namespace.
-    extraOptions = [
-      "--device=nvidia.com/gpu=all"
-      "--shm-size=32g"
-    ];
-  };
 
 in
 {
@@ -116,8 +128,10 @@ in
       # cache init and OOMs at 0.95 utilization.
       extraArgs = [
         "--trust-remote-code"
-        "--max-num-seqs" "1"
-        "--max-num-batched-tokens" "8192"
+        "--max-num-seqs"
+        "1"
+        "--max-num-batched-tokens"
+        "8192"
       ];
     };
 
@@ -140,8 +154,10 @@ in
       # vLLM frees capture scratch before KV cache allocation; eager mode
       # keeps peak memory high during init and OOMs on this card.
       extraArgs = [
-        "--max-num-seqs" "1"
-        "--max-num-batched-tokens" "8192"
+        "--max-num-seqs"
+        "1"
+        "--max-num-batched-tokens"
+        "8192"
       ];
     };
 

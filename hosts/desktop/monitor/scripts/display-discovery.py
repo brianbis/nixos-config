@@ -17,7 +17,7 @@ import sys
 
 def edid_string(data, offset, length):
     """Decode an EDID ASCII descriptor, stripping padding/newlines."""
-    raw = data[offset: offset + length]
+    raw = data[offset : offset + length]
     raw = raw.split(b"\n", 1)[0]
     raw = raw.split(b"\x00", 1)[0]
     return raw.decode("ascii", errors="replace").strip(" \r\n")
@@ -56,7 +56,7 @@ def parse_edid(data):
 
     for i in range(4):
         off = 0x36 + i * 18
-        descriptor = data[off: off + 18]
+        descriptor = data[off : off + 18]
 
         if descriptor[0:2] != b"\x00\x00":
             continue
@@ -69,12 +69,7 @@ def parse_edid(data):
             product_name = edid_string(data, off + 5, 13)
 
     product_code = data[10] | (data[11] << 8)
-    edid_serial = (
-        data[12]
-        | (data[13] << 8)
-        | (data[14] << 16)
-        | (data[15] << 24)
-    )
+    edid_serial = data[12] | (data[13] << 8) | (data[14] << 16) | (data[15] << 24)
 
     return {
         "manufacturer": mfr,
@@ -135,11 +130,7 @@ if __name__ == "__main__":
         print()
     else:
         for display in displays:
-            serial = (
-                f" (serial {display['serial']})"
-                if display["serial"]
-                else ""
-            )
+            serial = f" (serial {display['serial']})" if display["serial"] else ""
             print(
                 f"{display['connector']}: "
                 f"{display['manufacturer']} "

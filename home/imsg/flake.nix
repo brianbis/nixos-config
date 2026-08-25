@@ -27,7 +27,8 @@
         hash = "sha256-qPjV7Xm91685SPakxdN9XRA0E0pV7kWmAXnWIf2VgEk=";
       };
       npmRoot = "crates/imsg-gui/frontend";
-    in {
+    in
+    {
       packages.${system}.default =
         pkgs.rustPlatform.buildRustPackage {
           pname = "imsg";

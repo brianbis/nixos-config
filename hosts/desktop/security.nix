@@ -10,7 +10,7 @@ in
 {
   imports = [ inputs.agenix.nixosModules.default ];
 
-  users.groups.llm = {};
+  users.groups.llm = { };
 
   # TPM2 unseal: the age key is sealed in the TPM bound to PCRs 0,2,3; this
   # script unseals the key into tmpfs (/run/agenix-tpm) for agenix to use as
@@ -62,26 +62,28 @@ in
       "/run/agenix-tpm/key.txt"
     ];
 
-    secrets = builtins.listToAttrs (map (file: {
-      name = lib.removeSuffix ".age" file;
+    secrets = builtins.listToAttrs (map
+      (file: {
+        name = lib.removeSuffix ".age" file;
 
-      value =
-        if file == "deepseek-api-key.age" then {
-          file = "${secretsDir}/${file}";
-          owner = "root";
-          group = "llm";
-          mode = "0440";
-        } else if file == "imsg-mac.age" then {
-          file = "${secretsDir}/${file}";
-          owner = "b";
-          group = "users";
-          mode = "0400";
-        } else {
-          file = "${secretsDir}/${file}";
-          owner = "root";
-          group = "root";
-          mode = "0400";
-        };
-    }) secretFiles);
+        value =
+          if file == "deepseek-api-key.age" then {
+            file = "${secretsDir}/${file}";
+            owner = "root";
+            group = "llm";
+            mode = "0440";
+          } else if file == "imsg-mac.age" then {
+            file = "${secretsDir}/${file}";
+            owner = "b";
+            group = "users";
+            mode = "0400";
+          } else {
+            file = "${secretsDir}/${file}";
+            owner = "root";
+            group = "root";
+            mode = "0400";
+          };
+      })
+      secretFiles);
   };
 }

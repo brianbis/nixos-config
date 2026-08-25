@@ -137,6 +137,14 @@ alias sc := secret-check
 agents-md:
     nix build --no-link .#agents-md --print-out-paths
 
+# Format the whole repo with pre-commit (see .pre-commit-config.yaml).
+# Idempotent; run before `just save`. The nix package is on the shell so the
+# system hooks' `nix run` entries resolve in the daemon's mount namespace.
+fmt:
+    @nix shell nixpkgs#pre-commit nixpkgs#nix -c pre-commit run --all-files
+
+alias f := fmt
+
 # llama.cpp shortcuts
 
 llamacpp-start:

@@ -10,29 +10,33 @@ in
     # One vhost per friendly name, fronting the loopback backend. All backends
     # are loopback-only, so Caddy binds to loopback too (naming does not widen
     # exposure); port 80 is only the HTTP -> HTTPS redirect.
-    virtualHosts = lib.mapAttrs' (
-      name: port:
-      lib.nameValuePair name {
-        listenAddresses = [ "127.0.0.1" ];
-        extraConfig = let
-          # dsh.local's backend (the GUI) validates Host/Origin against its loopback
-          # origin and 403s anything else, so Caddy rewrites Host to the upstream and
-          # drops Origin (other backends are host/origin-agnostic).
-          reverseProxy =
-            if name == "dsh.local" then ''
-              reverse_proxy 127.0.0.1:${toString port} {
-                header_up Host {upstream_hostport}
-                header_up -Origin
-              }
-            '' else ''
-              reverse_proxy 127.0.0.1:${toString port}
-            '';
-        in ''
-          tls ${shared.ca}/leaf.crt ${shared.ca}/leaf.key
-          ${reverseProxy}
-        '';
-      }
-    ) shared.services;
+    virtualHosts = lib.mapAttrs'
+      (
+        name: port:
+          lib.nameValuePair name {
+            listenAddresses = [ "127.0.0.1" ];
+            extraConfig =
+              let
+                # dsh.local's backend (the GUI) validates Host/Origin against its loopback
+                # origin and 403s anything else, so Caddy rewrites Host to the upstream and
+                # drops Origin (other backends are host/origin-agnostic).
+                reverseProxy =
+                  if name == "dsh.local" then ''
+                    reverse_proxy 127.0.0.1:${toString port} {
+                      header_up Host {upstream_hostport}
+                      header_up -Origin
+                    }
+                  '' else ''
+                    reverse_proxy 127.0.0.1:${toString port}
+                  '';
+              in
+              ''
+                tls ${shared.ca}/leaf.crt ${shared.ca}/leaf.key
+                ${reverseProxy}
+              '';
+          }
+      )
+      shared.services;
   };
 
   # Resolve the friendly names to loopback. /etc/hosts (files) is consulted

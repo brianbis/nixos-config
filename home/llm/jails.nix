@@ -44,12 +44,14 @@ let
   };
   nixGuard = pkgs.symlinkJoin {
     name = "nix-guard";
-    paths = lib.mapAttrsToList (name: msg:
-      pkgs.writeShellScriptBin name ''
-        echo "denied: ${msg}. Edit config files only; do not activate." >&2
-        exit 1
-      ''
-    ) forbiddenNixCmds;
+    paths = lib.mapAttrsToList
+      (name: msg:
+        pkgs.writeShellScriptBin name ''
+          echo "denied: ${msg}. Edit config files only; do not activate." >&2
+          exit 1
+        ''
+      )
+      forbiddenNixCmds;
   };
 
   # Single source of truth for packages injected into every jail. Each spec
@@ -143,8 +145,8 @@ let
     no-new-session
     (set-env "HOME" (if system then agentHome else userHome))
   ] ++ (if system
-    then map readwrite writablePathsSystem
-    else [ mount-cwd ]) ++ map readonly (readonlyMounts system) ++ [
+  then map readwrite writablePathsSystem
+  else [ mount-cwd ]) ++ map readonly (readonlyMounts system) ++ [
     (set-env "NIX_CONFIG"
       "experimental-features = nix-command flakes")
     (set-env "NIXPKGS" pkgs.path)
@@ -154,10 +156,10 @@ let
     jail "jailed-${name}${if system then "-system" else ""}"
       pkg
       (with jail.combinators;
-        baseJailOptions system ++
-        dirs ++
-        [ (add-pkg-deps (commonPkgs ++ (if system then systemExtraPkgs else [ ]))) ]
-        ++ (if system then systemExtraMounts else [ ]));
+      baseJailOptions system ++
+      dirs ++
+      [ (add-pkg-deps (commonPkgs ++ (if system then systemExtraPkgs else [ ]))) ]
+      ++ (if system then systemExtraMounts else [ ]));
 
   # Per-tool read/write dirs, relative to the owning home (user: userHome,
   # system: agentHome). Paths are absolute so user and system mounts stay
@@ -279,41 +281,46 @@ let
     let
       userJail = mkToolJail { inherit name pkg; dirs = userDirSpecs dirPaths; system = false; };
       systemJail = mkToolJail { inherit name pkg systemExtraPkgs systemExtraMounts; dirs = systemDirs; system = true; };
-    in {
+    in
+    {
       "${name}-jail" = userJail;
       "${name}-jail-system" = systemJail;
     };
 
   jailsByTool =
-    (makeTool { name = "aider"; pkg = pkgs.aider-chat; dirPaths = aiderDirPaths;
-                systemDirs = [ (with jail.combinators; (readonly deepseekSecret)) ]; })
+    (makeTool {
+      name = "aider";
+      pkg = pkgs.aider-chat;
+      dirPaths = aiderDirPaths;
+      systemDirs = [ (with jail.combinators; (readonly deepseekSecret)) ];
+    })
     // (makeTool {
-         name = "crush";
-         pkg = withDeepSeekKey crushUnbanned "crush";
-         dirPaths = crushDirPaths;
-         # Debug tooling for the system jail: PipeWire/WirePlumber CLIs for audio
-         # stream state, plus read-only /sys (cpufreq) and /run/user (session
-         # sockets). b's /run/user session dir is mode 700, so llm can't inspect it.
-         systemExtraPkgs = with pkgs; [ procps pipewire wireplumber ];
-         systemExtraMounts = with jail.combinators; [
-           (readonly "/sys")
-           (readonly "/run/user")
-         ];
-       })
+      name = "crush";
+      pkg = withDeepSeekKey crushUnbanned "crush";
+      dirPaths = crushDirPaths;
+      # Debug tooling for the system jail: PipeWire/WirePlumber CLIs for audio
+      # stream state, plus read-only /sys (cpufreq) and /run/user (session
+      # sockets). b's /run/user session dir is mode 700, so llm can't inspect it.
+      systemExtraPkgs = with pkgs; [ procps pipewire wireplumber ];
+      systemExtraMounts = with jail.combinators; [
+        (readonly "/sys")
+        (readonly "/run/user")
+      ];
+    })
     // (makeTool { name = "opencode"; pkg = withDeepSeekKey (agent "opencode") "opencode"; dirPaths = opencodeDirPaths; })
     // (makeTool { name = "claude"; pkg = agent "claude-code"; dirPaths = claudeDirPaths; })
     // (makeTool {
-         name = "dsh";
-         pkg = withDeepSeekKey dshPatched "dsh";
-         dirPaths = dshDirPaths;
-         # The jail's /run is a fresh tmpfs, so the dsh-open socket must be
-         # bind-mounted in. Mount the DIRECTORY (not the socket) so a switch
-         # that recreates it leaves no stale inode (ENXIO); rw for socket connect.
-         systemExtraPkgs = [ dshOpenXdgOpen ];
-         systemExtraMounts = with jail.combinators; [
-           (readwrite "/run/dsh-open")
-         ];
-       });
+      name = "dsh";
+      pkg = withDeepSeekKey dshPatched "dsh";
+      dirPaths = dshDirPaths;
+      # The jail's /run is a fresh tmpfs, so the dsh-open socket must be
+      # bind-mounted in. Mount the DIRECTORY (not the socket) so a switch
+      # that recreates it leaves no stale inode (ENXIO); rw for socket connect.
+      systemExtraPkgs = [ dshOpenXdgOpen ];
+      systemExtraMounts = with jail.combinators; [
+        (readwrite "/run/dsh-open")
+      ];
+    });
 
   # Flat list of all jail packages (home.packages expects a list).
   jails = builtins.attrValues jailsByTool;
@@ -336,7 +343,7 @@ let
     exec sudo -u ${agentUsername} ${jailsByTool."dsh-jail-system"}/bin/jailed-dsh-system "$@"
   '';
 
-  in
+in
 {
   inherit
     jails

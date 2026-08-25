@@ -19,7 +19,8 @@ let
     inherit shared;
     userHome = users.b.homeDirectory;
   };
-in {
+in
+{
   systemd.services.dsh-web = {
     description = "DeepSeek Harness web GUI (jailed dsh, as llm)";
 

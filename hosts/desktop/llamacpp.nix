@@ -201,7 +201,8 @@ let
 
   dwellSeconds = 30;
 
-in {
+in
+{
   environment.systemPackages = with pkgs; [ llama-cpp ];
 
   system.activationScripts.museModels.text = download "llamacpp-muse" museRepo museDir museIncludes;
@@ -233,11 +234,16 @@ in {
       Type = "simple";
       ExecStart = lib.concatStringsSep " " [
         "${pkgs.llama-cpp}/bin/llama-server"
-        "--models-dir" "${modelsDir}"
-        "--models-preset" "${modelsPreset}"
-        "--models-max" "1"
-        "--host" "127.0.0.1"
-        "--port" "8000"
+        "--models-dir"
+        "${modelsDir}"
+        "--models-preset"
+        "${modelsPreset}"
+        "--models-max"
+        "1"
+        "--host"
+        "127.0.0.1"
+        "--port"
+        "8000"
         # The llama.cpp router overlays every ExecStart arg onto EVERY model
         # preset (preset.merge, highest precedence) and they cannot be
         # overridden per model. So only genuinely router-level args stay here:
@@ -246,9 +252,11 @@ in {
         # n-gpu-layers, kv-offload, flash-attn, and all sampling params like
         # temp/top-p/top-k) live in the preset file so each model can override
         # its own. E.g. Qwen keeps KV in RAM while Glimmer keeps KV on GPU.
-        "--parallel" "4"
+        "--parallel"
+        "4"
         "--mlock"
-        "--sleep-idle-seconds" "${toString dwellSeconds}"
+        "--sleep-idle-seconds"
+        "${toString dwellSeconds}"
       ];
       Restart = "on-failure";
       RestartSec = "3";

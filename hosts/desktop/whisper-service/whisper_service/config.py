@@ -49,33 +49,47 @@ class Config:
     # Model
     model: str = field(default_factory=lambda: _env("WHISPER_MODEL", "large-v3"))
     model_dir: Path = field(
-        default_factory=lambda: Path(_env("WHISPER_MODEL_DIR", str(_cache_root() / "models")))
+        default_factory=lambda: Path(
+            _env("WHISPER_MODEL_DIR", str(_cache_root() / "models"))
+        )
     )
     hf_home: Path = field(
         default_factory=lambda: Path(_env("WHISPER_HF_HOME", str(_cache_root() / "hf")))
     )
 
     # Device
-    device: str = field(default_factory=lambda: _env("WHISPER_DEVICE", "auto"))  # auto|cuda|cpu
-    compute_type: str = field(default_factory=lambda: _env("WHISPER_COMPUTE_TYPE", "auto"))
+    device: str = field(
+        default_factory=lambda: _env("WHISPER_DEVICE", "auto")
+    )  # auto|cuda|cpu
+    compute_type: str = field(
+        default_factory=lambda: _env("WHISPER_COMPUTE_TYPE", "auto")
+    )
     cpu_threads: int = field(default_factory=lambda: _env_int("WHISPER_CPU_THREADS", 0))
 
     # VRAM residency
     idle_timeout: float = field(
         default_factory=lambda: _env_float("WHISPER_IDLE_TIMEOUT", 120.0)
     )  # seconds; 0 disables auto-unload
-    keep_loaded: bool = field(default_factory=lambda: _env_bool("WHISPER_KEEP_LOADED", False))
+    keep_loaded: bool = field(
+        default_factory=lambda: _env_bool("WHISPER_KEEP_LOADED", False)
+    )
 
     # Process lifetime: once the model is released (idle reaper or explicit
     # /unload), exit the whole process (code 0) instead of keeping ~GBs of
     # host memory resident; socket activation re-activates on the next request.
-    auto_stop: bool = field(default_factory=lambda: _env_bool("WHISPER_AUTO_STOP", False))
+    auto_stop: bool = field(
+        default_factory=lambda: _env_bool("WHISPER_AUTO_STOP", False)
+    )
 
     # Server
     host: str = field(default_factory=lambda: _env("WHISPER_HOST", "0.0.0.0"))
     port: int = field(default_factory=lambda: _env_int("WHISPER_PORT", 8790))
-    max_concurrent: int = field(default_factory=lambda: _env_int("WHISPER_MAX_CONCURRENT", 1))
-    max_upload_mb: int = field(default_factory=lambda: _env_int("WHISPER_MAX_UPLOAD_MB", 2048))
+    max_concurrent: int = field(
+        default_factory=lambda: _env_int("WHISPER_MAX_CONCURRENT", 1)
+    )
+    max_upload_mb: int = field(
+        default_factory=lambda: _env_int("WHISPER_MAX_UPLOAD_MB", 2048)
+    )
 
     @property
     def device_allowed(self) -> str:

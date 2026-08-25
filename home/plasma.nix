@@ -20,8 +20,8 @@ let
 in
 {
   home.packages = [
-    pkgs.kdotool   # query/close the active window (Wayland-native)
-    altF4Script    # also usable directly from a shell for testing
+    pkgs.kdotool # query/close the active window (Wayland-native)
+    altF4Script # also usable directly from a shell for testing
   ];
 
   xdg.dataFile."applications/bt-connect-headphones.desktop".text = ''
@@ -118,40 +118,40 @@ in
         description = "Discord - middle quarter";
         match.window-class = { value = "discord"; type = "substring"; };
         apply = {
-          position = { value = "1280,0";      apply = "remember"; };
-          size     = { value = "1280,1440"; apply = "remember"; };
-          desktop  = { value = "1";         apply = "remember"; };
-          screen   = { value = "0";         apply = "remember"; };
+          position = { value = "1280,0"; apply = "remember"; };
+          size = { value = "1280,1440"; apply = "remember"; };
+          desktop = { value = "1"; apply = "remember"; };
+          screen = { value = "0"; apply = "remember"; };
         };
       }
       {
         description = "Obsidian - middle quarter";
         match.window-class = { value = "obsidian"; type = "substring"; };
         apply = {
-          position = { value = "1280,0";      apply = "remember"; };
-          size     = { value = "1280,1440"; apply = "remember"; };
-          desktop  = { value = "1";         apply = "remember"; };
-          screen   = { value = "0";         apply = "remember"; };
+          position = { value = "1280,0"; apply = "remember"; };
+          size = { value = "1280,1440"; apply = "remember"; };
+          desktop = { value = "1"; apply = "remember"; };
+          screen = { value = "0"; apply = "remember"; };
         };
       }
       {
         description = "Firefox - right half";
         match.window-class = { value = "firefox"; type = "substring"; };
         apply = {
-          position = { value = "2560,0";    apply = "remember"; };
-          size     = { value = "2560,1440"; apply = "remember"; };
-          desktop  = { value = "1";         apply = "remember"; };
-          screen   = { value = "0";         apply = "remember"; };
+          position = { value = "2560,0"; apply = "remember"; };
+          size = { value = "2560,1440"; apply = "remember"; };
+          desktop = { value = "1"; apply = "remember"; };
+          screen = { value = "0"; apply = "remember"; };
         };
       }
       {
         description = "VS Code - left quarter half lower";
         match.window-class = { value = "code"; type = "substring"; };
         apply = {
-          position = { value = "0,720";     apply = "remember"; };
-          size     = { value = "1280,720"; apply = "remember"; };
-          desktop  = { value = "1";       apply = "remember"; };
-          screen   = { value = "0";       apply = "remember"; };
+          position = { value = "0,720"; apply = "remember"; };
+          size = { value = "1280,720"; apply = "remember"; };
+          desktop = { value = "1"; apply = "remember"; };
+          screen = { value = "0"; apply = "remember"; };
         };
       }
     ];

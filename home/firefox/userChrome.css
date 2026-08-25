@@ -3,44 +3,50 @@
 #tabbrowser-tabs {
   visibility: collapse !important;
 }
-#main-window[tabsintitlebar="true"]:not([extradragspace="true"]) #TabsToolbar > .toolbar-items {
+#main-window[tabsintitlebar="true"]:not([extradragspace="true"])
+  #TabsToolbar
+  > .toolbar-items {
   opacity: 0;
   pointer-events: none;
 }
 #main-window:not([tabsintitlebar="true"]) #TabsToolbar {
-    visibility: collapse !important;
+  visibility: collapse !important;
 }
-#main-window[tabsintitlebar="true"]:not([extradragspace="true"]) #TabsToolbar .titlebar-spacer {
-    border-inline-end: none;
+#main-window[tabsintitlebar="true"]:not([extradragspace="true"])
+  #TabsToolbar
+  .titlebar-spacer {
+  border-inline-end: none;
 }
 
 /* Adding empty space for buttons */
 #nav-bar {
-	margin-right:140px;
+  margin-right: 140px;
 }
 
 #titlebar {
-	appearance: none !important;
-	height: 0px;
+  appearance: none !important;
+  height: 0px;
 }
 
 /* Fix for main menu calling by Alt button */
 #titlebar > #toolbar-menubar {
-	margin-top: 10px;
+  margin-top: 10px;
 }
 
 /* Move minimize/restore/close buttons to empty space */
 #TabsToolbar > .titlebar-buttonbox-container {
-	display: block;
-	position: absolute;
-	top: 1px;
-	right: 1px;
+  display: block;
+  position: absolute;
+  top: 1px;
+  right: 1px;
 }
-#sidebar-box[sidebarcommand="treestyletab_piro_sakura_ne_jp-sidebar-action"] #sidebar-header {
+#sidebar-box[sidebarcommand="treestyletab_piro_sakura_ne_jp-sidebar-action"]
+  #sidebar-header {
   display: none;
 }
 
-#sidebar-box[sidebarcommand="treestyletab_piro_sakura_ne_jp-sidebar-action"] #sidebar-header {
+#sidebar-box[sidebarcommand="treestyletab_piro_sakura_ne_jp-sidebar-action"]
+  #sidebar-header {
   display: none !important;
 }
 
@@ -61,7 +67,9 @@
 #sidebar-box[sidebarcommand="treestyletab_piro_sakura_ne_jp-sidebar-action"]:hover {
   min-width: var(--wide-tab-width) !important;
   max-width: var(--wide-tab-width) !important;
-  margin-right: calc((var(--wide-tab-width) - var(--thin-tab-width)) * -1) !important;
+  margin-right: calc(
+    (var(--wide-tab-width) - var(--thin-tab-width)) * -1
+  ) !important;
   z-index: 3;
 }
 
@@ -70,7 +78,10 @@
 }
 
 /* thin line persists above the tabs or toolbars */
-#navigator-toolbox, #toolbar-menubar, #TabsToolbar, #nav-bar {
+#navigator-toolbox,
+#toolbar-menubar,
+#TabsToolbar,
+#nav-bar {
   box-shadow: none !important;
   border-color: transparent !important;
 }

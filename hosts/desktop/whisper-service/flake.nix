@@ -96,14 +96,14 @@
               # as a path input, `self.outPath` becomes a subpath of the parent's
               # store copy, and sourceByRegex's relPath fails to match — the filter drops everything.
               pkgs.lib.sourceByRegex ./. [
-              # lib.match is a full match, so the directory and its contents need
-              # separate regexes; "whisper_service/.*\.py" keeps only .py files (a
-              # broad .* would sweep in __pycache__/*.pyc and ship stale bytecode).
-              "whisper_service"
-              "whisper_service/.*\.py"
-              "setup.py"
-              "README.md"
-            ];
+                # lib.match is a full match, so the directory and its contents need
+                # separate regexes; "whisper_service/.*\.py" keeps only .py files (a
+                # broad .* would sweep in __pycache__/*.pyc and ship stale bytecode).
+                "whisper_service"
+                "whisper_service/.*\.py"
+                "setup.py"
+                "README.md"
+              ];
             nativeBuildInputs = [ pypkgs.setuptools ];
             dependencies = [
               faster-whisper-cuda

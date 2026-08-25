@@ -1,22 +1,21 @@
-{
-  lib,
-  rustPlatform,
-  fetchFromGitHub,
-  fetchurl,
-  makeWrapper,
-  patchelf,
-  pkg-config,
-  onnxruntime,
-  pipewire,
-  libGL,
-  libxkbcommon,
-  wayland,
-  libx11,
-  libxcursor,
-  libxi,
-  libxrandr,
-  libxcb,
-
+{ lib
+, rustPlatform
+, fetchFromGitHub
+, fetchurl
+, makeWrapper
+, patchelf
+, pkg-config
+, onnxruntime
+, pipewire
+, libGL
+, libxkbcommon
+, wayland
+, libx11
+, libxcursor
+, libxi
+, libxrandr
+, libxcb
+,
 }:
 
 let

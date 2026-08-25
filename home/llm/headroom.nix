@@ -3,14 +3,13 @@
 # Not in nixpkgs or the llm-agents flake, so built here from source. It is a
 # maturin (Rust core + Python) package: this derivation compiles the pyo3 cdylib
 # (crates/headroom-py) and packages the Python CLI.
-{
-  lib,
-  rustPlatform,
-  cargo,
-  rustc,
-  python,
-  fetchFromGitHub,
-  ast-grep-cli
+{ lib
+, rustPlatform
+, cargo
+, rustc
+, python
+, fetchFromGitHub
+, ast-grep-cli
 }:
 
 python.pkgs.buildPythonApplication (finalAttrs: {

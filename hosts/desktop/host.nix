@@ -1,4 +1,4 @@
-{ lib, pkgs, ... }:
+{ config, lib, pkgs, ... }:
 
 let
   users = import ../../home/users.nix;
@@ -18,6 +18,34 @@ in
     dates = "weekly";
     options = "--delete-older-than 30d";
   };
+
+  # pre-commit's git (cloning hook repos) and the `nix` client run in an
+  # environment whose /nix/store view may not include the system store, so
+  # the default /etc/ssl/certs CA *symlinks* (into the system store) dangle
+  # and TLS verification fails. Install the system's final CA bundle
+  # (security.pki.caBundle — same file the system symlinks into
+  # /etc/ssl/certs) as a REAL file at a stable path: `mode = "0644"` makes
+  # the /etc installer copy it instead of symlinking it, so it resolves
+  # regardless of which store view the environment sees. Point git at it
+  # via the system gitconfig.
+  environment.etc."ca-bundle/git-ca.crt" = {
+    source = config.security.pki.caBundle;
+    mode = "0644";
+  };
+  environment.etc."gitconfig" = {
+    text = ''
+      [http]
+        sslCAInfo = /etc/ca-bundle/git-ca.crt
+    '';
+    mode = "0644";
+  };
+
+  # The pre-commit hooks (.pre-commit-config.yaml) run the language formatters
+  # pinned to $NIXPKGS — the system's nixpkgs source — so their versions track
+  # the flake's lock instead of a floating registry default. The jails set it
+  # per session (home/llm/jails.nix); declare it system-wide as well so
+  # `just fmt` also works in host shells, where no jail environment exists.
+  environment.sessionVariables.NIXPKGS = pkgs.path;
 
   i18n.defaultLocale = "en_US.UTF-8";
   services.lact.enable = true;

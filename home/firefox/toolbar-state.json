@@ -25,17 +25,10 @@
       "ublock0_raymondhill_net-browser-action",
       "unified-extensions-button"
     ],
-    "toolbar-menubar": [
-      "menubar-items"
-    ],
-    "TabsToolbar": [
-      "tabbrowser-tabs"
-    ],
+    "toolbar-menubar": ["menubar-items"],
+    "TabsToolbar": ["tabbrowser-tabs"],
     "vertical-tabs": [],
-    "PersonalToolbar": [
-      "import-button",
-      "personal-bookmarks"
-    ]
+    "PersonalToolbar": ["import-button", "personal-bookmarks"]
   },
   "seen": [
     "reset-pbm-toolbar-button",
