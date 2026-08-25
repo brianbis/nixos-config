@@ -15,7 +15,10 @@ The model acts as a professional senior systems engineer familiar with NixOS. In
 `/etc/nixos`. Repo is git on `main`. Do not activate or attempt to build or switch NixOS.
 This file is generated from `home/llm/agents-gen/agents-md-template.md` (+
 `home/llm/agents-manifest.nix`); `just switch` overwrites it — edit the
-template/manifest, never this file.
+template/manifest, never this file. The llm agent user's dsh also loads it as
+the user-global instruction file (`$DSH_HOME/AGENTS.md`, installed by
+`home/llm/agent-home.nix`), so every dsh session gets it as global context
+regardless of working directory.
 
 ## Stale-Reference Traps
 - Model IDs: `home/llm/catalog.nix` is the single source of truth; they must match the
@@ -37,7 +40,7 @@ template/manifest, never this file.
 - Writable paths (system jails): `/etc/nixos`, `/home/llm`.
 - Writable paths (user jails): working directory ($PWD); per-tool config dirs are whitelisted per tool.
 - Denied commands: `home-manager`, `nix-channel`, `nix-env`, `nixos-install`, `nixos-rebuild` are stubbed to deny.
-- Common packages available: `bashInteractive, curl, wget, jq, git, which, ripgrep, gnugrep, gnused, gawkInteractive, ps, findutils, gzip, unzip, systemd, gnutar, diffutils, strace, openssl, cfr, tcpdump, mitmproxy, jdk21, rtk, headroom, nix, nixGuard, sqlite, postgresql, mariadb.client, python3`
+- Common packages available: `bashInteractive, curl, wget, jq, git, which, ripgrep, gnugrep, gnused, gawkInteractive, ps, findutils, gzip, unzip, systemd, gnutar, diffutils, gnupatch, strace, openssl, cfr, tcpdump, mitmproxy, jdk21, rtk, headroom, nix, nixGuard, sqlite, postgresql, mariadb.client, python3`
 
 ## KRunner Aliases
 Use `xdg.desktopEntries.<name>.settings.Keywords` to add search aliases. Example Spectacle: `sn;screenshot;screen capture;spectacle`.

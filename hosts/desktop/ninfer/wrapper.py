@@ -54,9 +54,9 @@ READ_CHUNK = 64 * 1024
 # it must not pin the wrapper forever either.
 HEAD_TIMEOUT = 60.0
 
-DEFAULT_IDLE_SECONDS = 30
+DEFAULT_IDLE_SECONDS = 60
 DEFAULT_READY_TIMEOUT = 30 * 60
-DEFAULT_SHUTDOWN_TIMEOUT = 30
+DEFAULT_SHUTDOWN_TIMEOUT = 60
 DEFAULT_KILL_TIMEOUT = 10
 DEFAULT_DRAIN_TIMEOUT = 10
 
@@ -483,7 +483,6 @@ async def relay(
 
                     if not data:
                         # The client has finished sending its request.
-                        #
                         # Do NOT tear down the child->client direction.
                         # Half-close the child's write side if supported.
                         transport = child_writer.transport
@@ -527,12 +526,8 @@ async def relay(
         )
 
         try:
-            # IMPORTANT:
-            #
-            # Do not use FIRST_COMPLETED here.
-            #
-            # The client upload can finish while the child continues
-            # streaming the response.
+            # Wait for BOTH directions, not FIRST_COMPLETED: the client upload
+            # can finish while the child is still streaming the response.
             await asyncio.gather(
                 upload_task,
                 download_task,
@@ -819,7 +814,6 @@ async def tail_request_log(
 
                 stat = os.stat(path)
 
-                # File replaced.
                 if inode != stat.st_ino:
                     fh.close()
                     fh = None
@@ -827,7 +821,6 @@ async def tail_request_log(
                     buffer = b""
                     continue
 
-                # File truncated.
                 if fh.tell() > stat.st_size:
                     fh.seek(0)
                     buffer = b""
@@ -999,7 +992,6 @@ async def shutdown(
 
     state.stopping = True
 
-    # Stop accepting new clients.
     accept_task.cancel()
 
     # Awaiting a cancelled task raises CancelledError (a BaseException in
@@ -1010,7 +1002,6 @@ async def shutdown(
 
     listen.close()
 
-    # Close existing client connections.
     close_connections(state)
 
     # Give active handlers a brief opportunity to finish.

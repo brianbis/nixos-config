@@ -1,0 +1,30 @@
+--- a/agent.cordis.yml
++++ b/agent.cordis.yml
+@@ -143,6 +143,11 @@
+   config:
+     - id: compaction-basic
+       name: '@deepseek-ai/dsh-compaction-basic'
++      config:
++        # 4x the plugin default (8192): the thinking default model spends part
++        # of the budget on reasoning before writing the checkpoint, so the
++        # default cap truncates a large share of compactions.
++        maxTokens: 32768
+ 
+     - id: command-compact
+       name: '@deepseek-ai/dsh-command-compact'
+@@ -245,8 +250,15 @@
+ 
+ # The `web` service and its search provider stay in the host composition; only
+ # the model-facing tool is per-session.
++#
++# This preset row is the one that actually registers `web_search` into sessions
++# (the host row is disabled by the web-app bundle). Search routes through the
++# host composition's selected provider — the self-hosted SearXNG engine
++# (hosts/desktop/searxng.nix, loopback :8888) mounted by the web profile's user
++# patch layer (dotfiles/dsh/cordis.patch.yml) — so the tool never reaches
++# api.deepseek.com regardless of the chat model.
+ - id: tool-web
+   name: '@deepseek-ai/dsh-tool-web'
+   config:
+     fetch: false
+     searchTimeoutMs: 60000

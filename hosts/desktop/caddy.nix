@@ -7,28 +7,17 @@ in
   services.caddy = {
     enable = true;
 
-    # One vhost per friendly name, fronting the loopback backend. All
-    # backends are loopback-only; bind Caddy to loopback as well so
-    # naming the endpoints does not widen any service's exposure. Port 80
-    # is used only for the automatic HTTP -> HTTPS redirect.
-    #
-    # Tailnet access to the GUI does not go through Caddy: `tailscale
-    # serve` (networking.nix) serves the name dsh.tail835824.ts.net (from
-    # the svc:dsh service name) on the Tailscale IP with a Let's Encrypt
-    # certificate provisioned by the Tailscale control plane. Caddy is the
-    # local front door only (https://dsh.local, local CA).
+    # One vhost per friendly name, fronting the loopback backend. All backends
+    # are loopback-only, so Caddy binds to loopback too (naming does not widen
+    # exposure); port 80 is only the HTTP -> HTTPS redirect.
     virtualHosts = lib.mapAttrs' (
       name: port:
       lib.nameValuePair name {
         listenAddresses = [ "127.0.0.1" ];
         extraConfig = let
-          # dsh.local's backend (the DeepSeek Harness GUI) validates the Host
-          # header and Origin against the loopback origin it was launched with
-          # and returns 403 for anything else. Caddy forwards the client's Host
-          # (dsh.local) and Origin (https://dsh.local) verbatim, which the
-          # backend rejects for every JSON-RPC POST. Rewrite Host to the
-          # upstream and drop Origin so the request looks like a direct loopback
-          # call. Other backends are host/origin-agnostic, so leave them as-is.
+          # dsh.local's backend (the GUI) validates Host/Origin against its loopback
+          # origin and 403s anything else, so Caddy rewrites Host to the upstream and
+          # drops Origin (other backends are host/origin-agnostic).
           reverseProxy =
             if name == "dsh.local" then ''
               reverse_proxy 127.0.0.1:${toString port} {
@@ -46,10 +35,9 @@ in
     ) shared.services;
   };
 
-  # Resolve the friendly names to loopback. /etc/hosts (files) is
-  # consulted before DNS/mDNS, so .local names never leak to the network.
-  # Note: networking.hosts maps IP -> [hostnames] (the rendered line is
-  # "<ip> <names...>"), so all names are aliases of the one loopback IP.
+  # Resolve the friendly names to loopback. /etc/hosts (files) is consulted
+  # before DNS/mDNS, so .local names never leak to the network; all names are
+  # aliases of the one loopback IP (networking.hosts maps IP -> [hostnames]).
   networking.hosts = {
     "127.0.0.1" = builtins.attrNames shared.services;
   };

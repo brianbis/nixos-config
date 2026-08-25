@@ -1,3 +1,0 @@
-name: Standard (32k compaction)
-description: Local copy of the standard preset with the compaction summarizer's output budget raised to 32768 tokens, so thinking-model compactions stop truncating at the 8192 default.
-order: 5

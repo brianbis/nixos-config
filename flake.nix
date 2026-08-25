@@ -59,11 +59,9 @@
   let
     system = "x86_64-linux";
 
-    # Base package set used by the NixOS configuration.
-    # The headroom overlay is applied here (not only in nixosConfigurations)
-    # so that pkgs.headroom exists for every consumer of this flake's pkgs —
-    # including the standalone `agents-md` doc build, which must evaluate
-    # jails.nix without a second nixpkgs instance.
+    # Base package set for the NixOS configuration. The headroom overlay is
+    # applied here (not only in nixosConfigurations) so pkgs.headroom exists
+    # for every consumer of this flake's pkgs, including the agents-md build.
     pkgs = import nixpkgs {
       inherit system;
 
@@ -134,18 +132,14 @@
         agenix.nixosModules.default
         home-manager.nixosModules.home-manager
 
-        # GPU-accelerated Whisper transcription (on-demand VRAM residency)
         ./hosts/desktop/whisper-service/module.nix
 
         ({ config, pkgs, lib, ... }: {
           nixpkgs.config.allowUnfree = true;
 
-          # Whisper: socket-activated; the service process only exists between
-          # a request and the model's release. With autoStop the whole process
-          # exits after the 120s idle window (VRAM *and* host memory freed,
-          # "reduce to almost 0") and the socket unit re-activates it on the
-          # next connection. All four NVIDIA device nodes are required (uvm
-          # included) or ctranslate2 falls back to CPU.
+          # Socket-activated: the process only exists between a request and the
+          # model's release; with autoStop it exits after the 120s idle window
+          # (VRAM and host memory freed) and the socket re-activates on demand.
           services.whisper-service = {
             enable = true;
             package = whisper-service.packages.${system}.whisper-service;
@@ -187,9 +181,8 @@
                 };
             })
 
-            # Muse-Glimmer needs llama.cpp b10353+ (architecture merge 2026-08-10).
-            # The nixpkgs pin here (2026-07-26) ships b10273, which refuses to load
-            # the muse-glimmer GGUF ("architecture muse-glimmer not registered").
+            # The nixpkgs-pinned llama.cpp (b10273) predates the muse-glimmer
+            # architecture merge and refuses to load its GGUF; pin b10353.
             (final: prev: {
               llama-cpp = (prev.llama-cpp.override {
                 cudaSupport = true;

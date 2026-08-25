@@ -70,14 +70,9 @@ let
       ++ kvArgs
       ++ extraArgs;
 
-    # --shm-size, NOT --ipc=host: vLLM's multiprocessing engine passes
-    # tensors between the API server and engine-core processes through
-    # /dev/shm, which Docker caps at 64m by default — far too small for
-    # these models. A private 32g /dev/shm is ample for single-GPU
-    # serving, and keeps the container off the host IPC namespace (which
-    # --ipc=host would share: SysV semaphores, POSIX message queues, and
-    # the host's /dev/shm). Note: while --ipc=host was set, --shm-size
-    # was silently ignored (the container used the host's /dev/shm).
+    # --shm-size, not --ipc=host: vLLM passes tensors between engine
+    # processes via /dev/shm (Docker's 64m default is too small); a
+    # private 32g shm avoids sharing the host IPC namespace.
     extraOptions = [
       "--device=nvidia.com/gpu=all"
       "--shm-size=32g"

@@ -304,10 +304,9 @@ def run_server(cfg: Config, state: AppState | None = None) -> int:
 
     inherited: list[socket_mod.socket] = []
     if _socket_activated():
-        # systemd handed us the listening socket (fd 3, LISTEN_FDS=1).
-        # uvicorn does not read LISTEN_FDS itself, so wrap the fd and pass
-        # the socket to serve() explicitly (the same path Gunicorn workers
-        # use). The process binds nothing itself.
+        # systemd handed us the listening socket (fd 3, LISTEN_FDS=1). uvicorn
+        # does not read LISTEN_FDS itself, so wrap the fd and pass the socket to
+        # serve() explicitly (the Gunicorn-worker path); the process binds nothing.
         config = uvicorn.Config(app, log_level="info")
         inherited = [socket_mod.socket(fileno=3)]
     else:

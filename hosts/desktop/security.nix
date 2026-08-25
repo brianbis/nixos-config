@@ -12,14 +12,9 @@ in
 
   users.groups.llm = {};
 
-  # TPM2 unseal: the age key is sealed in the TPM bound to PCRs 0,2,3
-  # (bootloader/kernel/initrd); every boot this script unseals the key line
-  # into tmpfs before agenix's own activation script decrypts the secrets.
-  # It must be an activation script (not a systemd unit) because with
-  # systemd.sysusers disabled — required, since b/llm are normal users —
-  # agenix decrypts in the initrd, before the main systemd starts.
-  # TCTI is pinned to the device: tpm2-abrmd is not running at boot.
-  # Runbook (sealing, rotation, recovery): docs/secrets.md.
+  # TPM2 unseal: the age key is sealed in the TPM bound to PCRs 0,2,3; this
+  # script unseals the key into tmpfs (/run/agenix-tpm) for agenix to use as
+  # its identity. Runbook (sealing/rotation/recovery): docs/secrets.md.
   system.activationScripts.tpmUnseal = {
     text = ''
       set -e

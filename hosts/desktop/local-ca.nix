@@ -2,26 +2,12 @@
 # Caddy (see ./caddy.nix).
 #
 # `services` is the single source of truth for the name -> 127.0.0.1 port
-# mapping: caddy.nix builds its virtual hosts from it, and the flake
-# exposes the generated CA + leaf certificate as the `local-services-ca`
-# package so the material can be inspected or installed on other devices.
+# mapping: caddy.nix builds its vhosts from it, and the flake exposes the
+# generated CA + leaf cert as the `local-services-ca` package.
 #
-# Deliberately NOT named:
-#   - 8081  NInfer engine: internal child of the 8080 wrapper; fronting it
-#     directly would bypass the wrapper's on-demand model load/unload.
-#   - 22    OpenSSH: not HTTP, so no https:// endpoint.
-#   - 40437 (v4) / 40980 (v6): bound to the Tailscale address
-#     (100.110.118.13) rather than loopback; already reachable on the
-#     tailnet and the service behind them is unknown.
-#   - Discord/Steam local listeners (app-local IPC/web, not flake-managed;
-#     identified 2026-08-24). Deliberately NOT given named endpoints —
-#     they're GUI-app internals, not services worth a friendly name:
-#       6463     Go HTTP server, JSON API ({"code":0,"message":"Not Found"})
-#       27060    Jetty/Java HTTP (default 404 page)
-#       36671    Jetty/Java HTTP (default 404 page)
-#       45361    Jetty/Java HTTP (default 404 page)
-#       27036    raw TCP on 0.0.0.0, closes connections immediately
-#       57343    accepts connections, never responds
+# Deliberately NOT named: 8081 (NInfer engine) is an internal child of the
+# 8080 wrapper (fronting it directly bypasses on-demand load/unload); 22 is
+# not HTTP, so no https:// endpoint.
 { pkgs, lib }:
 
 let
@@ -32,24 +18,18 @@ let
     "deepseek.local" = 8788; # Headroom compression proxy -> DeepSeek cloud
     "claude.local"   = 8789; # Headroom compression proxy -> Claude Code
     "dsh.local"      = 3080; # DeepSeek Harness web GUI
-    # Deliberately NOT here: dsh.tail835824.ts.net (the GUI's tailnet
-    # serve name, from the svc:dsh service in
-    # hosts/desktop/networking.nix) is served by `tailscale serve` with a
-    # Let's Encrypt certificate from the Tailscale control plane, not by
+    "searxng.local"  = 8888; # SearXNG metasearch (loopback; dsh web-search backend)
+    # Deliberately NOT here: dsh.tail835824.ts.net is served by `tailscale
+    # serve` with a Let's Encrypt cert (Tailscale control plane), not by
     # Caddy with this local CA.
     "print.local"    = 631;  # CUPS web interface
   };
 
   names = builtins.attrNames services;
 
-  # Private CA + one leaf certificate covering every name, generated at
-  # build time. The CA is only meaningful on this machine (it is installed
-  # into the system trust store by caddy.nix), so it is regenerated on
-  # every rebuild rather than persisted — the same posture as
-  # security.acme's runtime-generated certificates. Clients that cached
-  # the previous CA (e.g. a browser started before the rebuild) need a
-  # restart to trust the new one; curl/openssl re-read the store per
-  # request.
+  # Private CA + one leaf cert covering every name, generated at build time.
+  # The CA is only meaningful on this machine, so it is regenerated on every
+  # rebuild rather than persisted (like security.acme's runtime certs).
   ca = pkgs.stdenv.mkDerivation {
     pname = "local-services-ca";
     version = "1";
@@ -64,26 +44,17 @@ let
     installPhase = ''
       mkdir -p $out
 
-      # Certificate authority (ECDSA P-256, 10 years).
-      #
-      # Do NOT switch these keys to ed25519: Firefox/NSS never offers
-      # ed25519 in the TLS signature_algorithms extension (it is absent
-      # from NSS's defaultSignatureSchemes), and Go's TLS server can only
-      # sign the handshake with the certificate's key type. An ed25519
-      # cert therefore makes Go abort Firefox ClientHellos with
-      # handshake_failure, which NSS reports as
-      # SSL_ERROR_NO_CYPHER_OVERLAP — while curl/Chrome work fine.
-      # ecdsa_secp256r1_sha256 is NSS's first-choice signature scheme, so
-      # ECDSA P-256 works in every client.
+      # ECDSA P-256, 10 years. Do NOT switch to ed25519: Firefox/NSS never
+      # offers ed25519 in TLS signature_algorithms, and Go's TLS server signs
+      # only with the cert's key type, so ed25519 breaks Firefox (curl/Chrome OK).
       openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out ca.key
       openssl req -x509 -new -key ca.key -sha256 -days 3650 \
         -subj "/CN=b's Local Services CA" \
         -out ca.crt
 
-      # One leaf certificate for all service names. The SANs are applied
-      # from the [san] section at signing time (openssl x509 -req -extfile);
-      # the CSR itself carries no extensions, so no req_extensions here
-      # (DNS.N shorthand is not a valid CSR extension name).
+      # One leaf cert for all service names. SANs are applied from the [san]
+      # section at signing time (openssl x509 -req -extfile); the CSR carries
+      # no extensions (DNS.N is not a valid CSR extension name).
       openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out leaf.key
       cat > san.cnf <<EOF
 [req]

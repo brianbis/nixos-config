@@ -20,5 +20,7 @@
     ./hushmic
     ./caddy.nix
     ./dsh-web.nix
+    ./dsh-open.nix
+    ./searxng.nix
   ];
 }

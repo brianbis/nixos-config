@@ -1,16 +1,9 @@
-# Lives at ./monitor/monitor.nix (imported by ./monitor/default.nix),
-# with the Python scripts alongside at ./monitor/scripts/*.py — adjust the
-# paths below if you move them.
 { pkgs, ... }:
 
 let
-  # ===================================================================
-  # Desired monitor layout — the only thing you should need to touch
-  # when monitors, GPUs, or cables change.
-  #
-  # Physical identity comes from EDID (manufacturer/model/serial), not
-  # from DRM connector names, GPU, or cable — see scripts/core.py.
-  # ===================================================================
+  # Desired monitor layout — the only thing to touch when monitors, GPUs,
+  # or cables change. Identity is matched by EDID (manufacturer/model/
+  # serial), not DRM connector names, GPU, or cable (see scripts/core.py).
   monitor-layout = {
     samsung-g93sc = {
       manufacturer = "SAM";
@@ -29,17 +22,13 @@ let
     };
   };
 
-  # Written to the store as real JSON and read with json.load() at
-  # runtime — never spliced into Python source as a text literal.
-  # (`LAYOUT = ${builtins.toJSON monitor-layout}` looks convenient but
-  # only works by accident: JSON's true/false/null aren't Python's
-  # True/False/None, so it breaks the day this attrset gains a bool.)
+  # Real JSON read with json.load() at runtime, never spliced into Python
+  # source: JSON's true/false/null aren't Python's True/False/None, so
+  # inlining breaks the day this attrset gains a bool.
   layoutJsonFile = pkgs.writeText "monitor-layout.json" (builtins.toJSON monitor-layout);
 
-  # All Python scripts ship in one store directory; core.py is a real
-  # module that the backends `from core import ...` (PYTHONPATH points
-  # here). checkPhase runs flake8 over the whole directory at build
-  # time, which is what failed `nixos-rebuild` before.
+  # All scripts ship in one store directory: core.py is a shared module
+  # the backends import, and PYTHONPATH points here.
   monitor-scripts = pkgs.stdenv.mkDerivation {
     pname = "monitor-scripts";
     version = "0.1.0";
@@ -59,14 +48,9 @@ let
     exec ${pkgs.python3}/bin/python3 ${monitor-scripts}/display-discovery.py "$@"
   '';
 
-  # ===================================================================
-  # Desktop-manager backend dispatcher.
-  #
-  # Today: KDE Plasma -> KScreen. Adding Niri/Hyprland/Sway later means
-  # adding another scripts/<backend>.py that also starts from
-  # `load_layout` + `resolve_physical` — the desired layout doesn't
-  # change, and neither does the shared resolution logic.
-  # ===================================================================
+  # Desktop-manager backend dispatcher. Each backend script starts from
+  # load_layout + resolve_physical; the desired layout and shared resolution
+  # logic stay the same across backends.
   kscreen-backend = pkgs.writeShellScriptBin "set-monitor-layout-kscreen" ''
     export PYTHONPATH=${monitor-scripts}
     export KSCREEN=${pkgs.kdePackages.libkscreen}/bin/kscreen-doctor
@@ -99,7 +83,6 @@ let
 
 in
 {
-  # Generate SDDM's persistent KWin output config before SDDM starts.
   systemd.services.set-sddm-monitor-layout = {
     description = "Set SDDM monitor layout";
     wantedBy = [ "display-manager.service" ];

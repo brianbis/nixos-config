@@ -1,13 +1,35 @@
-# dsh web profile patch layer, installed to ~/.dsh/profiles/web/cordis.patch.yml
-# by home-manager (home/llm/jail-home.nix, writeDshWebProfilePatch) as a plain
-# file with a cmp guard: dsh hot-reloads this file through its HMR watcher and
-# can write it itself (Loader tree write-back), so it must not be a symlink.
+# dsh web profile patch layer, installed by home-manager as a plain file
+# (not a symlink): dsh hot-reloads it and can write it back itself via its
+# HMR watcher / Loader tree write-back.
 #
-# Disables the client's model-settings plugin: it hosts the versioned
-# internal-testing welcome notice (the recurring "Continue" dialog) whose
-# acknowledgement is process-local when the GUI is reached over a
-# non-loopback trusted host, so it reappears on every blank session. It
-# also owns the Models settings page, which is redundant here because the
-# provider routes are declared in dshSettings (home/llm/catalog.nix).
+# Disable the model-settings plugin: its welcome-notice acknowledgement is
+# process-local over a non-loopback trusted host (so it reappears on every
+# blank session), and its Models page is redundant (routes are in dshSettings).
 - id: ui-settings-models
+  disabled: true
+
+# Web search uses the self-hosted SearXNG provider (an out-of-tree plugin
+# mounted by relative module name) instead of DeepSeek's hosted tool; the
+# `web` row pins it as the selected backend and fetch stays disabled.
+- id: web
+  config:
+    searchProvider: searxng
+
+# The provider row is NEW, so it must be added with `insert`: the patch
+# engine only targets rows that already exist by id, and a bare patch for an
+# unknown id is silently skipped (leaving searchProvider dangling).
+- insert:
+    - id: web-search-searxng
+      name: "./searxng-search-provider.mjs"
+      config:
+        baseUrl: "http://127.0.0.1:8888"
+
+- id: tool-web
+  config:
+    search: true
+    fetch: false
+
+# Disable the bundled DeepSeek search provider so the harness never calls
+# the DeepSeek search API (api.deepseek.com) regardless of the chat model.
+- id: web-search-deepseek
   disabled: true

@@ -1,19 +1,16 @@
 {
   description = "GPU-accelerated Whisper transcription service — model weights live in VRAM only while running";
 
-  # Pinned to the host's nixpkgs channel revision (nixos-unstable, 2026-08-21).
+  # Pinned to the host's nixpkgs channel revision.
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/a831408e6378bc02ebf8cc09b52c96ca86f6bab4";
 
   outputs = { self, nixpkgs }:
     let
       systems = [ "x86_64-linux" ];
 
-      # Import the nixpkgs *source* with config.allowUnfree set explicitly.
-      # The CUDA runtime libraries (libcudart / libcublas / libcurand) carry the
-      # CUDA EULA and are "unfree" in nixpkgs. This is hermetic — it does not
-      # rely on --impure or the NIXPKGS_ALLOW_UNFREE environment variable, and
-      # it works because the nixpkgs flake's `legacyPackages` ignores the flake
-      # input `config` attribute (its outputs only take `self`).
+      # Import the nixpkgs *source* with config.allowUnfree set explicitly (the
+      # CUDA runtime libraries are "unfree" in nixpkgs). Hermetic — no --impure
+      # or NIXPKGS_ALLOW_UNFREE — since the flake's legacyPackages ignores `config`.
       mkPkgs = system: import nixpkgs.outPath {
         inherit system;
         config.allowUnfree = true;
@@ -28,10 +25,9 @@
           python = pkgs.python313;
           pypkgs = python.pkgs;
 
-          # CTranslate2 4.8.1 from the official PyPI wheel.
-          # It is built with the CUDA backend, but the CUDA libraries are
-          # dlopen()ed at runtime, so it imports cleanly on machines without a
-          # GPU and transparently uses the GPU when /dev/nvidia* is visible.
+          # CTranslate2 4.8.1 (official PyPI wheel). Built with the CUDA backend,
+          # but the CUDA libraries are dlopen()ed at runtime, so it imports
+          # cleanly on machines without a GPU and uses the GPU when /dev/nvidia* is visible.
           ctranslate2-cuda = pypkgs.buildPythonApplication {
             pname = "ctranslate2";
             version = "4.8.1";
@@ -40,7 +36,6 @@
               pname = "ctranslate2";
               version = "4.8.1";
               format = "wheel";
-              # ctranslate2-4.8.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
               dist = "cp313";
               python = "cp313";
               abi = "cp313";
@@ -55,16 +50,8 @@
               pypkgs.pyyaml
             ];
             # CUDA runtime libraries, dlopen()ed by ctranslate2 when a GPU is present.
-            #
-            # lib.getLib is required: cuda_cudart is a single-output package
-            # (its lib/ with libcudart.so.12 lives in `out`), but libcublas and
-            # libcurand are multi-output "redist" packages whose `out` output
-            # is a thin meta package (LICENSE + src only) — the actual .so
-            # files live in their `lib` outputs. Referencing the packages bare
-            # would keep the meta package (fine for the store closure) but put
-            # a nonexistent /lib directory on the RUNPATH below, so the
-            # runtime dlopen of libcublas.so.12 / libcurand.so.10 fails with
-            # "Library ... is not found or cannot be loaded".
+            # lib.getLib is required: libcublas/libcurand are multi-output "redist"
+            # packages whose .so files live in the `lib` output, not the meta `out`.
             propagatedBuildInputs = [
               # The prebuilt wheel's C++ lib needs libstdc++ at import time.
               pkgs.stdenv.cc.cc.lib
@@ -72,23 +59,11 @@
               (pkgs.lib.getLib pkgs.cudaPackages_12.libcublas)
               (pkgs.lib.getLib pkgs.cudaPackages_12.libcurand)
             ];
-            # The prebuilt wheel's .so files keep their auditwheel RPATH
-            # ($ORIGIN/../ctranslate2.libs for the _ext extension); the
-            # standard autoPatchelfHook is not applied to them, so neither
-            # libstdc++ nor the CUDA runtime libraries are resolvable from
-            # their RPATH. libctranslate2 has no RPATH at all, so its
-            # same-directory dependency libgomp is also unresolvable.
-            # Explicitly prepend to every .so's rpath:
-            #   $ORIGIN  - so the bundled ctranslate2.libs (libgomp) resolve
-            #   gccLib   - libstdc++/libgcc_s needed at import time
-            #   cudaLibs - libcudart/libcublas/libcurand, which libctranslate2
-            #              dlopen()s by soname when a GPU is present
+            # The prebuilt wheel's .so files keep their auditwheel RPATH and the
+            # standard autoPatchelfHook is not applied, so libstdc++/CUDA libs (and
+            # libgomp) are unresolvable; explicitly prepend $ORIGIN, gccLib, cudaLibs.
             postFixup = ''
               gccLib="${pkgs.stdenv.cc.cc.lib}/lib"
-              # Every entry below must be a directory that actually contains the
-              # .so files: for the multi-output redists (libcublas/libcurand)
-              # that is their `lib` output (see lib.getLib above); for
-              # cuda_cudart (single output) it is the `out` itself.
               cudaLibs="${pkgs.lib.concatStringsSep ":" (map (p: "${p}/lib") [
                 (pkgs.lib.getLib pkgs.cudaPackages_12.cuda_cudart)
                 (pkgs.lib.getLib pkgs.cudaPackages_12.libcublas)
@@ -117,26 +92,13 @@
             version = "1.0.0";
             format = "setuptools";
             src =
-              # `./.` (this flake's own source dir, resolved to the original
-              # path) instead of `self.outPath`: when this flake is consumed
-              # as a path input nested inside another flake's source tree,
-              # `self.outPath` becomes a subpath of the parent flake's store
-              # copy (e.g. /nix/store/<parent>-source/./hosts/desktop/
-              # whisper-service). sourceByRegex computes relPath via
-              # removePrefix on that string, which then fails to match the
-              # normalized paths the filter is actually called with — the
-              # filter silently drops *everything* and the build dies with
-              # "setup.py: No such file or directory".
+              # `./.` (this flake's source dir) instead of `self.outPath`: nested
+              # as a path input, `self.outPath` becomes a subpath of the parent's
+              # store copy, and sourceByRegex's relPath fails to match — the filter drops everything.
               pkgs.lib.sourceByRegex ./. [
-              # lib.match is a full match, so the directory itself and its
-              # contents need separate regexes:
-              #   "whisper_service"          -> keeps the package directory
-              #   "whisper_service/.*\.py"   -> keeps only the .py files inside
-              #                                it: a broad .* would also sweep
-              #                                in local __pycache__/*.pyc
-              #                                (git-ignored working-tree junk)
-              #                                and ship stale bytecode in the
-              #                                built package
+              # lib.match is a full match, so the directory and its contents need
+              # separate regexes; "whisper_service/.*\.py" keeps only .py files (a
+              # broad .* would sweep in __pycache__/*.pyc and ship stale bytecode).
               "whisper_service"
               "whisper_service/.*\.py"
               "setup.py"
@@ -177,13 +139,10 @@
           system = pkgs.stdenv.hostPlatform.system;
         in
         {
-          # nix run .#whisper-service            -> HTTP service
-          # nix run .#whisper-service -- --port 9000
           whisper-service = {
             type = "app";
             program = "${self.packages.${system}.whisper-service}/bin/whisper-serve";
           };
-          # nix run .#whisper-cli -- transcribe audio.mp3
           whisper-cli = {
             type = "app";
             program = "${self.packages.${system}.whisper-cli}/bin/whisper";

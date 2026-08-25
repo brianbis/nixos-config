@@ -67,9 +67,8 @@ class Config:
     keep_loaded: bool = field(default_factory=lambda: _env_bool("WHISPER_KEEP_LOADED", False))
 
     # Process lifetime: once the model is released (idle reaper or explicit
-    # /unload), exit the whole process (code 0) instead of keeping the
-    # ~GBs of host memory resident. Under systemd socket activation the
-    # socket unit re-activates the service on the next connection.
+    # /unload), exit the whole process (code 0) instead of keeping ~GBs of
+    # host memory resident; socket activation re-activates on the next request.
     auto_stop: bool = field(default_factory=lambda: _env_bool("WHISPER_AUTO_STOP", False))
 
     # Server

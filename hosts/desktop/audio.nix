@@ -1,13 +1,8 @@
 { pkgs, ... }:
 
-# Mic chain: MOTU M4 Mic1 -> hushmic (DPDFNet LADSPA via its own PipeWire
-# filter-chain) -> virtual "hushmic" source. The old DeepFilter filter-chain
-# (99-deepfilter) is gone; hushmic fully supersedes it and owns the mic path.
-#
-# hushmic runs as a systemd USER service in headless mode (--enable-once: no
-# tray, no window, just the audio pipeline until SIGTERM). It is pinned to
-# cpu6/7 (the 5.8 GHz P-cores), which hushmic/scheduler.nix holds at
-# performance governor + EPP permanently.
+# Mic chain: MOTU M4 Mic1 -> hushmic (DPDFNet LADSPA filter-chain) ->
+# virtual "hushmic" source. The hushmic service is pinned to cpu6/7
+# (the P-cores).
 {
   services.pulseaudio.enable = false;
 
@@ -18,7 +13,6 @@
   environment.sessionVariables = {
     MESA_MAX_SHADER_COMPILER_THREADS = "4";
     RADV_SHADER_CACHE = "1";
-    # DXVK/VKD3D
     DXVK_ASYNC = "1";
   };
 
@@ -44,12 +38,10 @@
             "bluez5.enable-hw-volume" = true;
             "bluez5.headset-roles" = [ "a2dp_sink" ];
             "bluez5.roles" = [ "a2dp_sink" "a2dp_source" ];
-            # Force WirePlumber to automatically connect A2DP sink on detect
             "bluez5.auto-connect" = [ "a2dp_sink" ];
           };
 
           "monitor.bluez.rules" = [
-            # Force A2DP Sink mode and disable autoswitching to HSP/HFP (Microphone)
             {
               matches = [
                 {

@@ -1,29 +1,16 @@
-# Shared home-manager options for homes that host jailed LLM tooling: b's home
-# (user jails) and the llm agent user's home (system jails, run as llm via
-# `sudo -u llm`). Ensures the bubblewrap mount points exist and renders the
-# per-tool configs from the shared catalog, so both homes stay identical in
-# content. Imported by ./llm.nix (b) and ./agent-home.nix (llm).
+# Shared home-manager options for the homes hosting jailed LLM tooling:
+# b's home (user jails) and the llm agent user's home (system jails).
+# Ensures bubblewrap mount points exist and renders per-tool configs so both homes stay identical in content.
 { config, lib, shared, ... }:
 
 let
   userHome = config.home.homeDirectory;
   tool-configs = import ./configs.nix { inherit shared userHome; };
-  # dsh web profile's patch layer: static dotfile content (see the file
-  # header for the why), installed by writeDshWebProfilePatch below.
   dshWebProfilePatch = builtins.readFile ../../dotfiles/dsh/cordis.patch.yml;
-  # dsh's locally-authored agent preset: a whole copy of the shipped
-  # `standard` preset with the compaction summarizer's output budget raised
-  # to 32768 tokens (see the dotfile header for the why). The user preset
-  # root is scanned after the shipped root (first-root-wins per id), so the
-  # copy cannot shadow `standard`; the default switch lives in catalog.nix's
-  # dshSettings (agent-presets namespace). Installed by writeDshAgentPreset.
-  dshAgentPresetFiles = {
-    "agent.cordis.yml" = builtins.readFile ../../dotfiles/dsh/agent-presets/standard-compact32k/agent.cordis.yml;
-    "preset.yml" = builtins.readFile ../../dotfiles/dsh/agent-presets/standard-compact32k/preset.yml;
-  };
+  searxngSearchProvider = builtins.readFile ../../dotfiles/dsh/searxng-search-provider.mjs;
   # Embed the content as one single-quoted shell word: each embedded
   # apostrophe becomes '\'' so free-form comment text can never break the
-  # script's quoting (a bare '...' embedding died on the first apostrophe).
+  # script's quoting.
   shellQuote = s: "'" + builtins.replaceStrings [ "'" ] [ "'\\''" ] s + "'";
 in
 {
@@ -39,9 +26,6 @@ in
     ".dsh/.keep".text = "";
   };
 
-  # Write the per-tool configs into $HOME. The crush config's data_directory
-  # and hook paths are keyed off $HOME (see configs.nix), so the same content
-  # is correct in both b's home and the llm agent user's home.
   home.activation.writeLLMConfigs =
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD mkdir -p \
@@ -81,18 +65,9 @@ in
         > $HOME/.claude/settings.json
     '';
 
-  # dsh's user-settings document: the llm-pi-ai provider routes rendered from
-  # the shared model catalog (local backends + ninfer + DeepSeek via the
-  # headroom proxies). Written as a plain file by this activation instead of a
-  # home-manager store symlink: dsh's settings-file writer renames a temp file
-  # over this path as a 0600 regular file, and while the path is a symlink,
-  # home-manager's rename-away during activation opens a window in which dsh's
-  # re-read hits ENOENT; dsh then renders only the namespace it is persisting
-  # and clobbers the llm-pi-ai routes out of the file (model picker falls back
-  # to deepseek-official only). A plain file that is only ever temp+renamed
-  # never disappears, so dsh's reads always see a complete document and its
-  # own writes preserve the routes. The cmp guard skips the rename when the
-  # content is unchanged so dsh's hot-reload watcher stays quiet.
+  # Plain file, not a store symlink: while the path is a symlink, home-manager's
+  # rename-away during activation opens a window where dsh's re-read hits ENOENT
+  # and clobbers the llm-pi-ai routes; a plain file never disappears.
   home.activation.writeDshSettings =
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD mkdir -p $HOME/.dsh
@@ -108,18 +83,9 @@ in
       fi
     '';
 
-  # dsh's web-profile patch layer ($HOME/.dsh/profiles/web/cordis.patch.yml):
-  # the per-profile user layer of dsh's patch composition (bundle layers ->
-  # this file -> $HOME/.dsh/cordis.patch.yml -> --patch overlays). It disables
-  # the client's model-settings plugin - see the dotfile header
-  # (dotfiles/dsh/cordis.patch.yml) for the why. Plain-file + cmp-guard write
-  # (as in writeDshSettings): dsh
-  # hot-reloads this file through its HMR watcher (which watches the nearest
-  # existing ancestor, so it also picks up the file if this activation lands
-  # before dsh has ever booted), and the guard keeps the watcher quiet when
-  # the content is unchanged. dsh bootstraps the rest of the profile dir
-  # (package.json, pnpm-workspace.yaml) on first boot and creates the patch
-  # file only when missing, so this activation owns the file outright.
+  # dsh's web-profile patch layer. Plain-file + cmp-guard write (as in writeDshSettings):
+  # dsh hot-reloads it via its HMR watcher and the guard keeps the watcher quiet;
+  # dsh creates the file only when missing, so this activation owns it outright.
   home.activation.writeDshWebProfilePatch =
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD mkdir -p $HOME/.dsh/profiles/web
@@ -136,40 +102,22 @@ in
       fi
     '';
 
-  # dsh's locally-authored agent preset ($HOME/.dsh/.agent-presets/standard-compact32k/):
-  # the user preset root dsh's roster scans for locally authored presets
-  # (discovery re-reads the roots on every resolve, so no restart is needed for
-  # a new session to see it). Plain-file + cmp-guard write (as in
-  # writeDshSettings / writeDshWebProfilePatch): the standing preset mount
-  # watches the composition file's stamp, so an unchanged-content swap would
-  # churn the watcher and re-mount the preset for nothing. The preset id is a
-  # directory name (PRESET_ID: lowercase alnum + dashes); the copy cannot
-  # shadow the shipped `standard` (first-root-wins, shipped root first), so
-  # the default switch is the agent-presets settings namespace in dshSettings.
-  home.activation.writeDshAgentPreset =
+  # The out-of-tree SearXNG search provider. Plain-file + cmp-guard write (as in
+  # writeDshWebProfilePatch): dsh hot-reloads the profile dir via its HMR watcher
+  # and the guard keeps it quiet; the .mjs extension forces ESM regardless of the profile package.json's `type`.
+  home.activation.writeDshSearxngSearchProvider =
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      $DRY_RUN_CMD mkdir -p $HOME/.dsh/.agent-presets/standard-compact32k
+      $DRY_RUN_CMD mkdir -p $HOME/.dsh/profiles/web
 
-      $DRY_RUN_CMD printf '%s' ${shellQuote dshAgentPresetFiles."agent.cordis.yml"} \
-        > $HOME/.dsh/.agent-presets/standard-compact32k/agent.cordis.yml.tmp
-      if [ -f $HOME/.dsh/.agent-presets/standard-compact32k/agent.cordis.yml ] \
-        && cmp -s $HOME/.dsh/.agent-presets/standard-compact32k/agent.cordis.yml.tmp \
-          $HOME/.dsh/.agent-presets/standard-compact32k/agent.cordis.yml; then
-        $DRY_RUN_CMD rm -f $HOME/.dsh/.agent-presets/standard-compact32k/agent.cordis.yml.tmp
+      $DRY_RUN_CMD printf '%s' ${shellQuote searxngSearchProvider} \
+        > $HOME/.dsh/profiles/web/searxng-search-provider.mjs.tmp
+      if [ -f $HOME/.dsh/profiles/web/searxng-search-provider.mjs ] \
+        && cmp -s $HOME/.dsh/profiles/web/searxng-search-provider.mjs.tmp \
+          $HOME/.dsh/profiles/web/searxng-search-provider.mjs; then
+        $DRY_RUN_CMD rm -f $HOME/.dsh/profiles/web/searxng-search-provider.mjs.tmp
       else
-        $DRY_RUN_CMD mv -f $HOME/.dsh/.agent-presets/standard-compact32k/agent.cordis.yml.tmp \
-          $HOME/.dsh/.agent-presets/standard-compact32k/agent.cordis.yml
-      fi
-
-      $DRY_RUN_CMD printf '%s' ${shellQuote dshAgentPresetFiles."preset.yml"} \
-        > $HOME/.dsh/.agent-presets/standard-compact32k/preset.yml.tmp
-      if [ -f $HOME/.dsh/.agent-presets/standard-compact32k/preset.yml ] \
-        && cmp -s $HOME/.dsh/.agent-presets/standard-compact32k/preset.yml.tmp \
-          $HOME/.dsh/.agent-presets/standard-compact32k/preset.yml; then
-        $DRY_RUN_CMD rm -f $HOME/.dsh/.agent-presets/standard-compact32k/preset.yml.tmp
-      else
-        $DRY_RUN_CMD mv -f $HOME/.dsh/.agent-presets/standard-compact32k/preset.yml.tmp \
-          $HOME/.dsh/.agent-presets/standard-compact32k/preset.yml
+        $DRY_RUN_CMD mv -f $HOME/.dsh/profiles/web/searxng-search-provider.mjs.tmp \
+          $HOME/.dsh/profiles/web/searxng-search-provider.mjs
       fi
     '';
 }

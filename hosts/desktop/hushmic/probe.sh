@@ -5,9 +5,9 @@
 set -euo pipefail
 out="${LOGS_DIRECTORY:-/var/log/hushmic}"
 mkdir -p "$out"
-# Same predicate the steam-game-watcher uses; run with -l to list WHICH
-# cmdlines match. Pattern via file so no transient scanner argv ever carries
-# it (which is what made find-based scans self-match).
+# Matched via a file (grep -f) so the probe's own argv never carries the
+# pattern and the scan cannot self-match. Keep in sync with the
+# steam-game-watcher predicate in steam.nix.
 steam_pattern='steamapps/common/|steamapps/compatdata/|compatdata/[0-9]+/.*\.(exe|EXE)|wine(64|32)'
 printf '%s\n' "$steam_pattern" > "$out/steam-pattern.tmp"
 mv -f "$out/steam-pattern.tmp" "$out/steam-pattern"
@@ -18,15 +18,12 @@ mv -f "$out/steam-pattern.tmp" "$out/steam-pattern"
   echo "hushmic_proc: $(pgrep -af 'bin/hushmic' 2>/dev/null | grep -vE 'hushmic-probe|hushmic-core-pin|hushmic-audio-cores|steam-game-watcher|probe\.sh|pgrep' | tr '\n' '|')"
   echo "watchers: $(ps -eo pid,etime,comm,args 2>/dev/null | grep -E 'steam-game-watcher|hushmic-core-pin' | grep -v grep | tr '\n' '|')"
   echo "steam_match: $(find /proc -maxdepth 2 -type f -name cmdline -exec grep -lzE -f "$out/steam-pattern" {} + 2>/dev/null | tr '\n' ' ')"
-  # user_hushmic: --machine=user@UID is more reliable than sudo+XDG_RUNTIME_DIR
-  # because it talks directly to the user manager over its private socket, no
-  # env-var juggling through sudo needed. Falls back to "n/a" if the user
-  # manager isn't running or the unit isn't loaded.
+  # --machine=user@UID talks directly to the user manager over its private
+  # socket — no sudo or XDG_RUNTIME_DIR env-var juggling needed.
   user_hushmic=$(systemctl --machine=user@$uid is-active hushmic.service 2>/dev/null || echo n/a)
   echo "unit_state: cores=$(systemctl is-active hushmic-audio-cores 2>/dev/null) pin=$(systemctl is-active hushmic-core-pin 2>/dev/null) probe=$(systemctl is-active hushmic-probe 2>/dev/null) steam=$(systemctl is-active steam-gaming-mode 2>/dev/null) user_hushmic=$user_hushmic linger=$(loginctl show-user b -p Linger 2>/dev/null | cut -d= -f2) user_mgr=$(systemctl is-active user@${uid}.service 2>/dev/null)"
   echo "journal: $(journalctl --no-pager -n 200 -u hushmic-audio-cores -u hushmic-core-pin -u hushmic-probe -u steam-gaming-mode 2>/dev/null | grep -E 'Started|Stopped|Deactivated|Activating|Main process' | tail -3 | tr '\n' '|')"
   echo "suspects: $(ps -eo pid,etime,comm,args 2>/dev/null | grep -iE 'gamemode|thermald|power-profiles|powertop|tlp|powerclamp|cpufreq' | grep -v grep | tr '\n' '|')"
-  # --- audio RT scheduling + load evidence ---
   # Sched: (policy/rtprio) is NOT in /proc/PID/status on this kernel; the
   # policy lives in /proc/PID/stat field 19 and rtprio in field 20. rtlim
   # comes from /proc/PID/limits.

@@ -15,7 +15,10 @@ The model acts as a professional senior systems engineer familiar with NixOS. In
 `/etc/nixos`. Repo is git on `main`. Do not activate or attempt to build or switch NixOS.
 This file is generated from `home/llm/agents-gen/agents-md-template.md` (+
 `home/llm/agents-manifest.nix`); `just switch` overwrites it — edit the
-template/manifest, never this file.
+template/manifest, never this file. The llm agent user's dsh also loads it as
+the user-global instruction file (`$DSH_HOME/AGENTS.md`, installed by
+`home/llm/agent-home.nix`), so every dsh session gets it as global context
+regardless of working directory.
 
 ## Stale-Reference Traps
 - Model IDs: `home/llm/catalog.nix` is the single source of truth; they must match the

@@ -94,10 +94,9 @@ class ModelManager:
         self._load_time: float | None = None
         self._cuda_count = cuda_device_count()
         self._reaper: threading.Thread | None = None
-        # Called (lock released) when the model transitions from loaded to
-        # fully released — by the idle reaper or an explicit unload, but NOT
-        # during a model switch. The app uses this to request a graceful
-        # process stop when WHISPER_AUTO_STOP=1.
+        # Called (lock released) when the model transitions from loaded to fully
+        # released — by the idle reaper or an explicit unload, but NOT during a
+        # model switch. The app uses this to request a process stop (AUTO_STOP).
         self.on_model_released: Callable[[], None] | None = None
         if cfg.idle_timeout > 0 and not cfg.keep_loaded:
             self._reaper = threading.Thread(

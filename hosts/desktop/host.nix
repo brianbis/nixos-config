@@ -33,18 +33,15 @@ in
   # drops them after idle, causing input lag on wake.
   services.udev.extraRules = ''
     ACTION=="add", SUBSYSTEM=="usb", TEST=="power/control", ATTR{power/control}="on"
-    # intel_pstate + HWP locks cpufreq sysfs at 644 after driver init, so the
-    # hushmic-audio-cores oneshot (sysinit.target) runs too late for cpu7. A
-    # udev rule fires at cpufreq device registration (before any systemd
-    # service), which is the only window where scaling_governor is writable.
-    # If HWP re-locks it, the core-pin guard logs it once and gives up.
+    # intel_pstate + HWP locks cpufreq sysfs (644) after driver init, so
+    # scaling_governor is writable only at udev device registration — before
+    # any systemd service (e.g. hushmic-audio-cores) runs.
     ACTION=="add", SUBSYSTEM=="cpu", KERNEL=="cpu[67]", ATTR{cpufreq/scaling_governor}="performance"
     ACTION=="add", SUBSYSTEM=="cpu", KERNEL=="cpu[67]", ATTR{cpufreq/energy_performance_preference}="performance"
   '';
-  # TLP periodically re-asserts its governor (powersave on AC), which made the
-  # CPU governor flap mid-audio-stream. hushmic-audio-cores + hushmic-core-pin
-  # (see hushmic/scheduler.nix) own the audio cores (cpu6/7); steam-gaming-mode
-  # (see steam.nix) owns the all-core gaming boost.
+  # TLP re-asserts its own governor (powersave on AC), conflicting with the
+  # per-core policy: hushmic-audio-cores owns cpu6/7 and steam-gaming-mode owns
+  # the all-core gaming boost.
   services.tlp.enable = false;
 
   users.users."${users.b.username}" = {
@@ -56,21 +53,15 @@ in
       "dialout"
       "llm"
     ];
-    # Headless user session: keeps b's systemd user manager (and thus the
-    # hushmic user service + PipeWire) running without a graphical login.
-    # Without this, `systemctl --user` from root fails and pw-dump cannot
+    # Headless user session: keeps b's user manager (hushmic user service +
+    # PipeWire) running without a graphical login; without it pw-dump cannot
     # reach the session socket.
     linger = true;
   };
 
-  # Jailed LLM agent user. Owns the "system" jail variants' home
-  # (/home/llm) and the flake repo (/etc/nixos): the system jails run as
-  # this user via `sudo -u llm` instead of as root, so a jail misconfig can
-  # at most write the repo and the agent's own home. The `llm` group
-  # (hosts/desktop/security.nix) is an extra group (the primary group is
-  # `users`) and grants read access to the agenix secret (root:llm 0440)
-  # and the systemd journal (root:llm 2755). No password and no SSH keys:
-  # unreachable except via `sudo -u llm`.
+  # Jailed LLM agent user: the "system" jail variants run as llm instead of
+  # root, so a jail misconfig can at most write the repo and the agent home.
+  # No password or SSH keys — unreachable except via `sudo -u llm`.
   users.users."${users.llm.username}" = {
     isNormalUser = true;
     description = "Jailed LLM agent (system jail)";
@@ -79,23 +70,19 @@ in
     extraGroups = [ "llm" ];
   };
 
-  # The flake repo is owned by the llm agent user so the system jails (run
-  # as llm) can edit it; root keeps full write access. Re-asserted at every
-  # switch so files created as root (e.g. `sudo nix flake update`) stay
-  # writable by the agent. chown does not touch mtimes, so git's index
-  # stays valid.
+  # The flake repo is owned by llm so the system jails can edit it; re-asserted
+  # at every switch so root-created files stay agent-writable. chown does not
+  # touch mtimes, so git's index stays valid.
   system.activationScripts.nixosRepoOwnership.text = ''
     chown -R ${users.llm.username}:${users.llm.username} /etc/nixos
+    # b is in the llm group; group-writable so b can open and edit
+    # agent-linked files directly.
+    chmod -R g+rwX /etc/nixos
   '';
 
-  # Real homes should be 0700 (NixOS creates them 0755). llm's: b cannot snoop
-  # the agent's tool state. b's: it holds unencrypted resurrect session state
-  # (terminal scrollback, dotfiles/wezterm.lua) — keep it out of reach of the
-  # llm agent and other users. The llm group is declared in security.nix; b
-  # has no user-private group, so its home is grouped to the always-present
-  # `users` group (irrelevant for a 0700 dir — only owner + mode matter).
-  # mkAfter so these run after the users module's home-creation rule in the
-  # same tmpfiles pass.
+  # NixOS creates homes 0755; force 0700 so b cannot snoop the agent's tool
+  # state and the llm agent cannot read b's unencrypted session state. mkAfter
+  # so these run after the users module's home-creation rule.
   systemd.tmpfiles.rules = [
     (lib.mkAfter "z ${users.b.homeDirectory} 0700 ${users.b.username} users -")
     (lib.mkAfter "z ${users.llm.homeDirectory} 0700 ${users.llm.username} ${users.llm.username} -")

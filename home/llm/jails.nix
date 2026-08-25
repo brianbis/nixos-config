@@ -1,9 +1,6 @@
 # Builds the (user, system) jail pair for each jailed agent (crush, opencode,
-# aider, claude, dsh). This is the sandboxing layer: it wires bubblewrap
-# mounts, injected packages, HOME pinning and the shared LSP set from the
-# catalog. User jails run as b (HOME = /home/b); system jails run as the llm
-# agent user (HOME = /home/llm, via `sudo -u llm`) so they can edit /etc/nixos
-# without being root.
+# aider, claude, dsh). System jails run as the llm agent user (via `sudo -u llm`)
+# so they can edit /etc/nixos without being root.
 { lib, pkgs, jail-nix, llm-agents, deepseekSecret, shared, userHome }:
 
 let
@@ -35,12 +32,9 @@ let
       exec ${pkg}/bin/${name} "$@"
     '';
 
-  # Shadow the system-activating nix CLIs inside the jail with stubs that
-  # refuse to run. This is deterministic (no command-string parsing, no
-  # regex, robust against quoting / `sudo` / `env` prefixes): the real
-  # binaries are simply absent, so the agent can edit /etc/nixos but can
-  # never switch/build/install a system configuration. Each stub prints a
-  # plain message and exits non-zero.
+  # Shadow the system-activating nix CLIs with stubs that refuse to run, rather
+  # than parsing command strings: deterministic and robust against quoting /
+  # `sudo` / `env` prefixes. The agent can edit /etc/nixos but never activate.
   forbiddenNixCmds = {
     "nixos-rebuild" = "building or switching a NixOS system is not allowed inside a jailed agent";
     "nixos-install" = "installing a NixOS system is not allowed inside a jailed agent";
@@ -58,10 +52,9 @@ let
     ) forbiddenNixCmds;
   };
 
-  # Single source of truth for the packages injected into every jail.
-  # Each spec carries a stable doc name (what AGENTS.md renders) and a
-  # resolver to the actual derivation, so the doc generator can list names
-  # without evaluating any package (no overlay required at doc-build time).
+  # Single source of truth for packages injected into every jail. Each spec
+  # carries a stable doc name and a resolver so the doc generator can list
+  # names without evaluating any package (no overlay at doc-build time).
   commonPkgSpecs = [
     { name = "bashInteractive"; pkg = pkgs.bashInteractive; }
     { name = "curl"; pkg = pkgs.curl; }
@@ -83,6 +76,9 @@ let
     { name = "systemd"; pkg = pkgs.systemd; }
     { name = "gnutar"; pkg = pkgs.gnutar; }
     { name = "diffutils"; pkg = pkgs.diffutils; }
+    # GNU patch: apply/verify source and preset patches in-jail (e.g. re-syncing
+    # the dsh standard-preset delta against a fresh dsh).
+    { name = "gnupatch"; pkg = pkgs.gnupatch; }
     { name = "strace"; pkg = pkgs.strace; }
     { name = "openssl"; pkg = pkgs.openssl; }
     { name = "cfr"; pkg = pkgs.cfr; }
@@ -101,11 +97,8 @@ let
     # and eval packages against the source mounted read-only below.
     { name = "nix"; pkg = pkgs.nix; }
 
-    # Shadow system-activating nix CLIs (nixos-rebuild, home-manager, nix-env,
-    # nix-channel, nixos-install) with stubs that refuse to run.
     { name = "nixGuard"; pkg = nixGuard; }
 
-    # Database CLI clients shared by every jailed tool.
     { name = "sqlite"; pkg = pkgs.sqlite; }
     { name = "postgresql"; pkg = pkgs.postgresql; }
     { name = "mariadb.client"; pkg = pkgs.mariadb.client; }
@@ -123,24 +116,9 @@ let
   commonPkgs = map (spec: spec.pkg) commonPkgSpecs;
   commonPkgNames = map (spec: spec.name) commonPkgSpecs;
 
-  # Base jail options: user (cwd, no /etc/nixos) vs system (/etc/nixos rw).
-  # The shared LSP set (host-installed copies, from the `lsps` catalog) is
-  # mounted here, once per jail, so we don't bundle a fresh per-tool closure.
-  #
-  # baseJailOptions is split into a pure mount-list builder (baseMounts) and
-  # the option-combinator wrapper so agents-manifest.nix can render the
-  # readonly mounts into AGENTS.md without needing jail-nix at all.
-  #
-  # The nixpkgs source mount is the flake's own checkout (/etc/nixos), not
-  # pkgs.path: the agent edits this repo, so it needs the working tree
-  # mounted read-only to search / eval against it. pkgs.path would point at
-  # the pinned nixpkgs input instead, which is not what the agent edits.
-  #
-  # Read-only host mounts are kept in two lists:
-  # - baseMounts: non-sensitive paths rendered verbatim into AGENTS.md.
-  # - secretMounts: sensitive paths (agenix secrets) that must NOT be named
-  #   in the generated doc; they are attached by the justfile after the
-  #   declarative build step.
+  # baseMounts is a pure mount-list builder (separate from the baseJailOptions
+  # wrapper) so agents-manifest.nix can render the readonly mounts into
+  # AGENTS.md without calling into jail-nix.
   baseMounts = system: (lib.optional (!system) "/etc/nixos") ++ [ "/var/log" ]
     ++ (if system then [ "/var/log/journal" "/run/systemd" ] else [ ])
     ++ (if system then [ "/sys" "/run/user" ] else [ ]);
@@ -150,15 +128,15 @@ let
   # the secret name into the doc. Rendered separately by the justfile.
   secretMounts = [ deepseekSecret ];
 
-  # Full read-only mount list used by the actual jails.
   readonlyMounts = system: baseMounts system ++ secretMounts;
 
-  # Writable paths beyond the read-only overlay. System jails (run as the llm
-  # agent user) get the repo and the agent's home read-write; user jails get
-  # $PWD via mount-cwd (a runtime path, not statically knowable) plus
-  # per-tool dirs (see mkDirSpecs).
+  # Extra writable paths for system jails (beyond the read-only overlay). User
+  # jails' $PWD is a runtime path (not statically knowable), so it's handled
+  # via mount-cwd rather than listed here.
   writablePathsSystem = [ "/etc/nixos" agentHome ];
 
+  # The shared LSP set is mounted once per jail (not per tool) so we don't
+  # bundle a fresh per-tool closure.
   baseJailOptions = system: with jail.combinators; [
     network
     time-zone
@@ -172,7 +150,6 @@ let
     (set-env "NIXPKGS" pkgs.path)
   ] ++ lspAdds;
 
-  # Common libs/CLI tools injected into every jail.
   mkToolJail = { name, pkg, dirs, system, systemExtraPkgs ? [ ], systemExtraMounts ? [ ] }:
     jail "jailed-${name}${if system then "-system" else ""}"
       pkg
@@ -182,18 +159,13 @@ let
         [ (add-pkg-deps (commonPkgs ++ (if system then systemExtraPkgs else [ ]))) ]
         ++ (if system then systemExtraMounts else [ ]));
 
-  # Per-tool read/write dirs, relative to the owning home. The user jails run
-  # as b (home = userHome); the system jails run as the llm agent user (home
-  # = agentHome), a real home-manager-managed home the agent owns, so bwrap
-  # can bind-mount it directly (the old root-only state tree existed because
-  # bwrap-as-root could not traverse b's 700 home dirs). Paths are absolute
-  # because user and system mounts must be statically identical; a runtime ~
-  # would diverge (sudo resets $HOME to the target user's home).
+  # Per-tool read/write dirs, relative to the owning home (user: userHome,
+  # system: agentHome). Paths are absolute so user and system mounts stay
+  # statically identical; a runtime ~ would diverge (sudo resets $HOME).
   mkDirSpecs = base: paths: map (with jail.combinators; p: readwrite "${base}/${p}") paths;
   userDirSpecs = paths: mkDirSpecs userHome paths;
   agentDirSpecs = paths: mkDirSpecs agentHome paths;
 
-  # Relative per-tool paths (dirs or files) mounted read-write into the jail.
   aiderDirPaths = [
     ".config/aider"
     ".aider.conf.yml"
@@ -222,9 +194,8 @@ let
   agent = n: llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.${n};
 
   # Jailed crush is already sandboxed by bubblewrap, so strip the hardcoded
-  # network/download + network-config command bans from bash.go. The jail is
-  # the real security boundary; the blocklist is redundant here and blocks
-  # legitimate local work (curl health checks, service probes, etc.).
+  # network/download + network-config command bans from bash.go: the jail is the
+  # real security boundary, and the blocklist blocks legitimate local work.
   crushUnbanned = (agent "crush").overrideAttrs (old: {
     postPatch = (old.postPatch or "") + ''
       sed -i \
@@ -247,13 +218,63 @@ let
     '';
   });
 
-  # Build a (user, system) jail pair for a tool.
-  # tool = { name, pkg, dirPaths, systemDirs ? (agentDirSpecs dirPaths), systemExtraPkgs ? [ ], systemExtraMounts ? [ ] }
-  # dirPaths are relative to the owning home: the user variant mounts them
-  # under userHome (b), the system variant under agentHome (the llm agent
-  # user). systemExtra* apply only to the system variant. systemDirs
-  # replaces the default agent-home dirs when a system variant needs a
-  # different mount set (e.g. aider: the secret read-only, no writable dirs).
+  # The dsh system jail is headless with no real xdg-open, so dsh's host-side
+  # opener fails with `spawn xdg-open ENOENT`. This wrapper forwards the path to
+  # the dsh-open handler (runs as b) over /run/dsh-open/open.sock instead.
+  dshOpenXdgOpen = pkgs.writeShellApplication {
+    name = "xdg-open";
+    runtimeInputs = [ pkgs.socat pkgs.coreutils ];
+    text = ''
+      set -u
+      SOCK=/run/dsh-open/open.sock
+      [ $# -ge 1 ] || { echo "xdg-open: no path argument" >&2; exit 1; }
+      path="$1"
+      # Open regular files only (a URL is not a regular file — kills the vector).
+      [ -f "$path" ] || { echo "xdg-open: not a regular file: $path" >&2; exit 1; }
+      # Make the file (and every llm-owned ancestor dir) group-readable+writable
+      # so b (in the llm group) can read it and save edits back. This wrapper
+      # runs as llm (the owner), so it can chmod its own files — no root needed.
+      # Root-owned dirs (/etc, /home, /) are skipped.
+      me=$(id -u)
+      if [ "$(stat -c %u -- "$path" 2>/dev/null)" = "$me" ]; then
+        chgrp -- ${agentUsername} "$path" 2>/dev/null || true
+        chmod g+rw -- "$path" 2>/dev/null || true
+      fi
+      d=$(dirname -- "$path")
+      while [ -n "$d" ] && [ "$d" != "/" ]; do
+        if [ "$(stat -c %u -- "$d" 2>/dev/null)" = "$me" ]; then
+          chgrp -- ${agentUsername} "$d" 2>/dev/null || true
+          chmod g+rx -- "$d" 2>/dev/null || true
+        fi
+        d=$(dirname -- "$d")
+      done
+      # Forward the path to the dsh-open handler (runs as b) over the agent-only
+      # Unix socket. One line in (the path), one line out (the status).
+      resp=$(printf '%s\n' "$path" | socat - UNIX-CONNECT:"$SOCK" 2>/dev/null) || {
+        echo "xdg-open: dsh-open service unavailable ($SOCK)" >&2; exit 1;
+      }
+      case "$resp" in
+        ok*) exit 0 ;;
+        "")  echo "xdg-open: no response from dsh-open handler" >&2; exit 1 ;;
+        *)   echo "xdg-open: $resp" >&2; exit 1 ;;
+      esac
+    '';
+  };
+
+  # Patch the bundled `standard` preset at build time: the user preset root can't
+  # shadow the shipped `standard` (first-root-wins). writeText makes the patch a
+  # derivation input (a bare repo path is invisible to the sandboxed builder).
+  dshPatched = (agent "dsh").overrideAttrs (old: {
+    nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ pkgs.gnupatch ];
+    postInstall = (old.postInstall or "") + ''
+      patch -p1 -d $out/lib/node_modules/@deepseek-ai/dsh/config/agent-presets/standard \
+        < ${pkgs.writeText "dsh-standard-preset.patch" (builtins.readFile ../../dotfiles/dsh/standard-preset.patch)}
+    '';
+  });
+
+  # Build a (user, system) jail pair for a tool. systemExtra* apply only to the
+  # system variant; systemDirs replaces the default agent-home dirs when a system
+  # variant needs a different mount set (e.g. aider: secret read-only, no dirs).
   makeTool = { name, pkg, dirPaths, systemDirs ? (agentDirSpecs dirPaths), systemExtraPkgs ? [ ], systemExtraMounts ? [ ] }:
     let
       userJail = mkToolJail { inherit name pkg; dirs = userDirSpecs dirPaths; system = false; };
@@ -270,13 +291,9 @@ let
          name = "crush";
          pkg = withDeepSeekKey crushUnbanned "crush";
          dirPaths = crushDirPaths;
-         # Debug tooling for the system jail: pgrep/pidof, the PipeWire and
-         # WirePlumber CLIs (pw-top, pw-dump, wpctl) for inspecting audio
-         # stream state, plus read-only /sys (cpufreq governor) and /run/user
-         # (session PipeWire sockets). Note: b's own session dir under
-         # /run/user is 700 b:b, so inspecting b's live session from inside
-         # the jail is only possible for root; the llm agent user sees what
-         # its permissions allow.
+         # Debug tooling for the system jail: PipeWire/WirePlumber CLIs for audio
+         # stream state, plus read-only /sys (cpufreq) and /run/user (session
+         # sockets). b's /run/user session dir is 700 b:b, so llm can't inspect it.
          systemExtraPkgs = with pkgs; [ procps pipewire wireplumber ];
          systemExtraMounts = with jail.combinators; [
            (readonly "/sys")
@@ -285,15 +302,25 @@ let
        })
     // (makeTool { name = "opencode"; pkg = withDeepSeekKey (agent "opencode") "opencode"; dirPaths = opencodeDirPaths; })
     // (makeTool { name = "claude"; pkg = agent "claude-code"; dirPaths = claudeDirPaths; })
-    // (makeTool { name = "dsh"; pkg = withDeepSeekKey (agent "dsh") "dsh"; dirPaths = dshDirPaths; });
+    // (makeTool {
+         name = "dsh";
+         pkg = withDeepSeekKey dshPatched "dsh";
+         dirPaths = dshDirPaths;
+         # The jail's /run is a fresh tmpfs, so the dsh-open socket must be
+         # bind-mounted in. Mount the DIRECTORY (not the socket) so a switch
+         # that recreates it leaves no stale inode (ENXIO); rw for socket connect.
+         systemExtraPkgs = [ dshOpenXdgOpen ];
+         systemExtraMounts = with jail.combinators; [
+           (readwrite "/run/dsh-open")
+         ];
+       });
 
   # Flat list of all jail packages (home.packages expects a list).
   jails = builtins.attrValues jailsByTool;
 
-  # Short aliases for the crush jail pair: `jc` (user) and `jcs` (system, run
-  # as the llm agent user via `sudo -u llm` so it can read/write /etc/nixos
-  # without being root). Wrappers exec the actual jail binaries from
-  # `jailsByTool`, so they always track the real packages.
+  # Short aliases for the crush jail pair: `jc` (user) and `jcs` (system, run as
+  # llm via `sudo -u llm` to read/write /etc/nixos). The wrappers exec the real
+  # jail binaries from `jailsByTool`, so they track the real packages.
   jc = pkgs.writeShellScriptBin "jc" ''
     exec ${jailsByTool."crush-jail"}/bin/jailed-crush "$@"
   '';

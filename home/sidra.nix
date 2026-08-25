@@ -1,7 +1,6 @@
 { config, pkgs, ... }:
 
 {
-  # Sidra OLED theme
   xdg.configFile."Sidra/custom.css" = {
     text = ''
 /* Sidra OLED low-contrast theme – pure black #000000 background */

@@ -1,20 +1,11 @@
--- Based on https://github.com/gmr458/.dotfiles (wezterm config), trimmed down
--- and retuned: pure-black OLED palette matching dotfiles/konsole/OLED.colorscheme
--- and 500000-line scrollback matching the konsole OLED profile.
+-- Pure-black OLED palette and 500000-line scrollback match the konsole OLED
+-- profile (dotfiles/konsole/OLED.colorscheme); keep them in sync.
 local wezterm = require 'wezterm'
 local config = wezterm.config_builder()
 
 -- Session persistence via resurrect.wezterm (YedPool/Wezurrect fork), pinned
--- in the Nix store and symlinked into wezterm's plugin home as a git repo
--- (wezterm's plugin.list() requires each checkout to have a remote). The
--- directory name keeps "YedPool" so the dev.wezterm helper can locate the
--- plugin among the installed ones; the helper itself is still fetched once
--- from GitHub.
--- State JSONs (which include scrollback) are stored unencrypted in
--- ~/.local/share/resurrect/state/; /home/b is 0700 (hosts/desktop/host.nix
--- tmpfiles rule), so only b can read them. (They were previously encrypted
--- with the agenix master key, which required b to have read access to that
--- key on disk — incompatible with the TPM-backed key, cutover 2026-08-24.)
+-- in the Nix store and symlinked into wezterm's plugin home. State JSONs
+-- (incl. scrollback) are unencrypted; /home/b is 0700 so only b can read them.
 local resurrect = require 'YedPool-Wezurrect'
 
 resurrect.state_manager.change_state_save_dir(
@@ -40,11 +31,9 @@ end)
 -- Always drop back into the most recent saved session on startup.
 wezterm.on('gui-startup', function()
     wezterm.time.call_after(100, function()
-        -- The prior boot's session lives beneath an old instance id; this
-        -- boot's own id is fresh and, until event_driven_save fires, may not
-        -- even exist yet. Restore the newest snapshot that actually has tabs,
-        -- skipping any empty shell entries, so we always land in the real
-        -- previous session rather than a blank window.
+        -- Skip this boot's own instance id (fresh, may not exist yet) and any
+        -- empty entries, so restore lands in the newest snapshot that actually
+        -- has tabs — the real previous session, not a blank window.
         local instances = resurrect.instance_manager.list_instances()
         local current = resurrect.instance_manager.instance_id
         local latest = nil

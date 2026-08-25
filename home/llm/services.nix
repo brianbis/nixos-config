@@ -7,7 +7,6 @@ let
   inherit (shared) headroomUpstreamUrl headroomPort headroomClaudePort;
 in
 {
-  # headroom proxy for the local llama.cpp upstream.
   systemd.user.services.headroom-proxy = {
     Unit = {
       Description = "Headroom context-compression proxy (llama.cpp upstream)";
@@ -27,8 +26,7 @@ in
     Install.WantedBy = [ "default.target" ];
   };
 
-  # headroom proxy for DeepSeek (cloud). Uses a wrapper that reads the API key
-  # from the agenix secret at service start.
+  # Uses a wrapper that reads the API key from the agenix secret at service start.
   systemd.user.services.headroom-proxy-deepseek = {
     Unit = {
       Description = "Headroom context-compression proxy (DeepSeek upstream)";
@@ -46,8 +44,8 @@ in
     Install.WantedBy = [ "default.target" ];
   };
 
-  # headroom proxy for Claude Code (Anthropic Messages format). llama.cpp serves
-  # /v1/messages via llama-server, so the same local upstream works for both formats.
+  # llama.cpp serves /v1/messages via llama-server, so the same local upstream
+  # works for both the OpenAI and Anthropic (Claude Code) formats.
   systemd.user.services.headroom-proxy-claude = {
     Unit = {
       Description = "Headroom context-compression proxy (Claude Code / llama.cpp upstream)";

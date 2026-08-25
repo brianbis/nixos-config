@@ -1,7 +1,5 @@
-# Renders the per-user tool configs from the shared catalog: crush.json,
-# opencode.json, and aider's .aider.conf.yml. Called once per managed home
-# (b's home for the user jails, the llm agent user's home for the system
-# jails); the crush config's data_directory/hook paths are keyed off the
+# Renders the per-user tool configs from the shared catalog, called once per
+# managed home. The crush config's data_directory/hook paths are keyed off the
 # given home, so both homes get identical content with correct paths.
 { shared, userHome }:
 
@@ -16,7 +14,6 @@ let
     claudeConfig
     ;
 
-  # Crush config for the home being managed (read by that home's jail variants).
   crushConfig = crushConfigFor userHome;
 
   opencodeConfig = builtins.toJSON (opencodeProviders // {

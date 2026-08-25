@@ -65,10 +65,9 @@ in
       description = "Extra WHISPER_* environment variables.";
     };
 
-    # Groups that own the NVIDIA device nodes (/dev/nvidia*). The service
-    # user must be a member to open them; without it ctranslate2's CUDA init
-    # fails and it silently reports 0 devices (CPU fallback). On NixOS the
-    # nodes are in the `video` group; override if your host uses another.
+    # Groups that own the NVIDIA device nodes (/dev/nvidia*); the service user
+    # must be a member to open them, else ctranslate2's CUDA init fails and
+    # silently reports 0 devices (CPU fallback). On NixOS: the `video` group.
     gpuGroups = mkOption {
       type = types.listOf types.str;
       default = [ "video" ];
@@ -77,9 +76,7 @@ in
 
     # The host's NVIDIA *driver* package (e.g. config.hardware.nvidia.package).
     # libctranslate2 dlopen()s libcuda.so.1 (the driver stub) at runtime; it is
-    # neither in the wheel's RUNPATH nor in the store's ldconfig cache, so the
-    # service needs the driver's lib dir on LD_LIBRARY_PATH or CUDA init fails
-    # and ctranslate2 falls back to CPU.
+    # not in the wheel's RUNPATH/ldconfig cache, so its lib dir must be on LD_LIBRARY_PATH.
     nvidiaDriver = mkOption {
       type = types.nullOr types.package;
       default = null;
@@ -92,27 +89,19 @@ in
       isSystemUser = true;
       group = "whisper";
       description = "whisper-service";
-      # Membership in the GPU device group(s) so the service can open
-      # /dev/nvidia* and ctranslate2 can initialise CUDA.
       extraGroups = cfg.gpuGroups;
     };
     users.groups.whisper = { };
 
     # Socket activation: the *socket* unit (kernel-held, ~0 memory) owns the
-    # port. The service process only exists between a connection and the
-    # model's release — with autoStop it exits (code 0) after the idle
-    # window, leaving nothing running until the next request.
+    # port. The service process exists only between a connection and the
+    # model's release — with autoStop it exits (code 0) after the idle window.
     systemd.sockets.whisper-service = {
       description = "Whisper transcription service socket (socket activation)";
       wantedBy = [ "sockets.target" ];
-      # Deliberately no After=network.target here: this socket is pulled in
-      # by sockets.target (ordered *before* basic.target), while
-      # network.target on this host sits after wpa_supplicant.service, which
-      # sits after basic.target. Ordering the socket after network.target
-      # creates a cycle (socket -> network.target -> wpa_supplicant ->
-      # basic.target -> sockets.target -> socket) and systemd breaks it by
-      # deleting the socket's start job. Binding a TCP socket needs no
-      # network to be up: the service only starts when a client connects.
+      # Deliberately no After=network.target: this socket is pulled in by
+      # sockets.target (before basic.target) while network.target sits after
+      # wpa_supplicant (after basic.target); after-network would create a cycle.
 
       socketConfig = {
         # host:port so the module's `host` option keeps controlling the bind
@@ -144,9 +133,8 @@ in
         # cannot mkdir/chown under the root-owned /var/cache.)
         CacheDirectory = [ "whisper-service" ];
         ExecStart = "${cfg.package}/bin/whisper-serve";
-        # systemd's Environment option is a list of KEY=VALUE strings.
-        # Note: the service reads WHISPER_IDLE_TIMEOUT (underscore), so the
-        # names are written explicitly rather than derived from option names.
+        # The service reads WHISPER_IDLE_TIMEOUT (underscore), so the env names
+        # are written explicitly rather than derived from the option names.
         Environment =
           (lib.mapAttrsToList (name: value: "${name}=${toString value}") cfg.extraEnv)
           ++ [

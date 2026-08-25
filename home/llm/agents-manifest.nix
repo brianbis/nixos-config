@@ -13,7 +13,6 @@ let
   baseMounts = jailCfg.baseMounts;
 in
 {
-  # Formatted strings for template substitution
   formatted = {
     # Ports are canonical in catalog.nix
     headroomLocalPort = toString shared.headroomPort;

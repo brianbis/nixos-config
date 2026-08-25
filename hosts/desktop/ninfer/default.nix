@@ -32,11 +32,9 @@ let
       cudaPackages_13_1.cudatoolkit
     ];
 
-    # The pinned upstream rev has no server-side default for reasoning effort
-    # (only --no-thinking / --preserve-thinking). This patch adds a
-    # --reasoning-effort low|medium|xhigh flag so the serve binary can default
-    # Qwen3.8 to brief thinking without per-request wiring. A per-request
-    # effort still wins over the flag.
+    # The pinned rev has no server-side reasoning-effort default; this patch
+    # adds --reasoning-effort so the serve binary can default Qwen3.8 to brief
+    # thinking (a per-request effort still wins over the flag).
     postPatch = ''
       patch -p1 -N < ${./reasoning-effort.patch}
     '';
@@ -87,7 +85,7 @@ let
     "--pending-timeout-ms" "900000"
     "--prefill-chunk" "1024"
     "--max-concurrency" "1"
-    "--max-pending-requests" "6"
+    "--max-pending-requests" "128"
     "--temperature" "0.7"
     "--spec" "mtp"
     "--draft-tokens" "3"
@@ -128,16 +126,9 @@ in {
 
   system.activationScripts.ninferModel.text = downloadNinferModel "ninfer-qwen38-nvfp4" ninferModelRepo modelsDir ninferModelFile;
 
-  # Socket activation: the kernel-held socket owns the front port; the
-  # service process only exists between a connection and the idle window.
-  #
-  # Deliberately no After=network.target: this socket is pulled in by
-  # sockets.target (ordered *before* basic.target), while network.target on
-  # this host sits after wpa_supplicant.service, which sits after
-  # basic.target. Ordering the socket after network.target creates a cycle
-  # and systemd breaks it by deleting the socket's start job. Binding a
-  # loopback socket needs no network; the child only starts when a client
-  # connects. (Same reasoning as whisper-service's socket unit.)
+  # No After=network.target: sockets.target orders before basic.target, but
+  # network.target on this host does not (via wpa_supplicant); ordering the
+  # socket after network.target would cycle and systemd would drop its job.
   systemd.sockets.ninfer-serve = {
     description = "NInfer engine socket (socket activation, on-demand model residency)";
     wantedBy = [ "sockets.target" ];

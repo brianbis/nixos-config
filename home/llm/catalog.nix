@@ -1,16 +1,14 @@
-# Shared rendering for the jailed LLM tooling. Single source of truth for the
-# model catalog, LSP catalog, provider mapping, and the crush config builder.
-# Imported by both home-manager modules (to render the per-user tool configs
-# into b's home and the llm agent user's home) and by the doc build. Keeping
-# this here means the user and system configs stay identical in content.
+# Shared rendering for the jailed LLM tooling: single source of truth for the
+# model/LSP catalogs, provider mapping, and config builders. Imported by the
+# home-manager modules (user + system homes) and the doc build, so both stay identical.
 { lib, pkgs, jail-nix, ... }:
 
 let
   jail = jail-nix.lib.init pkgs;
   users = import ../users.nix;
-  # Context-compression proxy layering. local llama.cpp traffic from every
-  # jailed agent (crush/opencode/aider) is routed through the Headroom proxy,
-  # which forwards upstream to llama-server on :8000. headroom listens on :8787.
+  # Context-compression proxy layering: local llama.cpp traffic from every
+  # jailed agent (crush/opencode/aider) routes through the Headroom proxy,
+  # which forwards upstream to llama-server on :8000.
   headroomPort = 8787;
   headroomProxyUrl = "http://127.0.0.1:${toString headroomPort}";
   headroomUpstreamUrl = "http://127.0.0.1:8000";
@@ -21,25 +19,19 @@ let
   headroomCloudProxyUrl = "http://127.0.0.1:${toString headroomCloudPort}";
   headroomCloudUpstreamUrl = "https://api.deepseek.com/v1";
 
-  # Claude Code-facing headroom proxy (port 8789). Claude Code speaks the
-  # Anthropic Messages API (POST /v1/messages), so this instance forwards
-  # Anthropic-format traffic to the local llama-server, which serves that endpoint
-  # natively. The OpenAI-format proxy on headroomPort can't be reused: its
-  # Anthropic route would fall back to api.anthropic.com.
+  # Claude Code-facing headroom proxy (port 8789): Claude Code speaks the
+  # Anthropic Messages API, so this forwards to the local llama-server. The
+  # OpenAI proxy on headroomPort can't be reused (would fall back to api.anthropic.com).
   headroomClaudePort = 8789;
   headroomClaudeProxyUrl = "http://127.0.0.1:${toString headroomClaudePort}";
 
-  # Single source of truth for every LLM exposed to the jailed agents. Each of
-  # the three tools (crush / opencode / aider) derives its provider + model
-  # lists from this catalog, so a model edit hits all tools at once (DRY) and
-  # every tool always sees the same set (parity). Local models route through
-  # headroomProxyUrl (llama.cpp upstream); cloud through headroomCloudProxyUrl.
+  # Single source of truth for every LLM exposed to the jailed agents. Each
+  # tool (crush / opencode / aider) derives its provider + model lists from
+  # here, so a model edit hits all tools at once and every tool sees the same set.
   models = {
     # Local backends. Two engines, both serving the OpenAI-compatible API on
-    # :8000, are mutually exclusive (start one at a time):
-    #   - vLLM (hosts/desktop/vllm.nix): cached Gemma-4 AWQ/NVFP4 weights, no
-    #     download needed.
-    #   - llama.cpp (hosts/desktop/llamacpp.nix): Muse-Glimmer-30B GGUF.
+    # :8000, are mutually exclusive (start one at a time): vLLM (cached Gemma-4
+    # AWQ/NVFP4 weights) and llama.cpp (Muse-Glimmer-30B GGUF).
     gemma4awq = {
       providerName = "vllm_awq";
       id = "gemma-4-awq";
@@ -204,13 +196,9 @@ let
       maxTok = 200000;
       reason = false;
       attachments = false;
-      # Thinking levels the Qwen3.8-27B chat template supports (the engine's
-      # ReasoningEffortCapabilities: low/medium/xhigh). Declaring them makes
-      # dsh materialize the model as a reasoning model, so the web UI offers
-      # the effort selector. A selected level is sent as the request's
-      # reasoning_effort and wins over the serve binary's --reasoning-effort
-      # low default; an unselected request sends nothing and falls back to
-      # that default.
+      # Thinking levels the Qwen3.8-27B chat template supports (low/medium/xhigh).
+      # Declaring them makes dsh materialize the model as a reasoning model (web
+      # UI effort selector); a selected level is sent as reasoning_effort, overriding the serve default.
       reasoningEfforts = {
         low = "low";
         medium = "medium";
@@ -257,10 +245,9 @@ let
     deepseek.api_key = "sk-local";
   };
 
-  # LSP catalog, keyed by crush language name. Single source of truth for
-  # which language server each language uses, the package to mount (host copy,
-  # shared with home/packages.nix), and the file types / root markers that
-  # tell crush when to actually initialize the server.
+  # LSP catalog, keyed by crush language name. Single source of truth for which
+  # language server each language uses, the package to mount (host copy, shared
+  # with home/packages.nix), and the file types / root markers for init.
   lsps = with pkgs; {
     nix = {
       pkg = nil;
@@ -373,7 +360,6 @@ let
     // lib.optionalAttrs (entry ? initOptions) { init_options = entry.initOptions; }))
     (lib.filterAttrs (lang: _: builtins.elem lang toolLsps) lsps);
 
-  # Convenience: every catalog model, and model lists filtered by upstream.
   allModels = lib.attrValues models;
   byProvider = name: lib.filter (m: m.providerName == name) allModels;
 
@@ -439,18 +425,9 @@ let
     small_model = "${models.gemma4awq.providerName}/${models.gemma4awq.id}";
   };
 
-  # dsh's user-settings document ($DSH_HOME/settings.yaml, hot-reloaded). dsh
-  # ships one built-in route (deepseek-official, the composition default) and
-  # takes every other provider from this file's llm-pi-ai section. JSON is a
-  # YAML subset and dsh's settings-file loader accepts both, so builtins.toJSON
-  # is the renderer. One route per distinct catalog providerName, mirroring
-  # crushProviders, so a catalog edit hits dsh with the rest of the tools.
-  # Every route names DEEPSEEK_API_KEY: the jail wrapper exports it in both
-  # user and system jails, and pi-ai's openai-completions insists on a
-  # credential even for local endpoints (which ignore the header). Local
-  # routes carry the docs-recommended compat pair for OpenAI-compatible
-  # gateways; the deepseek route keeps pi-ai's own defaults (DeepSeek natively
-  # accepts the developer role and max_completion_tokens).
+  # dsh's user-settings document ($DSH_HOME/settings.yaml, hot-reloaded). Every
+  # route names DEEPSEEK_API_KEY: pi-ai's openai-completions insists on a
+  # credential even for local endpoints (which ignore the header).
   dshSettings = builtins.toJSON {
     "llm-pi-ai" = {
       providers = lib.mapAttrs' (pname: ms:
@@ -463,10 +440,7 @@ let
              let
                # Base local-gateway compat pair (every non-deepseek route).
                # Reasoning models additionally select the deepseek wire format:
-               # it is the only openai-completions shape that emits a top-level
-               # `reasoning_effort` (the field ninfer parses); its companion
-               # `thinking: {type}` is an unknown field ninfer ignores. Both
-               # halves are flat, so the shallow `//` is a union.
+               # the only openai-completions shape that emits a top-level `reasoning_effort` (the field ninfer parses).
                compat =
                  (if pname == "deepseek" then { } else {
                    supportsDeveloperRole = false;
@@ -494,32 +468,17 @@ let
         })
         (lib.groupBy (m: m.providerName) allModels);
     };
-    # Default agent model (dsh-agent-default-model section). The profile's
-    # composition base defaults to the built-in deepseek-official route; this
-    # user-settings layer is read live and wins, so new sessions start on the
-    # local NVFP4 route. reasoningEffort mirrors the live settings.yaml (the
-    # GUI's effort selector persists it); without it the next activation
-    # would drop the field - behavior stays "low" via ninfer's
-    # --reasoning-effort server default, but the GUI selector would lose it.
+    # Default agent model (dsh-agent-default-model section). This user-settings
+    # layer is read live and wins over the built-in default, so new sessions
+    # start on the local NVFP4 route. reasoningEffort mirrors the live settings.yaml; without it the next activation would drop the field.
     "agent-default-model" = {
       provider = models.qwen38_nvfp4_ninfer.providerName;
       model = models.qwen38_nvfp4_ninfer.id;
       reasoningEffort = "low";
     };
-    # Default agent preset (dsh-agent-presets section). The shipped `standard`
-    # preset compacts with the plugin's default 8192-token summarizer budget,
-    # which the thinking default model routinely blows: the compaction call
-    # sends no per-request reasoning_effort, so thinking tokens share the
-    # budget with the checkpoint text and a large share of compactions
-    # truncate ("summarization truncated at the token cap"), leaving the
-    # session stuck re-triggering compaction. `standard-compact32k` is a
-    # locally authored copy of `standard` with the budget raised to 32768
-    # (dotfiles/dsh/agent-presets/, installed by writeDshAgentPreset in
-    # jail-home.nix); the user preset root cannot shadow the shipped
-    # `standard` id, so the default is switched here.
-    "agent-presets" = {
-      default = "standard-compact32k";
-    };
+    # No `agent-presets` section: the user preset root cannot shadow the shipped
+    # `standard` preset (first-root-wins, shipped root first), so the bundled
+    # composition is patched at build time instead.
   };
 
   # The dsh web profile's patch layer ($DSH_HOME/profiles/web/cordis.patch.yml)
@@ -527,10 +486,8 @@ let
   # home/llm/jail-home.nix (writeDshWebProfilePatch); see its header for the why.
 
   # Crush PreToolUse hook that rewrites bash commands to use rtk for token
-  # savings, transparently (the model still sees its original command; crush
-  # substitutes the rtk-aware form before execution). Mirrors crush's official
-  # docs/hooks/examples/rtk-rewrite.sh. Requires rtk >= 0.23 and jq, both of
-  # which are in commonPkgs so they exist inside every jailed agent.
+  # savings, transparently (the model still sees its original command). Requires
+  # rtk and jq, both in commonPkgs so they exist inside every jailed agent.
   rtkRewriteHook = ''
     #!/usr/bin/env bash
     set -euo pipefail
@@ -561,14 +518,8 @@ let
   '';
 
   # Identity of the llm agent user (single source of truth: home/users.nix).
-  # The "system" jail variants run as this user via `sudo -u llm` instead of
-  # as root: they keep their config + writable state in a real home
-  # (/home/llm, managed declaratively by home-manager via
-  # home/llm/agent-home.nix) and can edit /etc/nixos because the repo is
-  # owned by llm (see hosts/desktop/host.nix). bwrap-as-llm can bind-mount
-  # the agent's own 700 home, which is why the old root-only state tree
-  # (/var/lib/crush-system) existed: bwrap-as-root could not traverse b's
-  # 700 home dirs to bind-mount a config.
+  # The "system" jail variants run as this user via `sudo -u llm` instead of as
+  # root, keeping their config + writable state in /home/llm and editing /etc/nixos.
   agentHome = users.llm.homeDirectory;
   agentUsername = users.llm.username;
 
@@ -578,12 +529,9 @@ let
   crushConfigFor = base: builtins.toJSON {
     "$schema" = "https://charm.land/crush.json";
 
-    # Force the per-project data dir out of the working directory. The system
-    # jail runs crush from /etc/nixos (the flake repo): without this, crush
-    # would mkdir /etc/nixos/.crush and the justfile's auto-stage would sweep
-    # the state into git. Putting state under the (rw) home keeps it writable
-    # in both the user and system jails, and also gives each editable copy of
-    # the tree a distinct data dir keyed by cwd.
+    # Force the per-project data dir out of the working directory: the system
+    # jail runs crush from /etc/nixos, so without this crush would mkdir
+    # /etc/nixos/.crush and the justfile's auto-stage would sweep the state into git.
     options.data_directory = "${base}/.local/share/crush";
     options.context_paths = [ "AGENTS.md" ];
     options.tui.transparent = true;
@@ -603,9 +551,7 @@ let
 
     # Headroom MCP server: exposes headroom_retrieve (plus headroom_compress /
     # headroom_stats) as callable tools so the model can turn the proxy's
-    # hash= compression markers back into original content. Spawned as a stdio
-    # server per Crush session; connects out to the llama.cpp proxy on 8787,
-    # whose compression store holds the compressed content.
+    # hash= compression markers back into original content.
     mcp.headroom = {
       type = "stdio";
       command = "headroom";
@@ -624,9 +570,7 @@ let
 
   # Claude Code user settings (settings.json). The env block routes the agent
   # through the Claude-facing headroom proxy to the local llama.cpp, using the
-  # catalog's default local model. Identical content is written by
-  # home-manager into both b's home (user jails) and the llm agent user's
-  # home (system jails).
+  # catalog's default local model.
   claudeConfig = builtins.toJSON {
     env = {
       ANTHROPIC_BASE_URL = headroomClaudeProxyUrl;

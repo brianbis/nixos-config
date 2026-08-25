@@ -1,19 +1,11 @@
 { lib, pkgs, ... }:
 
-# Static audio-core pinning for the 13900K. hushmic (DPDFNet ONNX inference in
-# a real-time PipeWire thread) is pinned to cpu6/7, the two 5.8 GHz P-cores, by
-# the hushmic user service's CPUAffinity (see audio.nix). Those cores are held
-# at performance governor + EPP permanently so there is zero runtime flapping:
-# no debounce, no watcher reacting to process start/stop, and no first-several
-# seconds of low-clock artifacts when a session begins. Everything else stays
-# on powersave/balance_power. TLP is disabled in host.nix; power-profiles-daemon
-# is disabled too (it was the actor that kept drifting the pins); thermald is
-# disabled entirely (the 2.5.12 rewrite in nixpkgs is mobile-only and exits at
-# boot on this desktop, see host.nix), so it cannot flap the audio cores.
+# hushmic (real-time DPDFNet inference) runs on cpu6/7, pinned via the user
+# service's CPUAffinity. Hold those cores at performance governor + EPP
+# statically so there is no runtime flapping or low-clock artifacts.
 let
-  # The dedicated audio cores: highest-turbo P-cores on this machine. Single
-  # source of truth for every module that touches them (scheduler, steam.nix,
-  # audio.nix all import from here or mirror this list).
+  # The dedicated audio cores: the two 5.8 GHz P-cores (highest turbo on
+  # this machine).
   audioCores = [ "cpu6" "cpu7" ];
 
   # -u without -e: a failed sysfs write (read-only fs, transient race) must
@@ -31,11 +23,9 @@ let
     done
   '';
 
-  # Re-asserts the pin every 60s in case an external actor drifts the cores.
-  # Checks BOTH cores (drift can be asymmetric, e.g. a per-CPU thermal event).
-  # If the sysfs file is read-only (HWP lock), logs ONCE and gives up to avoid
-  # spamming the journal every 60s forever. The udev rule in host.nix is the
-  # primary mechanism; this guard is a fallback for runtime drift only.
+  # Fallback for runtime drift: the udev rule in host.nix is the primary
+  # mechanism, this re-asserts the pin every 60s. If sysfs is read-only
+  # (HWP lock) it logs once and gives up instead of spamming the journal.
   corePinGuard = pkgs.writeShellScript "hushmic-core-pin-guard" ''
     ${pkgs.bash}/bin/bash -uo pipefail
     export PATH="${pkgs.util-linux}/bin:${pkgs.coreutils}/bin:$PATH"
@@ -53,8 +43,6 @@ let
       done
       if [ "$drifted" -eq 1 ]; then
         $sm
-        # Verify the write actually took. If sysfs is read-only (HWP lock),
-        # log once and stop retrying — the kernel will not unlock it.
         for cpu in /sys/devices/system/cpu/${lib.concatStringsSep " " audioCores}; do
           g=$(cat "$cpu/cpufreq/scaling_governor" 2>/dev/null || echo "?")
           if [ "$g" != "performance" ]; then
@@ -77,8 +65,7 @@ let
     ring=$out/ring
     errors=$out/errors
     while :; do
-      # Tolerate transient probe failures (set -e here used to kill the whole
-      # daemon when a script edit was mid-flight or a command misbehaved).
+      # Tolerate transient probe failures so one bad run cannot kill the daemon.
       ${pkgs.bash}/bin/bash "$probe" || echo "$(date -u +%FT%TZ) probe failed: $?" >> "$errors"
       cat "$out/latest" >> "$ring" 2>/dev/null || true
       # Keep the ring bounded: truncate only when over the cap, not every tick.
@@ -96,10 +83,9 @@ in
 {
   systemd.services.hushmic-audio-cores = {
     description = "Pin audio cores (cpu6/7) to performance governor + EPP";
-    # sysinit.target: must run before the kernel locks cpufreq sysfs after
-    # intel_pstate HWP init. multi-user.target is too late — files are 644.
-    # No Before=: a RemainAfterExit oneshot ordered before its own wantedBy
-    # target creates an unfixable cycle when another unit Requires it.
+    # sysinit.target: must run before intel_pstate HWP init locks cpufreq
+    # sysfs; multi-user.target is too late (files are 644). No Before=: a
+    # RemainAfterExit oneshot ordered before its wantedBy target cycles.
     wantedBy = [ "sysinit.target" ];
     serviceConfig = {
       Type = "oneshot";
@@ -129,9 +115,8 @@ in
       ExecStart = probeDaemon;
       Restart = "always";
       RestartSec = 2;
-      # Creates /var/log/hushmic (mode 0755, root-owned) at unit start; the
-      # daemon uses $LOGS_DIRECTORY. World-readable so jailed agents can read
-      # probe state without a dedicated jail mount.
+      # World-readable (0755) so jailed agents can read probe state without a
+      # dedicated jail mount.
       LogsDirectory = "hushmic";
     };
   };

@@ -3,14 +3,9 @@
 let
   users = import ./users.nix;
 
-  # Pinned copy of the resurrect.wezterm fork (YedPool/Wezurrect).
-  #
-  # Deployed as a symlink into wezterm's plugin home (see below). wezterm's
-  # plugin.list() opens every checkout with libgit2 and requires a remote, so
-  # the store path must be a git repo with an origin. The directory name must
-  # keep "YedPool" so the plugin's dev.wezterm helper can locate it among the
-  # installed plugins. Commit metadata is fixed so the output stays
-  # reproducible.
+  # Pinned resurrect.wezterm fork (YedPool/Wezurrect), deployed as a symlink
+  # into wezterm's plugin home. The dir name keeps "YedPool" so the dev.wezterm
+  # helper can locate it; commit metadata is fixed for reproducibility.
   resurrect = pkgs.stdenvNoCC.mkDerivation {
     pname = "YedPool-Wezurrect";
     version = "7e2d093e";
@@ -27,10 +22,9 @@ let
 
     installPhase = ''
       mkdir -p $out
-      # $src is the repo root (stdenv's unpackPhase strips the archive's
-      # top-level dir); $out must be the plugin root because wezterm loads
-      # <plugin home>/YedPool-Wezurrect/plugin/init.lua, so a nested
-      # top-level dir would break the plugin require.
+      # $src is the repo root (unpackPhase strips the top-level dir); $out must
+      # be the plugin root — wezterm loads <plugin home>/YedPool-Wezurrect/
+      # plugin/init.lua — so a nested dir would break the plugin require.
       cp -r . $out/
       export GIT_AUTHOR_DATE="2026-08-17T16:44:08Z"
       export GIT_COMMITTER_DATE="2026-08-17T16:44:08Z"
@@ -56,16 +50,14 @@ in
     pkgs.age
   ];
 
-  # wezterm's plugin home is ~/.local/share/wezterm/plugins; `require
-  # 'YedPool-Wezurrect'` in the config resolves via
-  # <plugin home>/YedPool-Wezurrect/plugin/init.lua. The symlink keeps the
-  # checkout path stable across store rebuilds.
+  # Symlinked into wezterm's plugin home so the checkout path stays stable
+  # across store rebuilds; `require 'YedPool-Wezurrect'` resolves via
+  # <plugin home>/YedPool-Wezurrect/plugin/init.lua.
   xdg.dataFile."wezterm/plugins/YedPool-Wezurrect".source = resurrect;
 
-  # libgit2 (wezterm's plugin loader) ownership-checks each checkout by
-  # lstat'ing workdir/gitdir with a trailing slash, which resolves the
-  # symlink above to the builder-owned store path and fails; it then
-  # consults safe.directory, where only a trailing "/*" is a prefix match.
+  # libgit2 ownership-checks each checkout by lstat'ing workdir/gitdir with a
+  # trailing slash, resolving the symlink to the builder-owned store path and
+  # failing; safe.directory only prefix-matches with a trailing "/*".
   programs.git.settings.safe.directory = [
     "${users.b.homeDirectory}/.local/share/wezterm/plugins/*"
     "${resurrect}"

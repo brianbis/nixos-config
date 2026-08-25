@@ -35,10 +35,9 @@
 
           inherit src cargoDeps npmRoot;
 
-          # Local upstream patch (see patches/gui-sync-on-refresh.patch): makes the
-          # GUI's refresh / polling trigger an actual broker sync (sync_messages_now)
-          # so new phone messages appear without a manual `imsg sync`. Applies to the
-          # pinned rev's crates/imsg-gui source.
+          # Local upstream patch: makes the GUI's refresh/polling trigger a real
+          # broker sync (sync_messages_now) so new phone messages appear without a
+          # manual `imsg sync`.
           patches = [ ./patches/gui-sync-on-refresh.patch ];
 
           nativeBuildInputs = with pkgs; [

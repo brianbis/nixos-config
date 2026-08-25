@@ -115,8 +115,8 @@ if len({index for index, _ in resolved.values()}) != len(resolved):
 
 desired_setup_outputs = []
 
-# Nix attrsets are unordered, so layout may iterate in any order.
-# Sort by declared position to make priority deterministic.
+# Sort by declared position so output priority is deterministic and
+# follows the left-to-right layout.
 for name, desired in sorted(
     layout.items(),
     key=lambda item: (

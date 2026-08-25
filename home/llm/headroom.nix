@@ -1,19 +1,8 @@
 # headroom-ai: context compression layer for AI agents (chopratejas/headroom).
 #
-# Not present in nixpkgs or the llm-agents flake, so it is built here from
-# source. It is a maturin (Rust core + Python) package, so this derivation
-# compiles the pyo3 cdylib (crates/headroom-py) and packages the Python CLI.
-#
-# Two hashes must be filled in on the first build. Nix will fail once per
-# placeholder with `got: sha256-<real>`; paste each into the right field and
-# re-run `just switch`:
-#   * src.hash        (fetchFromGitHub source archive)
-#   * cargoDeps.hash  (vendored cargo dependencies of the Rust core)
-#
-# Follows the nixpkgs maturin build pattern (see e.g. `ast-grep-py`). If the
-# maturin layout differs in practice, adjust `buildAndTestSubdir` /
-# `cargoRoot`. Dependencies mirror pyproject.toml's [proxy,code] extras, which
-# are enough for `headroom wrap` / `headroom proxy` (no torch).
+# Not in nixpkgs or the llm-agents flake, so built here from source. It is a
+# maturin (Rust core + Python) package: this derivation compiles the pyo3 cdylib
+# (crates/headroom-py) and packages the Python CLI.
 {
   lib,
   rustPlatform,

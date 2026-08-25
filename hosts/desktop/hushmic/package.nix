@@ -92,13 +92,9 @@ rustPlatform.buildRustPackage rec {
       --set HUSHMIC_TRAY_THEME_DIR "$out/share/icons";
   '';
 
-  # The in-app "Start on login" bakes current_exe() (the raw .hushmic-wrapped)
-  # into the autostart Exec, bypassing the wrapper's LD_LIBRARY_PATH. The A/B
-  # and About windows dlopen libEGL/wayland/xkbcommon at runtime, so on
-  # autostart they fail to open. Bake the GUI libs into the ELF's RUNPATH so a
-  # direct exec resolves them without the wrapper. --add-rpath appends, keeping
-  # the glibc/onnxruntime entries; runs in postFixup, after wrapProgram created
-  # the wrapped binary.
+  # The in-app "Start on login" bakes the raw .hushmic-wrapped into the
+  # autostart Exec, bypassing the wrapper's LD_LIBRARY_PATH; the GUI libs are
+  # dlopened at runtime, so bake them into the ELF's RUNPATH instead.
   postFixup = ''
     patchelf --add-rpath "${lib.makeLibraryPath guiLibs}" "$out/bin/.hushmic-wrapped"
   '';

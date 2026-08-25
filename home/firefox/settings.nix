@@ -11,11 +11,9 @@
   "extensions.activeThemeID" = "{b1638061-5a6b-49fd-8495-f03a0c989a57}";
   "extensions.activeTheme" = "{b1638061-5a6b-49fd-8495-f03a0c989a57}";
 
-  # --- Bitwarden form-field fix ---
-  # Firefox's native password manager & form-autofill overlay fights with
-  # Bitwarden's own in-field icon/menu, causing the broken/duplicated
-  # dropdown behavior. Disabling Firefox's built-ins leaves Bitwarden as
-  # the sole form-fill handler.
+  # Firefox's native password manager and form-autofill conflict with
+  # Bitwarden's in-field icon/menu (broken/duplicated dropdown); disabling
+  # the built-ins leaves Bitwarden as the sole form-fill handler.
   "signon.rememberSignons" = false;
   "signon.generation.enabled" = false;
   "browser.uidensity" = 1;
@@ -39,7 +37,6 @@
   "browser.sessionstore.max_resumed_crashes" = -1;
   dom.webserial.enabled = true;
 
-  # --- Disable GPU / VRAM usage ---
   "layers.acceleration.disabled" = true;
   "gfx.webrender.enabled" = false;
   "gfx.webrender.force-disabled" = true;

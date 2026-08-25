@@ -14,13 +14,9 @@ in
   programs.firefox = {
     enable = true;
 
-    # Install the local services CA into Firefox's own NSS trust store.
-    # Firefox ignores the OS system store by default, and ImportEnterpriseRoots
-    # is unreliable on NixOS (no p11-kit trust module), so without this it
-    # reports SEC_ERROR_UNKNOWN_ISSUER for the *.local services. The CA
-    # derivation's output path is stable across rebuilds (path-addressed; only
-    # rebuilt on first use or after GC), so this trust persists. Takes effect
-    # on the next Firefox restart.
+    # Firefox ignores the OS system store and ImportEnterpriseRoots is
+    # unreliable on NixOS (no p11-kit trust module), so install the CA directly
+    # into Firefox's NSS store; the trust persists across rebuilds.
     policies = {
       Certificates.Install = [ "${localServicesCA}/ca.crt" ];
     };

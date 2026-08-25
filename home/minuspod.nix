@@ -1,7 +1,5 @@
 { pkgs, lib, ... }:
 let
-  # MinusPod: self-hosted, ad-free podcast server.
-  # https://github.com/ttlequals0/MinusPod
   src = pkgs.fetchFromGitHub {
     owner = "ttlequals0";
     repo = "MinusPod";
@@ -9,64 +7,47 @@ let
     hash = "sha256-ZVAe9GA1ROh0Ya9/vWVStVUI8vXASUM1QQuEsJJdmpw=";
   };
 
-  # Offline npm dependency cache for the frontend, locked by package-lock.json.
-  # The frontend sources (tsc + vite) run offline against this cache via
-  # npmConfigHook, which sets HOME and npm_config_cache; copying the cache
-  # into node_modules by hand fails because store paths are read-only.
+  # Offline npm dependency cache for the frontend (tsc + vite run offline via
+  # npmConfigHook); copying the cache into node_modules by hand fails because
+  # store paths are read-only.
   npmDeps = pkgs.fetchNpmDeps {
     src = src + "/frontend";
     hash = "sha256-ReA3NUVXNdHrxJ7aEmJmQbm4CK1ohbINblkXaIYAsck=";
   };
 
-  # faster-whisper transcribes through CTranslate2, which needs a CUDA build to
-  # run on the GPU. nixpkgs' ctranslate2 (C++ core) is CPU-only unless withCUDA
-  # is set, and the python bindings hardwire `ctranslate2-cpp = pkgs.ctranslate2`
-  # (top-level), so an in-set override alone won't help. Build a CUDA-enabled
-  # top-level ctranslate2 and re-point the python ctranslate2/faster-whisper at
-  # it. Mirrors the official GPU Dockerfile (ctranslate2==4.8.1 + CUDA 12.x).
+  # faster-whisper needs a CUDA-enabled CTranslate2 for GPU: nixpkgs' core is
+  # CPU-only unless withCUDA, and the python binding hardwires the top-level
+  # ctranslate2, so build a CUDA core and re-point the binding at it.
   cudaCT2 = pkgs.ctranslate2.override {
     withCUDA = true;
     withCuDNN = true;
     cudaPackages = pkgs.cudaPackages;
   };
 
-  # cuDNN/cuBLAS are dlopened by CTranslate2 at runtime, so expose their lib
-  # dirs the same way the upstream container's LD_LIBRARY_PATH does.
+  # cuDNN/cuBLAS are dlopened by CTranslate2 at runtime; expose their lib dirs
+  # via LD_LIBRARY_PATH.
   cudaLibPath = with pkgs.cudaPackages; lib.makeLibraryPath [
     cudnn
     libcublas
     cuda_cudart
   ];
 
-  # Backend runtime: the Python app and all of its requirements, resolved
-  # hermetically by nixpkgs (the repo's requirements.txt is pip-compiled and
-  # hash-locked for the container, but pip cannot reach the network inside
-  # the Nix build sandbox).
-  #
-  # All python312 patches for MinusPod live here (this override REPLACES any
-  # other packageOverrides, so it must carry every fix MinusPod needs):
-  #  - ctranslate2: build the C++ core with CUDA so faster-whisper can transcribe
-  #    on the GPU, then re-point the python binding at it.
-  #  - anthropic: its test chain (respx, starlette, httpx2, httpcore2,
-  #    inline-snapshot, ...) is flaky/broken on python 3.12 at this nixpkgs pin;
-  #    MinusPod only needs the library, so skip its tests.
-  #  - inline-snapshot: drops the docs test that breaks on python 3.12 here.
-  #
-  # Both omissions exist because these packages build inside Nix's sandboxed
-  # build environment (sandboxing/safety enabled): their tests need network
-  # access and/or write outside $out, which the sandbox blocks, so they can
-  # never pass in a hermetic build. MinusPod only consumes the libraries at
-  # runtime; correctness is verified there instead.
+  # Backend runtime, resolved hermetically by nixpkgs: pip cannot reach the
+  # network inside the Nix build sandbox, so the repo's requirements.txt
+  # (pip-compiled for the container) is not used.
   minuspodPython = pkgs.python312.override {
     packageOverrides = self: super: {
       ctranslate2 = super.ctranslate2.override {
         ctranslate2-cpp = cudaCT2;
       };
+      # docs test breaks on python 3.12 at this pin
       inline-snapshot = super.inline-snapshot.overridePythonAttrs (old: {
         disabledTestPaths = (old.disabledTestPaths or [ ]) ++ [
           "tests/test_docs.py"
         ];
       });
+      # test chain is broken on python 3.12 at this pin; MinusPod only needs
+      # the library, so skip its tests
       anthropic = super.anthropic.overridePythonAttrs (old: {
         doCheck = false;
         nativeCheckInputs = [ ];

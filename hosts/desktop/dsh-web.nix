@@ -1,21 +1,6 @@
 # DeepSeek Harness web GUI as a systemd service: `dsh --profile web` on
-# 127.0.0.1:3080, with two front doors:
-#   - local:   Caddy serves https://dsh.local (caddy.nix / local-ca.nix own
-#     the name -> port mapping; local CA, regenerated per rebuild);
-#   - tailnet: `tailscale serve` (networking.nix) serves
-#     https://dsh.tail835824.ts.net with a Let's Encrypt certificate
-#     provisioned by the Tailscale control plane — tailnet devices need
-#     no hosts entry and no locally issued CA. Note: the service NAME
-#     (svc:dsh, applied by the tailscale-serve oneshot in networking.nix)
-#     determines the subdomain; the node's own MagicDNS name
-#     (nixos.tail835824.ts.net) is only used by the unnamed default serve.
-#
-# The unit runs the same bubblewrap "system" jail the interactive `dshs`
-# wrapper execs (home/llm/jails.nix), so the service has exactly the same
-# sandbox as a manual `dshs --profile web`: HOME pinned to /home/llm,
-# ~/.dsh and /etc/nixos read-write, the DeepSeek agenix secret read-only,
-# DEEPSEEK_API_KEY exported by the jail's dsh wrapper. It runs as the llm
-# agent user directly (no `sudo -u llm`: the unit already is that user).
+# 127.0.0.1:3080, fronted locally by Caddy (dsh.local) and on the tailnet by
+# `tailscale serve` (dsh.tail835824.ts.net). Runs as the llm user.
 { config, lib, pkgs, jail-nix, llm-agents, ... }:
 
 let
@@ -38,31 +23,28 @@ in {
   systemd.services.dsh-web = {
     description = "DeepSeek Harness web GUI (jailed dsh, as llm)";
 
-    # Auto-start at boot. The agenix oneshot (sysinit.target) decrypts
-    # /run/agenix/deepseek-api-key before any multi-user service starts;
-    # the explicit After= keeps that dependency visible.
+    # Auto-start at boot. After=agenix-install-secrets orders this after the
+    # agenix oneshot that decrypts /run/agenix/deepseek-api-key; After=dsh-open.socket
+    # orders it after the socket unit that creates /run/dsh-open (jail bind-mount).
     wantedBy = [ "multi-user.target" ];
-    after = [ "agenix-install-secrets.service" ];
+    after = [ "agenix-install-secrets.service" "dsh-open.socket" ];
 
     serviceConfig = {
       Type = "simple";
       User = users.llm.username;
 
-      # The jail's bwrap unshares the cgroup namespace and mounts cgroup2
-      # inside it; the kernel only allows that mount from a process that can
-      # write its own cgroup's cgroup.procs. systemd chowns and opens the
-      # service cgroup to the service user only when Delegate= is set, so
-      # without it the jail dies at startup ("Failed to mount cgroup2").
+      # Delegate=yes: the jail's bwrap mounts cgroup2 inside it, which the
+      # kernel allows only from a process that can write its own cgroup.procs;
+      # systemd grants that only when Delegate= is set (else the jail dies).
       Delegate = "yes";
 
-      # --trusted-host: the GUI's /api browser-trust fence accepts only
-      # loopback Hosts by default; the tailnet front door (tailscale serve,
-      # networking.nix) presents the serve name dsh.tail835824.ts.net
-      # (derived from the svc:dsh service name), so declare it as a
-      # trusted authority. The fence's privileged methods (settings /
-      # credentials / agent-preset authoring, host file actions) stay
-      # loopback-only regardless of trustedHosts — by design, until a real
-      # authentication layer exists.
+      # Runs the same bubblewrap "system" jail the interactive `dshs` wrapper
+      # execs (home/llm/jails.nix), so the service has the same sandbox as a
+      # manual `dshs --profile web`.
+      #
+      # --trusted-host: the GUI's browser-trust fence accepts only loopback
+      # Hosts by default; the tailnet door (tailscale serve) presents
+      # dsh.tail835824.ts.net, so declare it trusted. Privileged methods stay loopback-only.
       ExecStart =
         "${jails.jailsByTool."dsh-jail-system"}/bin/jailed-dsh-system --profile web --trusted-host dsh.tail835824.ts.net";
       Restart = "on-failure";
