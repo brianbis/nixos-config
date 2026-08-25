@@ -212,42 +212,12 @@
 
               # The nixpkgs-pinned llama.cpp (b10273) predates the muse-glimmer
               # architecture merge and refuses to load its GGUF; pin b10353.
-              (final: prev: {
-                llama-cpp = (prev.llama-cpp.override {
-                  cudaSupport = true;
-                  cudaPackages = prev.cudaPackages;
-                }).overrideAttrs (old: {
-                  version = "10353";
-
-                  src = prev.fetchFromGitHub {
-                    owner = "ggml-org";
-                    repo = "llama.cpp";
-                    tag = "b10353";
-                    hash = "sha256-/kjqrGjkWJtlotTcZE5r+gSoce+llGwXz4gmQEOe8M0=";
-                    leaveDotGit = true;
-
-                    postFetch = ''
-                      git -C "$out" rev-parse --short HEAD > "$out/COMMIT"
-                      find "$out" -name .git -print0 | xargs -0 rm -rf
-                    '';
-                  };
-
-                  # b10353 changed package-lock.json, so the nixpkgs-pinned
-                  # npmDepsHash no longer matches this source.
-                  npmDepsHash =
-                    "sha256-2Q7XhaLAArmviOLdQsNbYTfdyDE5pW9lR26cRHEVl9k=";
-
-                  # Exit the child process on idle-sleep so the OS reclaims all
-                  # VRAM. CUDA's allocator caches freed device memory in a
-                  # per-process pool, so destroy() alone leaves the DFlash
-                  # drafter's weights and KV cache resident in nvidia-smi. The
-                  # router detects the exit via stdout EOF and respawns the
-                  # child on the next request.
-                  postPatch = (old.postPatch or "") + ''
-                    patch -p1 -N < ${./patches/llama-cpp-sleep-exit.patch}
-                  '';
-                });
-              })
+              (import ./hosts/desktop/llamacpp/default.nix {
+                inherit lib pkgs config;
+                modelsDir = "/var/lib/llama/models";
+                museDir = "/var/lib/llama/models/muse-glimmer-30B";
+                draftDir = "/var/lib/llama/draft";
+              }).llama-cpp-overlay
             ];
 
             home-manager.useGlobalPkgs = true;

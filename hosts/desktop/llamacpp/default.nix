@@ -1,43 +1,31 @@
-{ config, pkgs, lib, ... }:
+# llama.cpp: overlay + NixOS module for the router server.
+#
+# Overlay overrides nixpkgs' llama-cpp with a pinned b10353 build that includes
+# the sleep-exit patch (exits the child process on idle-sleep so the OS reclaims
+# all VRAM; the router detects the exit via stdout EOF and respawns it).
+#
+# Module configures the systemd router service, model downloads, and presets.
+
+{ lib, pkgs, config, modelsDir, museDir, draftDir, dwellSeconds ? 30 }:
 
 let
-  # GGUF models directory for the llama.cpp router server. The router
-  # (--models-dir) treats every top-level .gguf as a routable model, so each
-  # multimodal model must live in its own subdirectory with its projector and
-  # drafter alongside (see the llama.cpp "multiple models" docs). Files are
-  # downloaded idempotently at switch time by the activation scripts below.
-  modelsDir = "/var/lib/llama/models";
-
-  # Muse-Glimmer-30B downloads into its own subdir beside its vision projector
-  # (mmproj), so the router scan stands up one "muse-glimmer-30B" model with
-  # multimodal. The DFlash drafter is NOT dropped in that subdir: scan_subdir
-  # classifies any non-mmproj .gguf as the main model in filesystem order, so a
-  # drafter beside the model can nondeterministically win and be loaded alone.
-  # It lives in its own dir and is attached by path via the preset below.
-  museDir = "${modelsDir}/muse-glimmer-30B";
+  # Model repositories and file lists.
   museRepo = "meta-models/Muse-Glimmer-30B-GGUF";
   museIncludes = [
     "muse-glimmer-30B-kquant-dynamic.gguf"
     "mmproj-kquant.gguf"
   ];
 
-  # DFlash drafter for Muse's speculative decoding (~3x on RTX 5090). Kept out
-  # of modelsDir so the router never discovers it, and wired via model-draft.
-  draftDir = "/var/lib/llama/draft";
   draftRepo = "meta-models/Muse-Glimmer-30B-GGUF";
   draftIncludes = [
     "dflash-kquant.gguf"
   ];
 
-  # Qwen3.8-27B is a single-file text model, so it lives flat in modelsDir.
   qwenRepo = "unsloth/Qwen3.8-27B-GGUF";
   qwenIncludes = [
     "Qwen3.8-27B-Q8_0.gguf"
   ];
 
-  # Qwen3.8-27B Heretic RVN (ARA abliterated / uncensored) is also a single-file
-  # text model, so it lives flat in modelsDir beside the base Qwen. The :Q6_K
-  # quant ships under the repo's RVN- filename prefix (~20.6 GiB).
   hereticRepo = "0bserverx/Qwen3.8-27B-Heretic-Abliterated-Uncensored-GGUF";
   hereticIncludes = [
     "RVN-Q6_K.gguf"
@@ -199,67 +187,135 @@ let
     chat-template-kwargs = {"reasoning_effort":"xhigh"}
   '';
 
-  dwellSeconds = 30;
-
 in
 {
-  environment.systemPackages = with pkgs; [ llama-cpp ];
+  # --- Overlay ---
+  _type = "overlay";
+  llama-cpp-overlay = final: prev: {
+    llama-cpp = (prev.llama-cpp.override {
+      cudaSupport = true;
+      cudaPackages = prev.cudaPackages;
+    }).overrideAttrs (old: {
+      version = "10353";
 
-  system.activationScripts.museModels.text = download "llamacpp-muse" museRepo museDir museIncludes;
+      src = prev.fetchFromGitHub {
+        owner = "ggml-org";
+        repo = "llama.cpp";
+        tag = "b10353";
+        hash = "sha256-/kjqrGjkWJtlotTcZE5r+gSoce+llGwXz4gmQEOe8M0=";
+        leaveDotGit = true;
 
-  system.activationScripts.qwenModels.text = download "llamacpp-qwen" qwenRepo modelsDir qwenIncludes;
+        postFetch = ''
+          git -C "$out" rev-parse --short HEAD > "$out/COMMIT"
+          find "$out" -name .git -print0 | xargs -0 rm -rf
+        '';
+      };
 
-  system.activationScripts.hereticModel.text = download "llamacpp-heretic" hereticRepo modelsDir hereticIncludes;
+      # b10353 changed package-lock.json, so the nixpkgs-pinned
+      # npmDepsHash no longer matches this source.
+      npmDepsHash =
+        "sha256-2Q7XhaLAArmviOLdQsNbYTfdyDE5pW9lR26cRHEVl9k=";
 
-  system.activationScripts.dflashModel.text = download "llamacpp-dflash" draftRepo draftDir draftIncludes;
+      # Exit the child process on idle-sleep so the OS reclaims all
+      # VRAM. CUDA's allocator caches freed device memory in a
+      # per-process pool, so destroy() alone leaves the DFlash
+      # drafter's weights and KV cache resident in nvidia-smi. The
+      # router detects the exit via stdout EOF and respawns the
+      # child on the next request.
+      postPatch = (old.postPatch or "") + ''
+        patch -p1 -N < ${./llama-cpp-sleep-exit.patch}
+      '';
+    });
+  };
 
-  systemd.tmpfiles.rules = [
-    "d ${modelsDir} 0755 root root -"
-    "d ${museDir} 0755 root root -"
-    "d ${draftDir} 0755 root root -"
+  # --- NixOS Module ---
+  imports = [
+    (lib.mkRenamedOptionModule [ "llamacpp" "enable" ] [ "services" "llamacpp" "enable" ])
   ];
 
-  # llama.cpp router server on :8000. --models-dir makes every top-level .gguf
-  # (and each subdir) a routable model; --models-preset attaches the Muse
-  # drafter and renames the Qwen id to match the model catalog. The headroom
-  # proxy upstreams requests here.
-  systemd.services.llamacpp-muse = {
-    description = "llama.cpp router (Muse-Glimmer-30B, Qwen3.8-27B, Heretic-RVN)";
-    # Auto-starts at boot, stays online. Models sleep after idle to free VRAM.
-    wantedBy = [ "multi-user.target" ];
-    requires = [ "network-online.target" ];
-    after = [ "network-online.target" ];
+  options.services.llamacpp = {
+    enable = lib.mkEnableConfig "llamacpp";
+    modelsDir = lib.mkOption {
+      type = lib.types.path;
+      default = modelsDir;
+      description = "Directory containing GGUF models for the router.";
+    };
+    museDir = lib.mkOption {
+      type = lib.types.path;
+      default = museDir;
+      description = "Subdirectory for Muse-Glimmer-30B multimodal model files.";
+    };
+    draftDir = lib.mkOption {
+      type = lib.types.path;
+      default = draftDir;
+      description = "Directory for speculative decoding drafter models.";
+    };
+    dwellSeconds = lib.mkOption {
+      type = lib.types.int;
+      default = dwellSeconds;
+      description = "Idle seconds before the router enters sleep mode.";
+    };
+  };
 
-    serviceConfig = {
-      Type = "simple";
-      ExecStart = lib.concatStringsSep " " [
-        "${pkgs.llama-cpp}/bin/llama-server"
-        "--models-dir"
-        "${modelsDir}"
-        "--models-preset"
-        "${modelsPreset}"
-        "--models-max"
-        "1"
-        "--host"
-        "127.0.0.1"
-        "--port"
-        "8000"
-        # The llama.cpp router overlays every ExecStart arg onto EVERY model
-        # preset (preset.merge, highest precedence) and they cannot be
-        # overridden per model. So only genuinely router-level args stay here:
-        # host/port, the slot count (--parallel), memory pinning and the idle
-        # sleep timer. Model launch options (jinja, n-predict, ctx-size,
-        # n-gpu-layers, kv-offload, flash-attn, and all sampling params like
-        # temp/top-p/top-k) live in the preset file so each model can override
-        # its own. E.g. Qwen keeps KV in RAM while Glimmer keeps KV on GPU.
-        "--parallel"
-        "4"
-        "--mlock"
-        "--sleep-idle-seconds"
-        "${toString dwellSeconds}"
-      ];
-      Restart = "on-failure";
-      RestartSec = "3";
+  config = lib.mkIf config.services.llamacpp.enable {
+    environment.systemPackages = [ pkgs.llama-cpp ];
+
+    system.activationScripts.museModels.text = download "llamacpp-muse" museRepo config.services.llamacpp.museDir museIncludes;
+
+    system.activationScripts.qwenModels.text = download "llamacpp-qwen" qwenRepo config.services.llamacpp.modelsDir qwenIncludes;
+
+    system.activationScripts.hereticModel.text = download "llamacpp-heretic" hereticRepo config.services.llamacpp.modelsDir hereticIncludes;
+
+    system.activationScripts.dflashModel.text = download "llamacpp-dflash" draftRepo config.services.llamacpp.draftDir draftIncludes;
+
+    systemd.tmpfiles.rules = [
+      "d ${config.services.llamacpp.modelsDir} 0755 root root -"
+      "d ${config.services.llamacpp.museDir} 0755 root root -"
+      "d ${config.services.llamacpp.draftDir} 0755 root root -"
+    ];
+
+    # llama.cpp router server on :8000. --models-dir makes every top-level .gguf
+    # (and each subdir) a routable model; --models-preset attaches the Muse
+    # drafter and renames the Qwen id to match the model catalog. The headroom
+    # proxy upstreams requests here.
+    systemd.services.llamacpp-muse = {
+      description = "llama.cpp router (Muse-Glimmer-30B, Qwen3.8-27B, Heretic-RVN)";
+      # Auto-starts at boot, stays online. Models sleep after idle to free VRAM.
+      wantedBy = [ "multi-user.target" ];
+      requires = [ "network-online.target" ];
+      after = [ "network-online.target" ];
+
+      serviceConfig = {
+        Type = "simple";
+        ExecStart = lib.concatStringsSep " " [
+          "${pkgs.llama-cpp}/bin/llama-server"
+          "--models-dir"
+          "${config.services.llamacpp.modelsDir}"
+          "--models-preset"
+          "${modelsPreset}"
+          "--models-max"
+          "1"
+          "--host"
+          "127.0.0.1"
+          "--port"
+          "8000"
+          # The llama.cpp router overlays every ExecStart arg onto EVERY model
+          # preset (preset.merge, highest precedence) and they cannot be
+          # overridden per model. So only genuinely router-level args stay here:
+          # host/port, the slot count (--parallel), memory pinning and the idle
+          # sleep timer. Model launch options (jinja, n-predict, ctx-size,
+          # n-gpu-layers, kv-offload, flash-attn, and all sampling params like
+          # temp/top-p/top-k) live in the preset file so each model can override
+          # its own. E.g. Qwen keeps KV in RAM while Glimmer keeps KV on GPU.
+          "--parallel"
+          "4"
+          "--mlock"
+          "--sleep-idle-seconds"
+          "${toString config.services.llamacpp.dwellSeconds}"
+        ];
+        Restart = "on-failure";
+        RestartSec = "3";
+      };
     };
   };
 }

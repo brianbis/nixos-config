@@ -14,7 +14,7 @@
     ./security.nix
     ./steam.nix
     ./vllm.nix
-    ./llamacpp.nix
+    ./llamacpp
     ./ninfer
     ./host.nix
     ./hushmic
