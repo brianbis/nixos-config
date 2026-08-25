@@ -209,15 +209,6 @@
                     python = final.python3;
                   };
               })
-
-              # The nixpkgs-pinned llama.cpp (b10273) predates the muse-glimmer
-              # architecture merge and refuses to load its GGUF; pin b10353.
-              (import ./hosts/desktop/llamacpp/default.nix {
-                inherit lib pkgs config;
-                modelsDir = "/var/lib/llama/models";
-                museDir = "/var/lib/llama/models/muse-glimmer-30B";
-                draftDir = "/var/lib/llama/draft";
-              }).llama-cpp-overlay
             ];
 
             home-manager.useGlobalPkgs = true;
