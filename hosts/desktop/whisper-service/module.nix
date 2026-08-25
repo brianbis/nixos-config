@@ -123,9 +123,9 @@ in
       serviceConfig = {
         User = "whisper";
         Group = "whisper";
-        # The clean exit after an idle release is exit code 0 (success), so
-        # "on-failure" would not restart a crash either way; "on-abnormal"
-        # restarts only on signal/coredump and never after an auto-stop.
+        # Clean exit after an idle release is code 0. on-failure would also
+        # restart on any non-zero exit (e.g. a model-load failure); on-abnormal
+        # restarts only on signal/coredump/timeout and never after an auto-stop.
         Restart = "on-abnormal";
         RestartSec = 5;
         # systemd creates /var/cache/whisper-service owned by the service

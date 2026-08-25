@@ -293,7 +293,7 @@ let
          dirPaths = crushDirPaths;
          # Debug tooling for the system jail: PipeWire/WirePlumber CLIs for audio
          # stream state, plus read-only /sys (cpufreq) and /run/user (session
-         # sockets). b's /run/user session dir is 700 b:b, so llm can't inspect it.
+         # sockets). b's /run/user session dir is mode 700, so llm can't inspect it.
          systemExtraPkgs = with pkgs; [ procps pipewire wireplumber ];
          systemExtraMounts = with jail.combinators; [
            (readonly "/sys")

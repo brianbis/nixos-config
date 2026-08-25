@@ -27,15 +27,15 @@ in
     # User home directory (same value the real jails use, passed in by the caller)
     userHome = userHome;
 
-    # Model directory from hosts/desktop/llamacpp.nix (single source of truth)
+    # Must match modelsDir in hosts/desktop/llamacpp.nix.
     modelsDir = "/var/lib/llama/models";
 
-    # Konsole scrollback is set in dotfiles/konsole/OLED.profile
+    # Must match ScrollbackLines in dotfiles/konsole/OLED.profile.
     konsoleScrollback = "500000";
 
     # Read-only mounts for user jails (system jails get extra mounts).
-    # Deliberately excludes secretMounts: the agenix secret path is rendered
-    # separately via {{secretMounts}} so it can be kept out of this list.
+    # Deliberately excludes secretMounts so the agenix secret path stays out
+    # of the generated doc.
     readonlyMountsUser = lib.concatStringsSep ", " (map (p: "`${p}`") (baseMounts false));
     readonlyMountsSystem = lib.concatStringsSep ", " (map (p: "`${p}`") (baseMounts true));
 

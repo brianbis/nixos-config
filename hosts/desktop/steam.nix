@@ -1,12 +1,8 @@
 { pkgs, ... }:
 
-# Steam gaming CPU boost. The audio cores (cpu6/7) are owned by
-# hushmic-audio-cores (see hushmic/scheduler.nix) and stay at performance;
-# this service flips ALL cores to performance while a game is running and back
-# to powersave/balance_power when it exits. It never touches cpu6/7's EPP
-# state in a conflicting way (writing performance there is a no-op), so the
-# two services cannot race on the audio cores. GameMode still applies
-# per-process tuning for games.
+# Steam gaming CPU boost: while a game is running, flip all cores except the
+# audio cores (cpu6/7, owned by hushmic-audio-cores) to performance, and back
+# to powersave/balance_power on exit. GameMode still applies per-process tuning.
 let
   gamingMode = pkgs.writeShellScript "steam-gaming-mode" ''
     ${pkgs.bash}/bin/bash -euo pipefail

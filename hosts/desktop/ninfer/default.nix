@@ -6,6 +6,7 @@ let
   requestLog = "${logDir}/requests.jsonl";
   idleSeconds = 30;
   childPort = 8081;
+  childPortA3B = 8083;
 
   ninfer = pkgs.stdenv.mkDerivation {
     pname = "ninfer";
@@ -97,6 +98,34 @@ let
   ninferModelRepo = "neroued/Qwen3.8-27B-nvfp4-NInfer";
   ninferModelFile = "qwen3_8_27b_nvfp4.ninfer";
 
+  # Qwen3.6-35B-A3B (sparse MoE, 3B active params). Requires ninfer rev
+  # bd265a3 or later (the pinned feaf4dd satisfies this).
+  ninferModelRepoA3B = "neroued/Qwen3.6-35B-A3B-NInfer";
+  ninferModelFileA3B = "qwen3_6_35b_a3b.ninfer";
+
+  # Second serving child: Qwen3.6-35B-A3B on its own loopback port.
+  # No --reasoning-effort: the A3B chat template does not support a
+  # reasoning-effort control, and the engine rejects the flag at startup
+  # ("default reasoning effort is not supported by the loaded chat template").
+  childCommandA3B = [
+    "${ninfer}/bin/ninfer-serve"
+    "${modelsDir}/${ninferModelFileA3B}"
+    "--host" "127.0.0.1"
+    "--port" (toString childPortA3B)
+    "--kv-dtype" "int8"
+    "--max-context" "262144"
+    "--default-max-tokens" "200000"
+    "--pending-timeout-ms" "900000"
+    "--prefill-chunk" "1024"
+    "--max-concurrency" "1"
+    "--max-pending-requests" "128"
+    "--temperature" "0.7"
+    "--spec" "mtp"
+    "--draft-tokens" "3"
+    "--lm-head-draft"
+    "--request-log-jsonl" "${logDir}/requests-a3b.jsonl"
+  ];
+
   downloadNinferModel = name: repo: dir: file: ''
     mkdir -p ${dir}
     if [ ! -f "${dir}/${file}" ]; then
@@ -125,6 +154,8 @@ in {
   ];
 
   system.activationScripts.ninferModel.text = downloadNinferModel "ninfer-qwen38-nvfp4" ninferModelRepo modelsDir ninferModelFile;
+
+  system.activationScripts.ninferModelA3B.text = downloadNinferModel "ninfer-qwen36-a3b" ninferModelRepoA3B modelsDir ninferModelFileA3B;
 
   # No After=network.target: sockets.target orders before basic.target, but
   # network.target on this host does not (via wpa_supplicant); ordering the
@@ -163,6 +194,47 @@ in {
 
       # The wrapper exits 0 in every normal path (idle unload, SIGTERM,
       # child failure); only a wrapper crash (signal/coredump) restarts.
+      Restart = "on-abnormal";
+      RestartSec = "3";
+
+      Environment = [
+        "CUDA_VISIBLE_DEVICES=0"
+        "LD_LIBRARY_PATH=/run/opengl-driver/lib"
+      ];
+    };
+  };
+
+  # Second socket-activated service: Qwen3.6-35B-A3B on port 8082 (front) /
+  # 8083 (child). Same idle-unload pattern as the Qwen3.8 service.
+  systemd.sockets.ninfer-serve-a3b = {
+    description = "NInfer engine socket for Qwen3.6-35B-A3B (socket activation, on-demand model residency)";
+    wantedBy = [ "sockets.target" ];
+
+    socketConfig = {
+      ListenStream = "127.0.0.1:8082";
+    };
+  };
+
+  systemd.services.ninfer-serve-a3b = {
+    description = "NInfer engine for Qwen3.6-35B-A3B (socket-activated, unloads after ${toString idleSeconds}s idle)";
+    after = [ "ninfer-serve-a3b.socket" ];
+
+    serviceConfig = {
+      Type = "simple";
+
+      ExecStart = lib.concatStringsSep " " ([
+        "${pkgs.python3}/bin/python3"
+        "${ninferWrapper}"
+        "--child-port" (toString childPortA3B)
+        "--idle-seconds" (toString idleSeconds)
+        "--ready-timeout" "1800"
+        "--shutdown-timeout" "30"
+        "--kill-timeout" "10"
+        "--request-log" "${logDir}/requests-a3b.jsonl"
+        "--"
+      ]
+      ++ childCommandA3B);
+
       Restart = "on-abnormal";
       RestartSec = "3";
 

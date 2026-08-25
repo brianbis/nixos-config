@@ -14,6 +14,7 @@ let
   services = {
     "llm.local"      = 8000; # llama.cpp router / vLLM (OpenAI-compatible API)
     "ninfer.local"   = 8080; # NInfer engine (Qwen3.8-27B NVFP4, socket-activated)
+    "ninfer-a3b.local" = 8082; # NInfer engine (Qwen3.6-35B-A3B, socket-activated)
     "headroom.local" = 8787; # Headroom compression proxy -> local llama.cpp
     "deepseek.local" = 8788; # Headroom compression proxy -> DeepSeek cloud
     "claude.local"   = 8789; # Headroom compression proxy -> Claude Code

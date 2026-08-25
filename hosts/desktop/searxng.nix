@@ -71,8 +71,7 @@ in
       RestartSec = "3";
 
       # Hardening: the service only needs to read its settings + the store and
-      # bind a loopback socket. No filesystem writes, no privilege, no new
-      # processes beyond the worker it forks.
+      # bind a loopback socket. No filesystem writes, no privilege.
       NoNewPrivileges = true;
       PrivateTmp = true;
       ProtectSystem = "strict";

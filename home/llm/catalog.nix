@@ -181,7 +181,7 @@ let
       name = "Qwen3.8-27B Heretic RVN Abliterated Uncensored Q6_K";
       url = headroomProxyUrl;
       # RVN-Q6_K.gguf is ~20.6 GiB; like the base Qwen it keeps KV in system
-      # RAM (no-kv-offload) so the full 262K context fits on the 32 GB card.
+      # RAM (no-kv-offload) so the 131072 context fits on the 32 GB card.
       context = 131072;
       maxTok = 80000;
       reason = true;
@@ -204,6 +204,19 @@ let
         medium = "medium";
         xhigh = "xhigh";
       };
+    };
+    qwen36_a3b_ninfer = {
+      providerName = "ninfer_a3b";
+      id = "qwen3.6-35b-a3b";
+      name = "Qwen3.6-35B-A3B NInfer";
+      url = "http://127.0.0.1:8082";
+      context = 262144;
+      maxTok = 200000;
+      reason = false;
+      attachments = true;
+      # No reasoningEfforts: the A3B chat template does not support a
+      # reasoning-effort control (the engine rejects it), so the model is
+      # materialized as a plain non-reasoning model.
     };
     deepseekPro = {
       providerName = "deepseek";
@@ -240,6 +253,9 @@ let
     ninfer.name = "NInfer (local)";
     ninfer.type = "openai-compat";
     ninfer.api_key = "sk-local";
+    ninfer_a3b.name = "NInfer A3B (local)";
+    ninfer_a3b.type = "openai-compat";
+    ninfer_a3b.api_key = "sk-local";
     deepseek.name = "DeepSeek";
     deepseek.type = "openai-compat";
     deepseek.api_key = "sk-local";
@@ -419,6 +435,7 @@ let
       vllm_awq = opencodeProvider "vllm_awq";
       vllm_nvfp4 = opencodeProvider "vllm_nvfp4";
       ninfer = opencodeProvider "ninfer";
+      ninfer_a3b = opencodeProvider "ninfer_a3b";
       deepseek = opencodeProvider "deepseek";
     };
     model = "${models.gemma4awq.providerName}/${models.gemma4awq.id}";

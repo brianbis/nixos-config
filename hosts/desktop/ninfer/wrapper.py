@@ -296,8 +296,9 @@ async def ensure_child(state: State) -> None:
             return
 
         if state.child is not None and state.child.returncode is None:
-            # Startup in progress (another handler holds the lock and is
-            # waiting for readiness): block until it settles, then re-check.
+            # Defensive: a live child that is not ready should not exist while
+            # we hold this lock (start_child reaps failed startups); wait for
+            # it to settle rather than spawning a second child.
             deadline = time.monotonic() + state.args.ready_timeout
             while (
                 state.child is not None

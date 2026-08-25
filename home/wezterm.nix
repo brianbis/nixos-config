@@ -46,7 +46,8 @@ in
 {
   home.packages = [
     pkgs.wezterm
-    # Shelled out to by the plugin for encrypting/decrypting state files.
+    # For the resurrect plugin's optional age-based state encryption
+    # (disabled; state is unencrypted — see wezterm.lua).
     pkgs.age
   ];
 

@@ -65,9 +65,9 @@ in
         > $HOME/.claude/settings.json
     '';
 
-  # Plain file, not a store symlink: while the path is a symlink, home-manager's
-  # rename-away during activation opens a window where dsh's re-read hits ENOENT
-  # and clobbers the llm-pi-ai routes; a plain file never disappears.
+  # dsh watches this file at runtime and publishes empty settings while it is
+  # missing, so the cmp guard keeps an unchanged activation a filesystem no-op
+  # instead of a delete/add swap that would churn dsh's settings state.
   home.activation.writeDshSettings =
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD mkdir -p $HOME/.dsh
@@ -83,9 +83,9 @@ in
       fi
     '';
 
-  # dsh's web-profile patch layer. Plain-file + cmp-guard write (as in writeDshSettings):
-  # dsh hot-reloads it via its HMR watcher and the guard keeps the watcher quiet;
-  # dsh creates the file only when missing, so this activation owns it outright.
+  # dsh's web-profile patch layer: watched at runtime, and dsh creates the file
+  # only when missing (this activation owns it outright). Plain-file + cmp-guard
+  # write (as in writeDshSettings) keeps unchanged activations a filesystem no-op.
   home.activation.writeDshWebProfilePatch =
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD mkdir -p $HOME/.dsh/profiles/web
@@ -103,8 +103,8 @@ in
     '';
 
   # The out-of-tree SearXNG search provider. Plain-file + cmp-guard write (as in
-  # writeDshWebProfilePatch): dsh hot-reloads the profile dir via its HMR watcher
-  # and the guard keeps it quiet; the .mjs extension forces ESM regardless of the profile package.json's `type`.
+  # writeDshWebProfilePatch); the .mjs extension forces ESM regardless of the
+  # profile package.json's `type`. Not watched at runtime — a dsh restart loads it.
   home.activation.writeDshSearxngSearchProvider =
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD mkdir -p $HOME/.dsh/profiles/web

@@ -1,6 +1,6 @@
 # dsh web profile patch layer, installed by home-manager as a plain file
-# (not a symlink): dsh hot-reloads it and can write it back itself via its
-# HMR watcher / Loader tree write-back.
+# (not a symlink): dsh watches it at runtime and creates it only when missing,
+# so the installed file is owned by this activation.
 #
 # Disable the model-settings plugin: its welcome-notice acknowledgement is
 # process-local over a non-loopback trusted host (so it reappears on every

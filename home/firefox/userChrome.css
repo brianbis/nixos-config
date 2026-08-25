@@ -19,7 +19,6 @@
 	margin-right:140px;
 }
 
-/* 15px for dragging whole window by mouse*/
 #titlebar {
 	appearance: none !important;
 	height: 0px;
@@ -45,7 +44,7 @@
   display: none !important;
 }
 
-/* default: real 40px sidebar that pushes page */
+/* Default treestyletab sidebar takes real layout space and pushes the page; collapse it to a thin tab */
 #sidebar-box[sidebarcommand="treestyletab_piro_sakura_ne_jp-sidebar-action"] {
   --thin-tab-width: 20px;
   --wide-tab-width: 260px;
