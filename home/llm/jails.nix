@@ -32,6 +32,29 @@ let
       exec ${pkg}/bin/${name} "$@"
     '';
 
+  # Like withDeepSeekKey but exports a NON-secret placeholder instead of the real
+  # key. The real DeepSeek key is injected host-side by the headroom-proxy-deepseek
+  # service (port 8788, which runs OUTSIDE the jail) via --openai-extra-headers, so
+  # dsh only needs *a* credential: pi-ai's openai-completions insists on one even
+  # for local endpoints (see catalog.nix dshSettings). Exporting the placeholder
+  # (not the real key) keeps the key out of dsh's environ (/proc/2/environ) and out
+  # of any bwrap --setenv argv (/proc/1/cmdline), both of which the same-uid agent
+  # can read. The placeholder is a non-secret constant, so baking it into the store
+  # is harmless.
+  withDummyKey = pkg: name:
+    pkgs.writeShellScriptBin name ''
+      export DEEPSEEK_API_KEY="managed-by-headroom-proxy-8788"
+      export OPENAI_API_KEY="$DEEPSEEK_API_KEY"
+      exec ${pkg}/bin/${name} "$@"
+    '';
+
+  # Empty file used to shadow the agenix secret in the dsh system jail (see the
+  # dsh entry in jailsByTool): bound over /run/agenix/deepseek-api-key so the
+  # same-uid agent cannot read the real key from the path baseJailOptions ro-binds.
+  # Pinned into the jail closure via add-pkg-deps (systemExtraPkgs) so a
+  # nix-collect-garbage cannot orphan the store path bwrap binds.
+  emptySecretFile = pkgs.writeText "empty-secret" "";
+
   # Shadow the system-activating nix CLIs with stubs that refuse to run, rather
   # than parsing command strings: deterministic and robust against quoting /
   # `sudo` / `env` prefixes. The agent can edit /etc/nixos but never activate.
@@ -311,14 +334,22 @@ let
     // (makeTool { name = "claude"; pkg = agent "claude-code"; dirPaths = claudeDirPaths; })
     // (makeTool {
       name = "dsh";
-      pkg = withDeepSeekKey dshPatched "dsh";
+      # Dummy key: the real DeepSeek key is injected host-side by the
+      # headroom-proxy-deepseek service (8788, outside the jail); see withDummyKey.
+      pkg = withDummyKey dshPatched "dsh";
       dirPaths = dshDirPaths;
       # The jail's /run is a fresh tmpfs, so the dsh-open socket must be
       # bind-mounted in. Mount the DIRECTORY (not the socket) so a switch
       # that recreates it leaves no stale inode (ENXIO); rw for socket connect.
-      systemExtraPkgs = [ dshOpenXdgOpen ];
+      systemExtraPkgs = [ dshOpenXdgOpen emptySecretFile ];
       systemExtraMounts = with jail.combinators; [
         (readwrite "/run/dsh-open")
+        # Shadow the agenix secret that baseJailOptions ro-binds into every jail:
+        # bind the empty store file over it so the same-uid agent cannot read the
+        # real key from /run/agenix/deepseek-api-key. systemExtraMounts is appended
+        # after baseJailOptions in mkToolJail, so this later --ro-bind wins.
+        (unsafe-add-raw-args
+          "--ro-bind ${emptySecretFile} /run/agenix/deepseek-api-key")
       ];
     });
 
