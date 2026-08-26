@@ -13,14 +13,13 @@
     ./plasma.nix
     ./security.nix
     ./steam.nix
-    ./vllm.nix
-    ./llamacpp
-    ./ninfer
+    ./llm
     ./host.nix
     ./hushmic
     ./caddy.nix
     ./dsh-web.nix
     ./dsh-open.nix
     ./searxng.nix
+    #./zomboid.nix
   ];
 }

@@ -59,30 +59,18 @@
     let
       system = "x86_64-linux";
 
-      # Base package set for the NixOS configuration. The headroom overlay is
-      # applied here (not only in nixosConfigurations) so pkgs.headroom exists
-      # for every consumer of this flake's pkgs, including the agents-md build.
+      # headroom-ai: context compression layer for the jailed LLM agents.
+      # Defined once in home/llm/tools/overlay.nix; applied both to the base
+      # `pkgs` below (so pkgs.headroom exists for every consumer of this
+      # flake's pkgs, including the agents-md build) and to the NixOS
+      # system's nixpkgs.overlays.
+      headroomOverlay = import ./home/llm/tools/overlay.nix;
+
+      # Base package set for the NixOS configuration.
       pkgs = import nixpkgs {
         inherit system;
 
-        overlays = [
-          # headroom-ai: context compression layer for the jailed LLM agents.
-          (final: prev: {
-            python3 = prev.python3.override {
-              packageOverrides = pyfinal: pyprev: {
-                ast-grep-cli =
-                  pyfinal.callPackage ./home/llm/ast-grep-cli.nix {
-                    ast-grep = prev.ast-grep;
-                  };
-              };
-            };
-
-            headroom =
-              final.python3.pkgs.callPackage ./home/llm/headroom.nix {
-                python = final.python3;
-              };
-          })
-        ];
+        overlays = [ headroomOverlay ];
       };
 
       # package.nix uses deprecated/removed xorg.libX11-style names.
@@ -191,24 +179,11 @@
                 hushmic = hushmic;
               })
 
-              # headroom-ai: context compression layer for the jailed LLM agents.
-              # (Also applied to the base `pkgs` in the let-block so the
-              # standalone agents-md doc build can evaluate jails.nix.)
-              (final: prev: {
-                python3 = prev.python3.override {
-                  packageOverrides = pyfinal: pyprev: {
-                    ast-grep-cli =
-                      pyfinal.callPackage ./home/llm/ast-grep-cli.nix {
-                        ast-grep = prev.ast-grep;
-                      };
-                  };
-                };
-
-                headroom =
-                  final.python3.pkgs.callPackage ./home/llm/headroom.nix {
-                    python = final.python3;
-                  };
-              })
+              # headroom-ai: context compression layer for the jailed LLM
+              # agents. Same single definition as the base `pkgs` in the
+              # let-block (home/llm/tools/overlay.nix), so the standalone
+              # agents-md doc build can evaluate jails.nix.
+              headroomOverlay
             ];
 
             home-manager.useGlobalPkgs = true;

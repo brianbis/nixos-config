@@ -83,7 +83,7 @@ rollback:
 #
 # Only ever run ONE at a time: they fight over VRAM.
 
-vllm-containers := "docker-vllm-gemma4-nvfp4-turbo docker-vllm-gemma4-awq"
+vllm-containers := "docker-vllm-gemma4-nvfp4-turbo docker-vllm-gemma4-awq docker-vllm-qwen38-dflash2"
 
 # Start commands
 
@@ -92,6 +92,12 @@ vllm-gemma4-nvfp4-turbo:
 
 vllm-gemma4-awq:
     sudo systemctl start docker-vllm-gemma4-awq.service
+
+# Re-pull the pinned DFlash2 runtime image (e.g. after re-pinning the digest
+# in hosts/desktop/llm/vllm/qwen38-dflash2.nix). Normally a no-op: `just switch`
+# pulls it (activation script) and docker skips present layers.
+vllm-pull-image:
+    sudo docker pull ghcr.io/seanyourhighness/vllm-sm12x-nvfp4-dflash2@sha256:48436de2f21d9eb77c9a4a7697e16227de12b0ea46638d95f09da0b27f436974
 
 # Infer running container and stop it
 

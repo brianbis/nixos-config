@@ -27,7 +27,7 @@ in
     # User home directory (same value the real jails use, passed in by the caller)
     userHome = userHome;
 
-    # Must match modelsDir in hosts/desktop/llamacpp.nix.
+    # Must match modelsDir in hosts/desktop/llm/llamacpp/default.nix.
     modelsDir = "/var/lib/llama/models";
 
     # Must match ScrollbackLines in dotfiles/konsole/OLED.profile.

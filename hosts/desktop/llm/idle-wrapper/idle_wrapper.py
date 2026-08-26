@@ -1,14 +1,25 @@
-#!/usr/bin/env python3
 """
-Socket-activated idle wrapper for ninfer-serve.
+Shared machinery for the socket-activated idle wrappers of the on-demand LLM
+model servers (ninfer, vLLM).
 
-Replaces the resident HTTP proxy (proxy.py). systemd owns the front-port
-listening socket (socket activation); this process is started on the first
-connection and exits (code 0) as soon as there is nothing left to do, so
-between requests no process is resident at all — the model's VRAM and the
-process's host memory are both released with the child.
+systemd owns the front-port listening socket (socket activation); the wrapper
+process is started on the first connection and exits (code 0) as soon as there
+is nothing left to do, so between requests no process is resident at all and
+the model's VRAM (and the process's host memory) is released.
 
-Division of labour compared to the old proxy:
+This module is backend-agnostic. A backend (see ninfer_wrapper.py /
+vllm_wrapper.py) supplies:
+
+  - the lifecycle: ensure() / is_ready() / stop() of the model server
+    (a spawned child process for ninfer, a docker container for vLLM)
+  - the idle monitor: what counts as "nothing left to do"
+  - the backend-specific CLI arguments
+
+Everything else — the transparent TCP relay, the forced Connection: close,
+the local /health, the socket-activation plumbing, the clean exit-0 — lives
+here, once.
+
+Division of labour compared to the old resident proxy:
   - The HTTP relay is a transparent TCP relay; the request log (not
     connection state) is authoritative for in-flight requests.
   - The proxy's "one request per connection" contract is preserved by
@@ -17,8 +28,8 @@ Division of labour compared to the old proxy:
     connections pooled: the child closes its side after each response, the
     relay completes, and the idle window can expire.
   - GET /health is answered locally and never starts the model.
-  - Child lifecycle: started on the first real request, terminated after
-    the idle window, then the wrapper exits (code 0). systemd's socket unit
+  - Lifecycle: started on the first real request, terminated after the
+    idle window, then the wrapper exits (code 0). systemd's socket unit
     keeps the port bound and re-activates the service on the next
     connection.
 
@@ -42,7 +53,7 @@ import socket
 import sys
 import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 HEALTH_BODY = b'{"status":"ok"}'
 
@@ -50,24 +61,21 @@ MAX_HEADER_BYTES = 64 * 1024
 READ_CHUNK = 64 * 1024
 
 # How long to wait for a client to send its request head. A client that
-# connects and sends nothing pins nothing (no child is started for it), but
+# connects and sends nothing pins nothing (no model is started for it), but
 # it must not pin the wrapper forever either.
 HEAD_TIMEOUT = 60.0
 
-DEFAULT_IDLE_SECONDS = 60
-DEFAULT_READY_TIMEOUT = 30 * 60
 DEFAULT_SHUTDOWN_TIMEOUT = 60
-DEFAULT_KILL_TIMEOUT = 10
 DEFAULT_DRAIN_TIMEOUT = 10
 
-log = logging.getLogger("ninfer-wrapper")
+log = logging.getLogger("idle-wrapper")
 
 
-def configure_logging() -> None:
+def configure_logging(prefix: str) -> None:
     handler = logging.StreamHandler()
     handler.setFormatter(
         logging.Formatter(
-            "[ninfer-wrapper] %(asctime)s %(levelname)s %(message)s",
+            f"[{prefix}] %(asctime)s %(levelname)s %(message)s",
             "%Y-%m-%d %H:%M:%S",
         )
     )
@@ -83,13 +91,19 @@ def configure_logging() -> None:
 @dataclass
 class State:
     args: argparse.Namespace
+    backend: "Backend"
 
+    # child backend (ninfer): a spawned local process.
     child: Optional[asyncio.subprocess.Process] = None
     child_ready: bool = False
 
-    # Authoritative request state from the request log.
+    # Authoritative request state from the request log (child backend).
     instance_id: Optional[str] = None
     in_flight: set[tuple[str, str]] = field(default_factory=set)
+
+    # docker backend (vllm): an oci-containers container.
+    container_up: bool = False
+    container_ready: bool = False
 
     # Only client -> wrapper activity updates this (never /health).
     last_activity: float = field(default_factory=time.monotonic)
@@ -102,20 +116,48 @@ class State:
     # Handlers in progress (waiting for startup or relaying).
     active_handlers: int = 0
 
-    # One lock governs every child lifecycle transition.
+    # One lock governs every lifecycle transition.
     lifecycle_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     stopping: bool = False
 
 
+@dataclass
+class Backend:
+    """What a lifecycle backend (a thin wrapper) must provide."""
+
+    # Noun used in log / error messages ("child" / "container").
+    noun: str
+    # Log-line prefix, e.g. "[ninfer-wrapper]".
+    log_prefix: str
+    default_idle_seconds: float
+    default_ready_timeout: float
+    default_kill_timeout: float
+    default_child_port: int
+    # Ensure a ready model server exists (called under the lifecycle lock).
+    ensure: Callable[[State], Awaitable[None]]
+    # Whether the model server is up and ready to serve.
+    is_ready: Callable[[State], bool]
+    # Stop the model server (called under the lifecycle lock).
+    stop: Callable[[State], Awaitable[None]]
+    # The idle monitor: what counts as "nothing left to do".
+    idle_monitor: Callable[[State, asyncio.Event], Awaitable[None]]
+    # Extra background tasks (e.g. the request-log tailer).
+    extra_tasks: Callable[[State], list[asyncio.Task]]
+    # Backend-specific CLI arguments.
+    add_args: Callable[[argparse.ArgumentParser], None]
+    # Backend-specific argument validation (may derive new args fields).
+    validate: Callable[[argparse.Namespace, argparse.ArgumentParser], None]
+
+
 # ---------------------------------------------------------------------------
-# Child lifecycle
+# Health probe
 # ---------------------------------------------------------------------------
 
 
 async def probe_health(port: int, timeout: float = 2.0) -> bool:
     """
-    Probe the child directly.
+    Probe the model server's /health endpoint directly.
 
     Uses a short-lived blocking socket in an executor rather than blocking
     the asyncio event loop.
@@ -141,177 +183,6 @@ async def probe_health(port: int, timeout: float = 2.0) -> bool:
             return False
 
     return await asyncio.to_thread(_probe)
-
-
-async def terminate_process(
-    process: asyncio.subprocess.Process,
-    *,
-    terminate_timeout: float,
-    kill_timeout: float,
-) -> None:
-    """
-    Terminate a child without blocking the event loop.
-    """
-
-    if process.returncode is not None:
-        return
-
-    log.info("sending SIGTERM to child pid=%d", process.pid)
-
-    try:
-        process.terminate()
-    except ProcessLookupError:
-        return
-
-    try:
-        await asyncio.wait_for(
-            process.wait(),
-            timeout=terminate_timeout,
-        )
-        return
-
-    except asyncio.TimeoutError:
-        log.warning(
-            "child pid=%d did not exit after %.1fs; killing",
-            process.pid,
-            terminate_timeout,
-        )
-
-    try:
-        process.kill()
-    except ProcessLookupError:
-        return
-
-    try:
-        await asyncio.wait_for(
-            process.wait(),
-            timeout=kill_timeout,
-        )
-    except asyncio.TimeoutError:
-        log.error(
-            "child pid=%d did not exit after SIGKILL",
-            process.pid,
-        )
-
-
-async def start_child(state: State) -> None:
-    """
-    Spawn the child and wait for it to become healthy.
-
-    The lifecycle lock must be held by the caller; it is held for the whole
-    startup wait, so concurrent handlers simply block on the lock until
-    readiness.
-    """
-
-    args = state.args
-
-    # Clean up a crashed-but-not-reaped previous child, if any.
-    if state.child is not None:
-        if state.child.returncode is None:
-            await terminate_process(
-                state.child,
-                terminate_timeout=args.shutdown_timeout,
-                kill_timeout=args.kill_timeout,
-            )
-        state.child = None
-        state.child_ready = False
-
-    log.info(
-        "starting child: %s",
-        " ".join(args.child_command),
-    )
-
-    started_at = time.monotonic()
-
-    try:
-        process = await asyncio.create_subprocess_exec(*args.child_command)
-    except OSError:
-        log.exception("failed to spawn child")
-        raise
-
-    state.child = process
-
-    try:
-        deadline = started_at + args.ready_timeout
-
-        while not state.stopping:
-            if process.returncode is not None:
-                raise RuntimeError(
-                    f"child exited during startup with rc={process.returncode}"
-                )
-
-            if time.monotonic() >= deadline:
-                raise TimeoutError(
-                    f"child did not become ready within " f"{args.ready_timeout:.0f}s"
-                )
-
-            if await probe_health(args.child_port):
-                state.child_ready = True
-
-                log.info(
-                    "child pid=%d ready in %.1fs",
-                    process.pid,
-                    time.monotonic() - started_at,
-                )
-
-                return
-
-            await asyncio.sleep(1)
-
-    except BaseException:
-        # We own this child if it was successfully spawned.
-        if process.returncode is None:
-            await terminate_process(
-                process,
-                terminate_timeout=args.shutdown_timeout,
-                kill_timeout=args.kill_timeout,
-            )
-
-        state.child = None
-        state.child_ready = False
-        raise
-
-    # Reached only when state.stopping became true: the shutdown path owns
-    # the child from here on.
-
-
-async def ensure_child(state: State) -> None:
-    """
-    Ensure a ready child exists.
-
-    All callers may enter concurrently, but only one startup happens: the
-    lock is held for the whole startup wait.
-    """
-
-    async with state.lifecycle_lock:
-        if state.stopping:
-            raise RuntimeError("wrapper is shutting down")
-
-        if (
-            state.child is not None
-            and state.child_ready
-            and state.child.returncode is None
-        ):
-            return
-
-        if state.child is not None and state.child.returncode is None:
-            # Defensive: a live child that is not ready should not exist while
-            # we hold this lock (start_child reaps failed startups); wait for
-            # it to settle rather than spawning a second child.
-            deadline = time.monotonic() + state.args.ready_timeout
-            while (
-                state.child is not None
-                and state.child.returncode is None
-                and not state.child_ready
-            ):
-                if time.monotonic() >= deadline:
-                    raise TimeoutError("child did not become ready")
-                await asyncio.sleep(0.5)
-            if state.child_ready:
-                return
-            # The startup failed; fall through and retry with a new child.
-
-        await start_child(state)
 
 
 # ---------------------------------------------------------------------------
@@ -364,11 +235,11 @@ def rewrite_headers(headers: bytes) -> bytes:
     """
     Normalize the request headers before forwarding them to the child.
 
-    The wrapper uses one TCP connection per client request. The child
-    server (ninfer-serve / cpp-httplib) otherwise honors HTTP keep-alive and
-    keeps the accepted socket open after responding, which would leave the
-    child side of the relay open forever and block the idle unload. Force
-    the child to close its side once it has replied.
+    The wrapper uses one TCP connection per client request. The child server
+    otherwise honors HTTP keep-alive and keeps the accepted socket open after
+    responding, which would leave the child side of the relay open forever and
+    block the idle unload. Force the child to close its side once it has
+    replied.
     """
 
     if b"\r\n\r\n" in headers:
@@ -521,12 +392,25 @@ async def relay(
         )
 
         try:
-            # Wait for BOTH directions, not FIRST_COMPLETED: the client upload
-            # can finish while the child is still streaming the response.
-            await asyncio.gather(
-                upload_task,
-                download_task,
-            )
+            # Wait for the response to complete, not for the client to close.
+            #
+            # The child side closes as soon as the reply is sent (every request
+            # is forced to Connection: close), so download_task settles when the
+            # request is done. The client side, however, may stay open: a
+            # keep-alive pooler (Caddy) reuses the connection for its next
+            # request, so client_to_child blocks on read() long after the
+            # reply. That pins this relay in state.connections (and the
+            # handler in active_handlers), which blocks the idle unload. Close
+            # the client side once the reply is complete so the relay drops
+            # when the request finishes, not when the client finally closes.
+            # The client upload is already done by then (the child cannot start
+            # the reply until it has the full request), so closing is safe.
+            await download_task
+
+            with contextlib.suppress(Exception):
+                client_writer.close()
+
+            await upload_task
 
         finally:
             for task in (upload_task, download_task):
@@ -652,9 +536,9 @@ async def handle_client(
         state.last_activity = time.monotonic()
 
         try:
-            await ensure_child(state)
+            await state.backend.ensure(state)
         except TimeoutError as exc:
-            log.error("child startup timeout: %s", exc)
+            log.error("%s startup timeout: %s", state.backend.noun, exc)
 
             await send_response(
                 writer,
@@ -667,7 +551,7 @@ async def handle_client(
             return
 
         except Exception:
-            log.exception("child startup failed")
+            log.exception("%s startup failed", state.backend.noun)
 
             await send_response(
                 writer,
@@ -679,11 +563,7 @@ async def handle_client(
             )
             return
 
-        if (
-            state.child is None
-            or not state.child_ready
-            or state.child.returncode is not None
-        ):
+        if not state.backend.is_ready(state):
             await send_response(
                 writer,
                 make_error_response(
@@ -743,214 +623,6 @@ async def handle_client(
 
 
 # ---------------------------------------------------------------------------
-# Request log
-# ---------------------------------------------------------------------------
-
-
-def process_event(
-    state: State,
-    record: dict,
-) -> None:
-    event = record.get("event")
-    instance_id = record.get("server_instance_id")
-    request_id = record.get("request_id")
-
-    if event == "server_start":
-        # A new server instance invalidates all prior request state.
-        state.instance_id = instance_id
-        state.in_flight.clear()
-        return
-
-    if instance_id != state.instance_id:
-        return
-
-    if request_id is None:
-        return
-
-    key = (instance_id, request_id)
-
-    if event == "request_start":
-        state.in_flight.add(key)
-
-    elif event in (
-        "request_done",
-        "request_error",
-        "request_rejected",
-    ):
-        state.in_flight.discard(key)
-
-
-async def tail_request_log(
-    state: State,
-) -> None:
-    """
-    Tail JSONL request events.
-
-    If the log disappears or is replaced, reopen it. We deliberately do not
-    infer "zero in-flight requests" from a missing log.
-    """
-
-    path = state.args.request_log
-
-    fh = None
-    inode = None
-    buffer = b""
-
-    try:
-        while not state.stopping:
-            try:
-                if fh is None:
-                    fh = open(path, "rb")
-                    inode = os.fstat(fh.fileno()).st_ino
-                    buffer = b""
-                    # Start at the end: events written before this wrapper
-                    # started belong to a previous instance.
-                    fh.seek(0, os.SEEK_END)
-
-                stat = os.stat(path)
-
-                if inode != stat.st_ino:
-                    fh.close()
-                    fh = None
-                    inode = None
-                    buffer = b""
-                    continue
-
-                if fh.tell() > stat.st_size:
-                    fh.seek(0)
-                    buffer = b""
-
-                chunk = fh.read()
-
-                if chunk:
-                    buffer += chunk
-
-                    while b"\n" in buffer:
-                        line, buffer = buffer.split(b"\n", 1)
-                        line = line.strip()
-
-                        if not line:
-                            continue
-
-                        try:
-                            record = json.loads(line)
-                        except (ValueError, TypeError):
-                            continue
-
-                        if isinstance(record, dict):
-                            process_event(state, record)
-
-                else:
-                    await asyncio.sleep(0.2)
-
-            except FileNotFoundError:
-                # Important: don't clear in_flight here.
-                await asyncio.sleep(0.5)
-
-            except OSError:
-                if fh is not None:
-                    with contextlib.suppress(OSError):
-                        fh.close()
-
-                fh = None
-                inode = None
-                buffer = b""
-
-                await asyncio.sleep(0.5)
-
-    finally:
-        if fh is not None:
-            with contextlib.suppress(OSError):
-                fh.close()
-
-
-# ---------------------------------------------------------------------------
-# Idle monitor
-# ---------------------------------------------------------------------------
-
-
-async def idle_monitor(
-    state: State,
-    stop_event: asyncio.Event,
-) -> None:
-    """
-    Poll once per second:
-
-      - child crashed or failed startup -> stop the service (exit 0); the
-        next connection re-activates it and retries the load lazily
-      - no child and nothing in flight -> stop the service (exit 0); the
-        wrapper has nothing to do
-      - child idle (no in-flight, no live relays, no recent client
-        activity) -> terminate the child and stop the service (exit 0)
-    """
-
-    while not state.stopping:
-        await asyncio.sleep(1)
-
-        child = state.child
-
-        if child is not None and child.returncode is not None:
-            log.error(
-                "child pid=%d exited rc=%s; stopping service",
-                child.pid,
-                child.returncode,
-            )
-
-            close_connections(state)
-
-            stop_event.set()
-            return
-
-        if child is None:
-            if not state.connections and state.active_handlers == 0:
-                log.info("nothing to do; stopping service")
-                stop_event.set()
-                return
-            continue
-
-        if not state.child_ready:
-            continue
-
-        if state.in_flight:
-            continue
-        if state.active_handlers:
-            continue
-        # A live relay means the child is servicing a client, even if there
-        # has been no socket activity for a long time.
-        if state.connections:
-            continue
-
-        idle = time.monotonic() - state.last_activity
-
-        if idle < state.args.idle_seconds:
-            continue
-
-        log.info(
-            "idle for %.1fs (timeout %.1fs); unloading child and stopping",
-            idle,
-            state.args.idle_seconds,
-        )
-
-        state.stopping = True
-
-        async with state.lifecycle_lock:
-            if state.child is child:
-                await terminate_process(
-                    child,
-                    terminate_timeout=state.args.shutdown_timeout,
-                    kill_timeout=state.args.kill_timeout,
-                )
-
-                state.child = None
-                state.child_ready = False
-                state.instance_id = None
-                state.in_flight.clear()
-
-        stop_event.set()
-        return
-
-
-# ---------------------------------------------------------------------------
 # Connection management
 # ---------------------------------------------------------------------------
 
@@ -980,7 +652,7 @@ async def shutdown(
     state: State,
     listen: socket.socket,
     accept_task: asyncio.Task,
-    tailer_task: asyncio.Task,
+    extra_tasks: list[asyncio.Task],
     monitor_task: asyncio.Task,
 ) -> None:
     log.info("stopping")
@@ -1005,26 +677,15 @@ async def shutdown(
     while (state.connections or state.active_handlers) and time.monotonic() < deadline:
         await asyncio.sleep(0.1)
 
-    # Stop the child regardless of current idle state.
+    # Stop the model server regardless of current idle state.
     async with state.lifecycle_lock:
-        if state.child is not None:
-            await terminate_process(
-                state.child,
-                terminate_timeout=state.args.shutdown_timeout,
-                kill_timeout=state.args.kill_timeout,
-            )
+        await state.backend.stop(state)
 
-            state.child = None
-            state.child_ready = False
-
-        state.instance_id = None
-        state.in_flight.clear()
-
-    tailer_task.cancel()
-    monitor_task.cancel()
+    for task in [*extra_tasks, monitor_task]:
+        task.cancel()
 
     await asyncio.gather(
-        tailer_task,
+        *extra_tasks,
         monitor_task,
         return_exceptions=True,
     )
@@ -1059,8 +720,9 @@ def socket_activated_listen_socket() -> socket.socket:
 
 async def run(
     args: argparse.Namespace,
+    backend: Backend,
 ) -> int:
-    state = State(args)
+    state = State(args=args, backend=backend)
 
     loop = asyncio.get_running_loop()
 
@@ -1089,13 +751,10 @@ async def run(
         name="accept-loop",
     )
 
-    tailer_task = asyncio.create_task(
-        tail_request_log(state),
-        name="request-log-tailer",
-    )
+    extra_tasks = backend.extra_tasks(state)
 
     monitor_task = asyncio.create_task(
-        idle_monitor(state, stop_event),
+        backend.idle_monitor(state, stop_event),
         name="idle-monitor",
     )
 
@@ -1107,7 +766,7 @@ async def run(
             state,
             listen,
             accept_task,
-            tailer_task,
+            extra_tasks,
             monitor_task,
         )
 
@@ -1121,6 +780,7 @@ async def run(
 
 def parse_args(
     argv: list[str],
+    backend: Backend,
 ) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -1129,24 +789,19 @@ def parse_args(
     parser.add_argument(
         "--child-port",
         type=int,
-        default=8081,
+        default=backend.default_child_port,
     )
 
     parser.add_argument(
         "--idle-seconds",
         type=float,
-        default=DEFAULT_IDLE_SECONDS,
-    )
-
-    parser.add_argument(
-        "--request-log",
-        required=True,
+        default=backend.default_idle_seconds,
     )
 
     parser.add_argument(
         "--ready-timeout",
         type=float,
-        default=DEFAULT_READY_TIMEOUT,
+        default=backend.default_ready_timeout,
     )
 
     parser.add_argument(
@@ -1158,7 +813,7 @@ def parse_args(
     parser.add_argument(
         "--kill-timeout",
         type=float,
-        default=DEFAULT_KILL_TIMEOUT,
+        default=backend.default_kill_timeout,
     )
 
     parser.add_argument(
@@ -1167,18 +822,9 @@ def parse_args(
         default=DEFAULT_DRAIN_TIMEOUT,
     )
 
-    parser.add_argument(
-        "child_command",
-        nargs=argparse.REMAINDER,
-    )
+    backend.add_args(parser)
 
     args = parser.parse_args(argv)
-
-    if args.child_command and args.child_command[0] == "--":
-        args.child_command = args.child_command[1:]
-
-    if not args.child_command:
-        parser.error("missing child command after --")
 
     if args.idle_seconds < 0:
         parser.error("--idle-seconds must be >= 0")
@@ -1186,16 +832,20 @@ def parse_args(
     if args.ready_timeout <= 0:
         parser.error("--ready-timeout must be > 0")
 
+    backend.validate(args, parser)
+
     return args
 
 
-def main() -> int:
-    configure_logging()
+def main(
+    backend: Backend,
+) -> int:
+    args = parse_args(sys.argv[1:], backend)
 
-    args = parse_args(sys.argv[1:])
+    configure_logging(backend.log_prefix)
 
     try:
-        return asyncio.run(run(args))
+        return asyncio.run(run(args, backend))
     except RuntimeError as exc:
         # Not socket-activated (e.g. run by hand): fail loudly.
         log.error("%s", exc)
@@ -1203,7 +853,3 @@ def main() -> int:
     except Exception:
         log.exception("internal error")
         return 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

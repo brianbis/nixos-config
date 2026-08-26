@@ -54,7 +54,7 @@ let
       id = "gemma-4-nvfp4";
       name = "Gemma 4 31B NVFP4";
       url = headroomProxyUrl;
-      # Must match --max-model-len 32768 in hosts/desktop/vllm.nix.
+      # Must match --max-model-len 32768 in hosts/desktop/llm/vllm/gemma4-nvfp4-turbo.nix.
       context = 32768;
       maxTok = 30000;
       reason = true;
@@ -63,6 +63,30 @@ let
       costOut = 0.28;
       costInCached = 0.014;
       costOutCached = 0.28;
+    };
+    # Qwen3.8-27B NVFP4 + DFlash2 K7 (RTX 5090 / SM120). Served by the
+    # on-demand vllm-qwen38-dflash2 container (socket-activated idle wrapper on
+    # :18089). Pinned to the community release's exact artifacts.
+    qwen38_dflash2 = {
+      providerName = "vllm_dflash2";
+      id = "qwen3.8-27b-nvfp4-dflash2";
+      name = "Qwen3.8-27B NVFP4 DFlash2";
+      # Direct to the socket-activated front port (like the ninfer models), not
+      # via headroom. The wrapper starts the container on the first request.
+      url = "http://127.0.0.1:18089";
+      # Must match --max-model-len 262144 in hosts/desktop/llm/vllm/qwen38-dflash2.nix.
+      context = 262144;
+      # Per-request output cap (tunable). The 262K-context model supports long
+      # generations; this is a conservative default.
+      maxTok = 32768;
+      reason = true;
+      # Text-only: the optional CPU vision sidecar is not part of this
+      # integration.
+      attachments = false;
+      costIn = 0;
+      costOut = 0;
+      costInCached = 0;
+      costOutCached = 0;
     };
     muse = {
       providerName = "llamacpp";
@@ -250,6 +274,9 @@ let
     vllm_nvfp4.name = "vLLM NVFP4 (local)";
     vllm_nvfp4.type = "openai-compat";
     vllm_nvfp4.api_key = "sk-local";
+    vllm_dflash2.name = "vLLM DFlash2 (local)";
+    vllm_dflash2.type = "openai-compat";
+    vllm_dflash2.api_key = "sk-local";
     ninfer.name = "NInfer (local)";
     ninfer.type = "openai-compat";
     ninfer.api_key = "sk-local";
@@ -440,6 +467,7 @@ let
       llamacpp = opencodeProvider "llamacpp";
       vllm_awq = opencodeProvider "vllm_awq";
       vllm_nvfp4 = opencodeProvider "vllm_nvfp4";
+      vllm_dflash2 = opencodeProvider "vllm_dflash2";
       ninfer = opencodeProvider "ninfer";
       ninfer_a3b = opencodeProvider "ninfer_a3b";
       deepseek = opencodeProvider "deepseek";

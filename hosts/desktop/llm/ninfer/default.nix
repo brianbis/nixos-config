@@ -68,10 +68,35 @@ let
     };
   };
 
-  # Socket-activated idle wrapper: systemd owns the front-port socket; the
-  # wrapper relays connections to the child and exits (code 0) once the
-  # model is idle, so no process is resident between requests.
-  ninferWrapper = pkgs.writeText "ninfer-wrapper.py" (builtins.readFile ./wrapper.py);
+  # Socket-activated idle wrapper (shared with the vLLM containers; the
+  # relay/health/idle machinery lives in ../idle-wrapper once). systemd owns
+  # the front-port socket; the wrapper relays connections to the child and
+  # exits (code 0) once the model is idle, so no process is resident between
+  # requests.
+  idleWrapper = pkgs.callPackage ../idle-wrapper { };
+
+  # The wrapper's ExecStart for a serve pair: the shared idle wrapper (child
+  # backend) plus the per-model child command. Both serve pairs share this
+  # exact shape.
+  serveExecStart = childPort: requestLog: childCommand:
+    lib.concatStringsSep " " ([
+      "${pkgs.python3}/bin/python3"
+      "${idleWrapper}/ninfer_wrapper.py"
+      "--child-port"
+      (toString childPort)
+      "--idle-seconds"
+      (toString idleSeconds)
+      "--ready-timeout"
+      "1800"
+      "--shutdown-timeout"
+      "30"
+      "--kill-timeout"
+      "10"
+      "--request-log"
+      requestLog
+      "--"
+    ]
+    ++ childCommand);
 
   # The model-serving child. Loopback-only: the wrapper (and thus the
   # socket unit) is the only thing that can reach it.
@@ -207,24 +232,7 @@ in
     serviceConfig = {
       Type = "simple";
 
-      ExecStart = lib.concatStringsSep " " ([
-        "${pkgs.python3}/bin/python3"
-        "${ninferWrapper}"
-        "--child-port"
-        (toString childPort)
-        "--idle-seconds"
-        (toString idleSeconds)
-        "--ready-timeout"
-        "1800"
-        "--shutdown-timeout"
-        "30"
-        "--kill-timeout"
-        "10"
-        "--request-log"
-        requestLog
-        "--"
-      ]
-      ++ childCommand);
+      ExecStart = serveExecStart childPort requestLog childCommand;
 
       # The wrapper exits 0 in every normal path (idle unload, SIGTERM,
       # child failure); only a wrapper crash (signal/coredump) restarts.
@@ -256,24 +264,7 @@ in
     serviceConfig = {
       Type = "simple";
 
-      ExecStart = lib.concatStringsSep " " ([
-        "${pkgs.python3}/bin/python3"
-        "${ninferWrapper}"
-        "--child-port"
-        (toString childPortA3B)
-        "--idle-seconds"
-        (toString idleSeconds)
-        "--ready-timeout"
-        "1800"
-        "--shutdown-timeout"
-        "30"
-        "--kill-timeout"
-        "10"
-        "--request-log"
-        "${logDir}/requests-a3b.jsonl"
-        "--"
-      ]
-      ++ childCommandA3B);
+      ExecStart = serveExecStart childPortA3B "${logDir}/requests-a3b.jsonl" childCommandA3B;
 
       Restart = "on-abnormal";
       RestartSec = "3";
