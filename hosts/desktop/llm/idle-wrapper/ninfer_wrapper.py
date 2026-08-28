@@ -32,7 +32,6 @@ from idle_wrapper import (
     probe_health,
 )
 
-
 DEFAULT_IDLE_SECONDS = 60
 DEFAULT_READY_TIMEOUT = 30 * 60
 DEFAULT_KILL_TIMEOUT = 10
@@ -481,9 +480,7 @@ BACKEND = Backend(
     default_child_port=DEFAULT_CHILD_PORT,
     ensure=ensure_child,
     is_ready=lambda s: (
-        s.child is not None
-        and s.child_ready
-        and s.child.returncode is None
+        s.child is not None and s.child_ready and s.child.returncode is None
     ),
     stop=stop,
     idle_monitor=child_idle_monitor,

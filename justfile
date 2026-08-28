@@ -5,6 +5,15 @@ secrets-dir := "secrets"
 # These recipes run under sudo, so root can read the 0400 tmpfs key.
 identity-key := "/run/agenix-tpm/key.txt"
 
+# Cap build parallelism. The box is 24 cores / 64 GB with NO swap, so a
+# 24-way rustc build of the heavy local Rust package (librepods:
+# iced/wgpu/winit + bluer + libpulse + dbus) OOMs and hard-crashes the box.
+# --cores caps rustc parallelism INSIDE a cargo build (NIX_BUILD_CORES);
+# --max-jobs caps how many derivations build at once. 4-way is safe.
+# These are client-side flags, so they apply to the very next build
+# (no chicken-and-egg: no successful switch required first).
+build-flags := "--cores 4 --max-jobs 4"
+
 secret-edit name:
     @mkdir -p {{secrets-dir}}
     sudo EDITOR="nano" agenix -e {{secrets-dir}}/{{name}}.age -i {{identity-key}}
@@ -39,12 +48,12 @@ auto-stage:
 # NixOS build & rebuild
 switch:
     just auto-stage
-    sudo nixos-rebuild switch --flake .
+    sudo nixos-rebuild switch --flake . {{build-flags}}
     @sudo nix build --no-link .#agents-md --print-out-paths | xargs -I{} sudo cp {} AGENTS.md
 
 build:
     just auto-stage
-    sudo nixos-rebuild build --flake .
+    sudo nixos-rebuild build --flake . {{build-flags}}
 
 check:
     nixos-rebuild dry-build --flake .
@@ -77,7 +86,7 @@ generations:
     sudo nix-env --list-generations --profile /nix/var/nix/profiles/system
 
 rollback:
-    sudo nixos-rebuild switch --rollback --flake .
+    sudo nixos-rebuild switch --rollback --flake . {{build-flags}}
 
 # vLLM docker containers
 #

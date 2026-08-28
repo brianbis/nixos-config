@@ -108,18 +108,21 @@
     };
   };
 
-  # Headless hushmic: DPDFNet noise suppression as a virtual mic.
-  # --enable-once skips tray/window/sockets entirely and blocks until SIGTERM;
-  # on exit it restores the previous default input and reaps its filter-chain.
+  # HushMic: DPDFNet noise suppression as a virtual mic, running in tray mode.
+  # --tray starts the background filter-chain plus the KSNI system-tray daemon
+  # (silent, no A/B window). The desktop entry provides a manual launch path
+  # that opens the A/B window on first click; subsequent clicks forward to the
+  # already-running instance via a show socket. Only one instance is allowed
+  # per session (advisory flock); systemd ensures it starts at login.
   systemd.user.services.hushmic = {
-    description = "HushMic real-time microphone noise suppression (headless)";
+    description = "HushMic real-time microphone noise suppression";
     wantedBy = [ "basic.target" ];
     after = [ "pipewire.service" ];
     wants = [ "pipewire.service" ];
 
     serviceConfig = {
       Type = "simple";
-      ExecStart = "${pkgs.hushmic}/bin/hushmic --enable-once";
+      ExecStart = "${pkgs.hushmic}/bin/hushmic --tray";
       Restart = "on-failure";
       RestartSec = 3;
 

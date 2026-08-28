@@ -55,9 +55,10 @@ let
   # nix-collect-garbage cannot orphan the store path bwrap binds.
   emptySecretFile = pkgs.writeText "empty-secret" "";
 
-  # Shadow the system-activating nix CLIs with stubs that refuse to run, rather
-  # than parsing command strings: deterministic and robust against quoting /
-  # `sudo` / `env` prefixes. The agent can edit /etc/nixos but never activate.
+  # Shadow only the system-mutating/activating CLIs with stubs that refuse to run,
+  # rather than parsing command strings: deterministic and robust against quoting /
+  # `sudo` / `env` prefixes. The `nix` CLI remains available for evaluation, flake
+  # checks, and builds; the agent can edit /etc/nixos but never activate.
   forbiddenNixCmds = {
     "nixos-rebuild" = "building or switching a NixOS system is not allowed inside a jailed agent";
     "nixos-install" = "installing a NixOS system is not allowed inside a jailed agent";
@@ -145,8 +146,13 @@ let
   # baseMounts is a pure mount-list builder (separate from the baseJailOptions
   # wrapper) so agents-manifest.nix can render the readonly mounts into
   # AGENTS.md without calling into jail-nix.
+  # /etc/machine-id (system jails): the jail's /etc is a fresh tmpfs, so the
+  # host's machine-id is invisible unless bound in. journalctl resolves the
+  # journal dir as /var/log/journal/<machine-id>/ via this file; without it
+  # it reports "No journal files were found" even though /var/log/journal is
+  # mounted.
   baseMounts = system: (lib.optional (!system) "/etc/nixos") ++ [ "/var/log" ]
-    ++ (if system then [ "/var/log/journal" "/run/systemd" ] else [ ])
+    ++ (if system then [ "/var/log/journal" "/run/systemd" "/etc/machine-id" ] else [ ])
     ++ (if system then [ "/sys" "/run/user" ] else [ ]);
 
   # agenix secret file(s) mounted read-only into every jail. Kept out of

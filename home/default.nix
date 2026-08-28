@@ -14,6 +14,7 @@ in
     ./imsg
     ./sidra.nix
     ./spectacle.nix
+    ./hushmic.nix
     ./wezterm.nix
     ./dotfiles.nix
     ./minuspod.nix

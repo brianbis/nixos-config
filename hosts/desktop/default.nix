@@ -5,6 +5,7 @@
     ./hardware-configuration.nix
     ./audio.nix
     ./bluetooth.nix
+    ./librepods
     ./boot.nix
     ./monitor
     ./networking.nix
@@ -20,6 +21,6 @@
     ./dsh-web.nix
     ./dsh-open.nix
     ./searxng.nix
-    #./zomboid.nix
+    #./zomboid
   ];
 }

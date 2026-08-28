@@ -13,6 +13,17 @@ in
     "flakes"
   ];
 
+  # Secondary, PERSISTENT build cap. `nix.settings.max-jobs` is a nix-daemon
+  # setting (written to /etc/nix/nix.conf, read at daemon start) that caps how
+  # many *derivations* build in parallel. It does NOT cap rustc parallelism
+  # inside a single cargo build — that is `NIX_BUILD_CORES` (the `--cores`
+  # flag), and it is the 24-way rustc fan-out of the heavy local Rust build
+  # (librepods: iced/wgpu/winit + bluer) that actually OOMs this 64 GB / no-swap
+  # box. The real OOM fix is the `--cores` cap in the justfile (build-flags),
+  # which is client-side and applies to the very next build. This line is kept
+  # only as a persistent default so builds outside the justfile stay bounded.
+  nix.settings.max-jobs = 4;
+
   nix.gc = {
     automatic = true;
     dates = "weekly";
@@ -49,6 +60,7 @@ in
 
   i18n.defaultLocale = "en_US.UTF-8";
   services.lact.enable = true;
+  #services.zomboid.enable = true;
   services.power-profiles-daemon.enable = false;
   boot.kernelModules = [ "tpm_tis" "tpm_crb" ];
   # Load the TPM modules in the initrd too: the agenix age-key unseal runs as

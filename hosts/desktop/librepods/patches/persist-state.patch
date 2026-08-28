@@ -1,0 +1,291 @@
+--- a/linux-rust/src/bluetooth/aacp.rs	2026-08-27 13:17:29.623511613 -0700
++++ b/linux-rust/src/bluetooth/aacp.rs	2026-08-27 13:17:29.624970911 -0700
+@@ -20,6 +20,52 @@
+ const POLL_INTERVAL: Duration = Duration::from_millis(200);
+ const HEADER_BYTES: [u8; 4] = [0x04, 0x00, 0x04, 0x00];
+ 
++// --- librepods-persist-state patch: AACP battery persistence ----------------
++// Persist precise AACP battery readings into the same state.json the LE
++// monitor writes (see le.rs), under an "aacp" sub-object per MAC. Written
++// unconditionally so it works in headless (--no-tray) mode.
++fn state_path() -> std::path::PathBuf {
++    let base = std::env::var("XDG_STATE_HOME")
++        .unwrap_or_else(|_| format!("{}/.local/state", std::env::var("HOME").unwrap_or_default()));
++    std::path::Path::new(&base).join("librepods").join("state.json")
++}
++
++fn write_state(mac: &str, entry: &serde_json::Value) {
++    let path = state_path();
++    let mut map: serde_json::Map<String, serde_json::Value> = std::fs::read_to_string(&path)
++        .ok()
++        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
++        .and_then(|v| v.as_object().cloned())
++        .unwrap_or_default();
++    let existing = map.get(mac).cloned();
++    let now = entry
++        .get("aacp")
++        .and_then(|a| a.get("last_seen"))
++        .and_then(|v| v.as_u64())
++        .unwrap_or(0);
++    let changed = existing.as_ref() != Some(entry);
++    let mut new_entry = entry.clone();
++    if let Some(obj) = new_entry.as_object_mut() {
++        if changed {
++            obj.insert("last_change".to_string(), serde_json::json!(now));
++        }
++    }
++    map.insert(mac.to_string(), new_entry);
++    if let Some(parent) = path.parent() {
++        let _ = std::fs::create_dir_all(parent);
++    }
++    let tmp = path.with_extension("json.tmp");
++    if let Err(e) = std::fs::write(
++            &tmp,
++            serde_json::to_string_pretty(&serde_json::Value::Object(map)).unwrap(),
++        )
++        .and_then(|_| std::fs::rename(&tmp, &path))
++    {
++        debug!("Failed to write librepods state file: {}", e);
++    }
++}
++// --- end librepods-persist-state patch --------------------------------------
++
+ pub mod opcodes {
+     pub const SET_FEATURE_FLAGS: u8 = 0x4D;
+     pub const REQUEST_NOTIFICATIONS: u8 = 0x0F;
+@@ -555,7 +601,67 @@
+                 if let Some(ref tx) = state.event_tx {
+                     let _ = tx.send(AACPEvent::BatteryInfo(batteries));
+                 }
+-                info!("Received Battery Info: {:?}", state.battery_info);
++                info!(
++                    "Received Battery Info for {}: {:?}",
++                    state.airpods_mac
++                        .map(|a| a.to_string())
++                        .unwrap_or_else(|| "unknown".to_string()),
++                    state.battery_info
++                );
++                // --- librepods-persist-state patch: persist precise AACP battery ---
++                if let Some(mac) = state.airpods_mac {
++                    let mac_str = mac.to_string();
++                    let now = std::time::SystemTime::now()
++                        .duration_since(std::time::UNIX_EPOCH)
++                        .map(|d| d.as_secs())
++                        .unwrap_or(0);
++                    let lvl = |c: BatteryComponent| {
++                        state
++                            .battery_info
++                            .iter()
++                            .find(|b| b.component == c)
++                            .map(|b| {
++                                if b.level == 0xFF {
++                                    serde_json::Value::Null
++                                } else {
++                                    serde_json::json!(b.level)
++                                }
++                            })
++                            .unwrap_or(serde_json::Value::Null)
++                    };
++                    let st = |c: BatteryComponent| {
++                        state
++                            .battery_info
++                            .iter()
++                            .find(|b| b.component == c)
++                            .map(|b| match b.status {
++                                BatteryStatus::Charging => "charging",
++                                BatteryStatus::NotCharging => "not_charging",
++                                BatteryStatus::Disconnected => "disconnected",
++                            })
++                            .unwrap_or("unknown")
++                    };
++                    let aacp = serde_json::json!({
++                        "left": lvl(BatteryComponent::Left),
++                        "right": lvl(BatteryComponent::Right),
++                        "case": lvl(BatteryComponent::Case),
++                        "charging_left": st(BatteryComponent::Left) == "charging",
++                        "charging_right": st(BatteryComponent::Right) == "charging",
++                        "charging_case": st(BatteryComponent::Case) == "charging",
++                        "case_connected": st(BatteryComponent::Case) != "disconnected",
++                        "last_seen": now,
++                    });
++                    let path = state_path();
++                    let mut entry: serde_json::Value = std::fs::read_to_string(&path)
++                        .ok()
++                        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
++                        .and_then(|v| v.as_object().cloned())
++                        .and_then(|m| m.get(&mac_str).cloned())
++                        .unwrap_or_else(|| serde_json::json!({}));
++                    entry["aacp"] = aacp;
++                    write_state(&mac_str, &entry);
++                }
++                // --- end librepods-persist-state patch ---
+             }
+             opcodes::CONTROL_COMMAND => {
+                 if payload.len() < 7 {
+@@ -696,7 +802,7 @@
+                     }
+                 }
+                 strings.remove(0);
+-                let info = AirPodsInformation {
++                let mut info = AirPodsInformation {
+                     name: strings.first().cloned().unwrap_or_default(),
+                     model_number: strings.get(1).cloned().unwrap_or_default(),
+                     manufacturer: strings.get(2).cloned().unwrap_or_default(),
+@@ -717,6 +823,21 @@
+                 if let Some(mac) = state.airpods_mac
+                     && let Some(device_data) = state.devices.get_mut(&mac.to_string())
+                 {
++                    // Preserve any already-captured LE keys (IRK / enc_key). The
++                    // information response always carries empty keys, so a naive
++                    // overwrite would wipe keys captured via the proximity-keys
++                    // request (e.g. if an information response re-arrives after
++                    // the keys).
++                    if let Some(DeviceInformation::AirPods(existing)) =
++                        device_data.information.as_ref()
++                    {
++                        if !existing.le_keys.irk.is_empty() {
++                            info.le_keys.irk = existing.le_keys.irk.clone();
++                        }
++                        if !existing.le_keys.enc_key.is_empty() {
++                            info.le_keys.enc_key = existing.le_keys.enc_key.clone();
++                        }
++                    }
+                     device_data.name = info.name.clone();
+                     device_data.information = Some(DeviceInformation::AirPods(info.clone()));
+                 }
+@@ -767,8 +888,16 @@
+                     keys.push((key_type, key_data));
+                     offset += key_length;
+                 }
++                let mac_str = self
++                    .state
++                    .lock()
++                    .await
++                    .airpods_mac
++                    .map(|a| a.to_string())
++                    .unwrap_or_else(|| "unknown".to_string());
+                 info!(
+-                    "Received Proximity Keys Response: {:?}",
++                    "Received Proximity Keys Response for {}: {:?}",
++                    mac_str,
+                     keys.iter()
+                         .map(|(kt, kd)| (kt, hex::encode(kd)))
+                         .collect::<Vec<_>>()
+--- a/linux-rust/src/bluetooth/le.rs	2026-08-27 13:17:29.622788462 -0700
++++ b/linux-rust/src/bluetooth/le.rs	2026-08-27 13:17:29.624240588 -0700
+@@ -23,6 +23,55 @@
+     block.into()
+ }
+ 
++// --- librepods-persist-state patch: helpers ---------------------------------
++// Persist parsed Proximity Pairing Message (PPM) state to a JSON file so that
++// external consumers (KDE notifications, the Ctrl+Shift+C connect shortcut)
++// can read it. Written unconditionally (NOT gated by the tray handle) so it
++// works in headless (--no-tray) mode.
++fn state_path() -> std::path::PathBuf {
++    let base = std::env::var("XDG_STATE_HOME")
++        .unwrap_or_else(|_| format!("{}/.local/state", std::env::var("HOME").unwrap_or_default()));
++    std::path::Path::new(&base).join("librepods").join("state.json")
++}
++
++fn write_state(mac: &str, entry: &serde_json::Value) {
++    let path = state_path();
++    let mut map: serde_json::Map<String, serde_json::Value> = std::fs::read_to_string(&path)
++        .ok()
++        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
++        .and_then(|v| v.as_object().cloned())
++        .unwrap_or_default();
++    let existing = map.get(mac).cloned();
++    let now = entry.get("last_seen").and_then(|v| v.as_u64()).unwrap_or(0);
++    let changed = existing.as_ref() != Some(entry);
++    let mut new_entry = entry.clone();
++    if let Some(obj) = new_entry.as_object_mut() {
++        if changed {
++            obj.insert("last_change".to_string(), serde_json::json!(now));
++        }
++        // Preserve the precise AACP battery sub-object (written by the AACP
++        // handler in aacp.rs) across coarse PPM updates, which only carry
++        // ~10%-granularity readings.
++        if let Some(aacp) = existing.as_ref().and_then(|e| e.get("aacp").cloned()) {
++            obj.insert("aacp".to_string(), aacp);
++        }
++    }
++    map.insert(mac.to_string(), new_entry);
++    if let Some(parent) = path.parent() {
++        let _ = std::fs::create_dir_all(parent);
++    }
++    let tmp = path.with_extension("json.tmp");
++    if let Err(e) = std::fs::write(
++            &tmp,
++            serde_json::to_string_pretty(&serde_json::Value::Object(map)).unwrap(),
++        )
++        .and_then(|_| std::fs::rename(&tmp, &path))
++    {
++        debug!("Failed to write librepods state file: {}", e);
++    }
++}
++// --- end librepods-persist-state patch --------------------------------------
++
+ fn verify_rpa(addr: &str, irk: &[u8; 16]) -> bool {
+     let rpa: Vec<u8> = addr
+         .split(':')
+@@ -365,6 +414,59 @@
+                                             is_left_in_ear,
+                                             is_right_in_ear
+                                         );
++
++                                        // --- librepods-persist-state patch ---
++                                        // Persist the parsed PPM state (unconditional, so it
++                                        // works headless). All variables below are already in
++                                        // scope at this point.
++                                        let model_id = ((apple_data[3] as u16) << 8) | (apple_data[4] as u16);
++                                        let model = match model_id {
++                                            0x0220 => "AirPods 1",
++                                            0x0F20 => "AirPods 2",
++                                            0x1320 => "AirPods 3",
++                                            0x1920 => "AirPods 4",
++                                            0x1B20 => "AirPods 4 ANC",
++                                            0x0A20 => "AirPods Max",
++                                            0x1F20 => "AirPods Max (USB-C)",
++                                            0x0E20 => "AirPods Pro",
++                                            0x1420 | 0x2420 => "AirPods Pro 2",
++                                            0x2720 => "AirPods Pro 3",
++                                            _ => "AirPods",
++                                        };
++                                        let connection_state_str = match connection_state {
++                                            0x00 => "disconnected",
++                                            0x04 => "idle",
++                                            0x05 => "music",
++                                            0x06 => "call",
++                                            0x07 => "ringing",
++                                            0x09 => "hanging_up",
++                                            _ => "unknown",
++                                        };
++                                        let lid_open = (apple_data[8] & 0x08) == 0;
++                                        let now = std::time::SystemTime::now()
++                                            .duration_since(std::time::UNIX_EPOCH)
++                                            .map(|d| d.as_secs())
++                                            .unwrap_or(0);
++                                        let entry = serde_json::json!({
++                                            "advertising": true,
++                                            "model": model,
++                                            "left": if left_byte == 0xff { serde_json::Value::Null } else { serde_json::json!(left_battery) },
++                                            "right": if right_byte == 0xff { serde_json::Value::Null } else { serde_json::json!(right_battery) },
++                                            "case": if case_byte == 0xff { serde_json::Value::Null } else { serde_json::json!(case_battery) },
++                                            "charging_left": left_charging,
++                                            "charging_right": right_charging,
++                                            "charging_case": case_charging,
++                                            "lid_open": lid_open,
++                                            "connection_state": connection_state_str,
++                                            "in_ear_left": is_left_in_ear,
++                                            "in_ear_right": is_right_in_ear,
++                                            "in_case": this_in_case,
++                                            "last_seen": now,
++                                        });
++                                        if let Some(mac) = matched_airpods_mac.as_ref() {
++                                            write_state(mac, &entry);
++                                        }
++                                        // --- end librepods-persist-state patch ---
+                                     }
+                                 }
+                             }

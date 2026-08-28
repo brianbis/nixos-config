@@ -69,4 +69,24 @@ in
   # <config dir>/wezterm/wezterm.lua (an app subdirectory); a flat
   # ~/.config/wezterm.lua is never read, so deploy into the subdirectory.
   xdg.configFile."wezterm/wezterm.lua".source = ../dotfiles/wezterm.lua;
+
+  # KRunner "cmd" alias. Plasma 6's KRunner services runner scores matches by
+  # field weight (name 100 > genericName 50 > keywords 25). xterm, konsole and
+  # wezterm all only match "cmd" via Keywords (weight 25), so they tie and xterm
+  # wins. A dedicated entry whose Name is exactly "cmd" is a perfect name match
+  # (weight 100), guaranteeing it ranks #1 for "cmd" and launches wezterm.
+  xdg.desktopEntries."wezterm-cmd" = {
+    name = "cmd";
+    comment = "WezTerm terminal (cmd alias)";
+    exec = "wezterm start";
+    icon = "org.wezfurlong.wezterm";
+    type = "Application";
+    categories = [ "System" "TerminalEmulator" "Utility" ];
+    settings = {
+      GenericName = "WezTerm";
+      Keywords = "cmd;command;terminal;shell";
+      StartupWMClass = "org.wezfurlong.wezterm";
+      TryExec = "wezterm";
+    };
+  };
 }

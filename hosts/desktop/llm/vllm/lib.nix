@@ -4,8 +4,7 @@
 # not started at boot: the gemma containers are started manually (`just
 # vllm-gemma4-*`), and the DFlash2 container is started by its socket-activated
 # idle wrapper (../idle-wrapper/vllm_wrapper.py) on the first request.
-{
-  image
+{ image
 , model
 , servedName
 , port

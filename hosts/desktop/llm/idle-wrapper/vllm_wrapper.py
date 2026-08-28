@@ -41,7 +41,6 @@ from idle_wrapper import (
     probe_health,
 )
 
-
 DEFAULT_IDLE_SECONDS = 300.0
 DEFAULT_READY_TIMEOUT = 60 * 60
 DEFAULT_KILL_TIMEOUT = 30
@@ -124,9 +123,7 @@ async def ensure_image(state: State) -> None:
 
     rc, out = await run_cmd(["docker", "pull", args.image], timeout=args.pull_timeout)
     if rc != 0:
-        raise RuntimeError(
-            f"docker pull {args.image} failed rc={rc}: {out[-2000:]}"
-        )
+        raise RuntimeError(f"docker pull {args.image} failed rc={rc}: {out[-2000:]}")
 
     rc, _out = await run_cmd(["docker", "image", "inspect", args.image], timeout=10)
     if rc != 0:
@@ -194,9 +191,7 @@ async def start_container(state: State) -> None:
     )
 
     if rc != 0:
-        raise RuntimeError(
-            f"systemctl start {args.container_service} failed rc={rc}"
-        )
+        raise RuntimeError(f"systemctl start {args.container_service} failed rc={rc}")
 
     # Mark the service up immediately (before readiness): stop_container()
     # only acts while container_up is set, so a SIGTERM or a ready-timeout
@@ -230,9 +225,7 @@ async def start_container(state: State) -> None:
             # early rather than waiting the full ready timeout.
             status = await container_status(args.container)
             if status == "exited":
-                raise RuntimeError(
-                    f"container {args.container} exited during startup"
-                )
+                raise RuntimeError(f"container {args.container} exited during startup")
 
             await asyncio.sleep(READY_POLL_INTERVAL)
 
@@ -331,9 +324,7 @@ async def ensure_container(state: State) -> None:
             # wait for it to settle rather than starting a second time.
             deadline = time.monotonic() + state.args.ready_timeout
             while (
-                state.container_up
-                and not state.container_ready
-                and not state.stopping
+                state.container_up and not state.container_ready and not state.stopping
             ):
                 if time.monotonic() >= deadline:
                     raise TimeoutError("container did not become ready")

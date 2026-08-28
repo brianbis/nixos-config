@@ -77,6 +77,15 @@
       # Build the package locally from the patched copy instead.
       hushmic = pkgs.callPackage ./hosts/desktop/hushmic/package.nix { };
 
+      # LibrePods (Rust rewrite) — AirPods lifecycle daemon, patched to persist
+      # the parsed PPM state to state.json. Built locally (heavy: iced/wgpu +
+      # bluer + libpulse + dbus).
+      librepods = pkgs.callPackage ./hosts/desktop/librepods/package.nix { };
+
+      # LibrePods battery system-tray indicator (StatusNotifierItem). Slim,
+      # mostly-textual SNI icon that reads the daemon's state.json.
+      librepodsTray = pkgs.callPackage ./hosts/desktop/librepods/tray.nix { };
+
 
     in
     {
@@ -177,6 +186,15 @@
               # attribute name consumed by hosts/desktop/audio.nix.
               (final: prev: {
                 hushmic = hushmic;
+              })
+
+              # Provide the locally patched librepods package under the same
+              # attribute name consumed by hosts/desktop/librepods/default.nix
+              # (pkgs.librepods), plus the system-tray indicator
+              # (pkgs.librepodsTray).
+              (final: prev: {
+                librepods = librepods;
+                librepodsTray = librepodsTray;
               })
 
               # headroom-ai: context compression layer for the jailed LLM
