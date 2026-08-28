@@ -171,7 +171,9 @@ def build_menu_layout(pairs: dict) -> dict:
 
     devices = [
         (mac, e)
-        for mac, e in sorted(pairs.items(), key=lambda kv: sort_key(kv[0]), reverse=True)
+        for mac, e in sorted(
+            pairs.items(), key=lambda kv: sort_key(kv[0]), reverse=True
+        )
         if isinstance(e, dict)
     ]
 
@@ -438,11 +440,7 @@ class Menu(ServiceInterface):
         if not property_names:
             return props
 
-        return {
-            name: value
-            for name, value in props.items()
-            if name in property_names
-        }
+        return {name: value for name, value in props.items() if name in property_names}
 
     def _layout_item(
         self,
@@ -468,11 +466,7 @@ class Menu(ServiceInterface):
         child_variants = []
 
         if recursion_depth != 0:
-            next_depth = (
-                recursion_depth - 1
-                if recursion_depth > 0
-                else -1
-            )
+            next_depth = recursion_depth - 1 if recursion_depth > 0 else -1
 
             for child_id in children:
                 child = self._layout_item(
@@ -480,9 +474,7 @@ class Menu(ServiceInterface):
                     next_depth,
                     property_names,
                 )
-                child_variants.append(
-                    Variant("(ia{sv}av)", child)
-                )
+                child_variants.append(Variant("(ia{sv}av)", child))
 
         return [menu_id, props, child_variants]
 
@@ -557,8 +549,7 @@ class Menu(ServiceInterface):
 
         if value is None:
             raise ValueError(
-                f"Unknown property {property_name!r} "
-                f"for menu id {menu_id}"
+                f"Unknown property {property_name!r} " f"for menu id {menu_id}"
             )
 
         return value
@@ -664,7 +655,9 @@ class Tray:
         )
         try:
             self.bus.call_sync(msg)
-            print(f"Watcher registered {OBJECT_PATH} with {WATCHER_NAME}", file=sys.stderr)
+            print(
+                f"Watcher registered {OBJECT_PATH} with {WATCHER_NAME}", file=sys.stderr
+            )
             self._registered = True
         except Exception as e:  # noqa: BLE001
             print(f"Watcher registration failed (will retry): {e}", file=sys.stderr)
