@@ -96,7 +96,14 @@ in
     obsidian
 
     htop
-    btop
+    # btop dlopens libnvidia-ml.so (NVML) at runtime to detect NVIDIA GPUs.
+    # On NixOS that library lives in the graphics-drivers env (/run/opengl-driver/lib),
+    # which is not in btop's default linker search path, so wrap it to set
+    # LD_LIBRARY_PATH and let NVML initialise.
+    (writeShellScriptBin "btop" ''
+      export LD_LIBRARY_PATH="/run/opengl-driver/lib"
+      exec ${btop}/bin/btop "$@"
+    '')
     lsof
     strace
     tree

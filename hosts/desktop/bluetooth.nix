@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ lib, pkgs, ... }:
 
 let
   headphoneDevices = [
@@ -100,62 +100,72 @@ let
   '';
 in
 {
-  hardware.bluetooth = {
-    enable = true;
-    powerOnBoot = true;
-
-    settings = {
-      General = {
-        # Force BlueZ to use Classic Bluetooth (BR/EDR) only for audio devices.
-        # This prevents BlueZ from getting confused by AirPods BLE "Find My" addresses.
-        ControllerMode = "bredr";
-
-        Experimental = true;
-        FastConnectable = true;
-        JustWorksRepairing = "always";
-      };
-
-      Policy = {
-        AutoEnable = true;
-        ReconnectAttempts = 7;
-        ReconnectIntervals = "1,2,4,8,16,32,64";
-      };
-    };
+  # Expose the connect script so other modules (e.g. librepods's tray Reconnect
+  # action and the KDE global-shortcut installer) can reference it by path.
+  options.bluetooth.connectScript = lib.mkOption {
+    internal = true;
+    default = bluetoothConnectScript;
+    type = lib.types.raw;
   };
 
-  # Exposed on the system PATH so the KDE global shortcut (Ctrl+Shift+C)
-  # and the .desktop-based command shortcut can both call it by name.
-  environment.systemPackages = [ bluetoothConnectScript ];
+  config = {
+    hardware.bluetooth = {
+      enable = true;
+      powerOnBoot = true;
 
-  services.blueman.enable = false;
+      settings = {
+        General = {
+          # Force BlueZ to use Classic Bluetooth (BR/EDR) only for audio devices.
+          # This prevents BlueZ from getting confused by AirPods BLE "Find My" addresses.
+          ControllerMode = "bredr";
 
-  systemd.services.bluetooth-trust-headphones = {
-    description = "Trust & auto-connect AirPods & Bluetooth Headphones on boot";
-    after = [ "bluetooth.service" ];
-    wants = [ "bluetooth.service" ];
-    wantedBy = [ "bluetooth.target" ];
+          Experimental = true;
+          FastConnectable = true;
+          JustWorksRepairing = "always";
+        };
 
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-
-      ExecStart =
-        (map
-          (mac: "${pkgs.bash}/bin/bash -c '${pkgs.bluez}/bin/bluetoothctl trust ${mac} || true'")
-          headphoneDevices)
-        ++ [ "${bluetoothConnectScript}/bin/bt-connect-headphones" ];
+        Policy = {
+          AutoEnable = true;
+          ReconnectAttempts = 7;
+          ReconnectIntervals = "1,2,4,8,16,32,64";
+        };
+      };
     };
-  };
 
-  systemd.services.bluetooth-reconnect-on-resume = {
-    description = "Reconnect Bluetooth headphones after resume";
-    after = [ "suspend.target" "hibernate.target" "hybrid-sleep.target" ];
-    wantedBy = [ "suspend.target" "hibernate.target" "hybrid-sleep.target" ];
+    # Exposed on the system PATH so the KDE global shortcut (Ctrl+Shift+C)
+    # and the .desktop-based command shortcut can both call it by name.
+    environment.systemPackages = [ bluetoothConnectScript ];
 
-    serviceConfig = {
-      Type = "oneshot";
-      ExecStartPre = "${pkgs.coreutils}/bin/sleep 2";
-      ExecStart = "${bluetoothConnectScript}/bin/bt-connect-headphones";
+    services.blueman.enable = false;
+
+    systemd.services.bluetooth-trust-headphones = {
+      description = "Trust & auto-connect AirPods & Bluetooth Headphones on boot";
+      after = [ "bluetooth.service" ];
+      wants = [ "bluetooth.service" ];
+      wantedBy = [ "bluetooth.target" ];
+
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+
+        ExecStart =
+          (map
+            (mac: "${pkgs.bash}/bin/bash -c '${pkgs.bluez}/bin/bluetoothctl trust ${mac} || true'")
+            headphoneDevices)
+          ++ [ "${bluetoothConnectScript}/bin/bt-connect-headphones" ];
+      };
+    };
+
+    systemd.services.bluetooth-reconnect-on-resume = {
+      description = "Reconnect Bluetooth headphones after resume";
+      after = [ "suspend.target" "hibernate.target" "hybrid-sleep.target" ];
+      wantedBy = [ "suspend.target" "hibernate.target" "hybrid-sleep.target" ];
+
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStartPre = "${pkgs.coreutils}/bin/sleep 2";
+        ExecStart = "${bluetoothConnectScript}/bin/bt-connect-headphones";
+      };
     };
   };
 }

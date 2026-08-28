@@ -24,6 +24,8 @@
 # (or next login) makes the LE monitor pick up the freshly captured keys.
 
 let
+  cfg = config.librepods;
+
   notifyScript = pkgs.writeText "librepods-notify.py" ''
     #!/usr/bin/env python3
     """LibrePods notification watcher.
@@ -121,59 +123,163 @@ let
   notifyWrapper = pkgs.writeShellScriptBin "librepods-notify" ''
     exec ${pkgs.python3}/bin/python3 ${notifyScript}
   '';
+
+  # Re-assert the LibrePods connect global shortcut into the user's
+  # kglobalshortcutsrc at graphical session start. Merges only the
+  # "Connect AirPods" key under the [Custom Commands] group, preserving every
+  # other shortcut. (Plasma rewrites this file when shortcuts are edited, so a
+  # session-start writer that re-asserts the key is the robust, declarative
+  # choice.) The shortcut + command are passed via the service's Environment.
+  #
+  # NOTE: the value format is "shortcut,command". If the desktop's KDE stores
+  # it as "command,shortcut", flip the two in new_value below.
+  shortcutScript = pkgs.writeText "librepods-shortcut.py" ''
+    #!/usr/bin/env python3
+    import os
+
+    name = "Connect AirPods"
+    shortcut = os.environ.get("LIBREPODS_SHORTCUT", "Ctrl+Shift+C")
+    command = os.environ.get("LIBREPODS_CONNECT_CMD", "bt-connect-headphones")
+    path = os.path.join(os.path.expanduser("~/.config"), "kglobalshortcutsrc")
+
+    try:
+        with open(path) as f:
+            lines = f.read().splitlines()
+    except FileNotFoundError:
+        lines = []
+
+    new_value = f"{shortcut},{command}"
+    key_prefix = f"{name}="
+    section = "[Custom Commands]"
+
+    out = []
+    replaced = False
+    section_start = None
+    for line in lines:
+        s = line.strip()
+        if s.startswith("["):
+            if s == section:
+                section_start = len(out)
+            out.append(line)
+            continue
+        if s.startswith(key_prefix):
+            out.append(f"{name}={new_value}")
+            replaced = True
+            continue
+        out.append(line)
+
+    if not replaced:
+        if section_start is None:
+            if out and out[-1].strip() != "":
+                out.append("")
+            out.append(section)
+            out.append(f"{name}={new_value}")
+        else:
+            insert_at = len(out)
+            for j in range(section_start + 1, len(out)):
+                if out[j].strip().startswith("["):
+                    insert_at = j
+                    break
+            out.insert(insert_at, f"{name}={new_value}")
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path + ".tmp", "w") as f:
+        f.write("\n".join(out) + "\n")
+    os.replace(path + ".tmp", path)
+  '';
+
+  shortcutWrapper = pkgs.writeShellScriptBin "librepods-shortcut" ''
+    exec ${pkgs.python3}/bin/python3 ${shortcutScript}
+  '';
 in
 {
-  # Headless LibrePods daemon.
-  systemd.user.services.librepods = {
-    description = "LibrePods headless AirPods daemon (AACP lifecycle + state.json)";
-    wantedBy = [ "default.target" ];
-    # Let the system bluetoothd settle before the daemon calls set_powered.
-    serviceConfig = {
-      Type = "simple";
-      ExecStartPre = "${pkgs.coreutils}/bin/sleep 3";
-      ExecStart = "${pkgs.librepods}/bin/librepods --no-tray";
-      Restart = "always";
-      RestartSec = "5";
-      Environment = [ "RUST_LOG=info" ];
-    };
+  # --- User-facing options -------------------------------------------------
+  options.librepods.connectShortcut = lib.mkOption {
+    type = lib.types.str;
+    default = "Ctrl+Shift+C";
+    description = "KDE global shortcut that triggers the LibrePods connect flow.";
+  };
+  options.librepods.connectCommand = lib.mkOption {
+    type = lib.types.str;
+    default = "${config.bluetooth.connectScript}/bin/bt-connect-headphones";
+    description = "Command the tray Reconnect action and the global shortcut run.";
   };
 
-  # Battery system-tray indicator (StatusNotifierItem). A tiny AirPod SNI
-  # icon for the Plasma system tray: reads state.json and exposes per-device
-  # battery detail (Devices -> Device N -> Left/Right/Case, with charge and
-  # rounded age) as a textual right-click menu. Runs in the user's graphical
-  # session (needs the session bus to register with
-  # org.kde.StatusNotifierWatcher); the app retries registration until the
-  # watcher is up, so it tolerates plasmashell starting after this unit.
-  systemd.user.services.librepods-tray = {
-    description = "LibrePods battery system-tray indicator (SNI)";
-    wantedBy = [ "default.target" ];
-    after = [ "graphical-session.target" ];
-    wants = [ "graphical-session.target" ];
-    serviceConfig = {
-      Type = "simple";
-      ExecStart = "${pkgs.librepodsTray}/bin/librepods-tray";
-      Restart = "on-failure";
-      RestartSec = "3";
+  config = {
+    # Headless LibrePods daemon.
+    systemd.user.services.librepods = {
+      description = "LibrePods headless AirPods daemon (AACP lifecycle + state.json)";
+      wantedBy = [ "default.target" ];
+      # Let the system bluetoothd settle before the daemon calls set_powered.
+      serviceConfig = {
+        Type = "simple";
+        ExecStartPre = "${pkgs.coreutils}/bin/sleep 3";
+        ExecStart = "${pkgs.librepods}/bin/librepods --no-tray";
+        Restart = "always";
+        RestartSec = "5";
+        Environment = [ "RUST_LOG=info" ];
+      };
     };
-  };
 
-  # Notification watcher (oneshot, driven by the timer below).
-  systemd.user.services.librepods-notify = {
-    description = "LibrePods notification watcher (one-shot)";
-    serviceConfig = {
-      Type = "oneshot";
-      ExecStart = "${notifyWrapper}/bin/librepods-notify";
+    # Battery system-tray indicator (StatusNotifierItem). A small AirPod SNI
+    # icon for the Plasma system tray: a live, colour-tinted icon + a
+    # multi-line hover tooltip show every device's status at a glance; the
+    # click menu is a flat, emoji-labelled status list plus a Reconnect action
+    # and Quit. Reads state.json; runs in the user's graphical session (needs
+    # the session bus to register with org.kde.StatusNotifierWatcher); the app
+    # retries registration until the watcher is up, so it tolerates
+    # plasmashell starting after this unit.
+    systemd.user.services.librepods-tray = {
+      description = "LibrePods battery system-tray indicator (SNI)";
+      wantedBy = [ "default.target" ];
+      after = [ "graphical-session.target" ];
+      wants = [ "graphical-session.target" ];
+      serviceConfig = {
+        Type = "simple";
+        ExecStart = "${pkgs.librepodsTray}/bin/librepods-tray";
+        Restart = "on-failure";
+        RestartSec = "3";
+        # The menu's Reconnect action shells out to this (non-blocking).
+        Environment = [ "LIBREPODS_CONNECT_CMD=${cfg.connectCommand}" ];
+      };
     };
-  };
 
-  systemd.user.timers.librepods-notify = {
-    description = "LibrePods notification watcher timer (10s)";
-    wantedBy = [ "timers.target" ];
-    timerConfig = {
-      OnBootSec = "15"; # give librepods a head start before the first diff
-      OnUnitActiveSec = "10";
-      AccuracySec = "5s";
+    # Notification watcher (oneshot, driven by the timer below).
+    systemd.user.services.librepods-notify = {
+      description = "LibrePods notification watcher (one-shot)";
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${notifyWrapper}/bin/librepods-notify";
+      };
+    };
+
+    systemd.user.timers.librepods-notify = {
+      description = "LibrePods notification watcher timer (10s)";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnBootSec = "15"; # give librepods a head start before the first diff
+        OnUnitActiveSec = "10";
+        AccuracySec = "5s";
+      };
+    };
+
+    # Install the connect global shortcut into the user's kglobalshortcutsrc at
+    # graphical session start (re-asserts the key so it survives Plasma
+    # rewrites of the file).
+    systemd.user.services.librepods-shortcut = {
+      description = "LibrePods: install the connect global shortcut into kglobalshortcutsrc";
+      wantedBy = [ "default.target" ];
+      after = [ "graphical-session.target" ];
+      wants = [ "graphical-session.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = "${shortcutWrapper}/bin/librepods-shortcut";
+        Environment = [
+          "LIBREPODS_SHORTCUT=${cfg.connectShortcut}"
+          "LIBREPODS_CONNECT_CMD=${cfg.connectCommand}"
+        ];
+      };
     };
   };
 }
