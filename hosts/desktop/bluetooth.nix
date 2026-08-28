@@ -9,11 +9,12 @@ let
   # The newer Pro pair — preferred when the two pairs tie (better sound).
   preferredMac = "74:77:86:25:E5:18";
 
-  # Rank the two pairs from librepods state.json (written by the patched
-  # daemon on every PPM event): advertising (out of case) first, then the
+  # Rank the two pairs from librepods state.json (the flat last-known record
+  # the patched daemon maintains): out-of-case (advertising) first, then the
   # preferred (newer Pro) pair, then higher effective battery (min of L/R).
-  # Falls back to Pro-first when state.json is absent or stale. Prints the
-  # MACs space-separated, best first.
+  # "Out of case" means the daemon's state field is one of the advertising
+  # states and the record was seen within 60s. Falls back to Pro-first when
+  # state.json is absent or stale. Prints the MACs space-separated, best first.
   orderScript = pkgs.writeText "librepods-order.py" ''
     import json, os, time
     pro = "74:77:86:25:E5:18"
@@ -24,12 +25,16 @@ let
     except Exception:
         data = {}
     now = int(time.time())
+    active_states = {"out_of_case", "music", "call", "ringing", "hanging_up"}
     def eff(e):
         v = [e.get(k) for k in ("left", "right") if e.get(k) is not None]
         return min(v) if v else -1
     def key(mac):
         e = data.get(mac, {})
-        fresh = 1 if now - int(e.get("last_seen", 0)) < 60 else 0
+        # Out of case (a connect candidate) only when the daemon's state is an
+        # advertising state AND the record is fresh; the daemon owns the state.
+        fresh = 1 if (e.get("state") in active_states
+                      and 0 <= now - int(e.get("last_seen", 0)) < 60) else 0
         return (-fresh, 0 if mac == pro else 1, -eff(e))
     print(" ".join(sorted(macs, key=key)))
   '';

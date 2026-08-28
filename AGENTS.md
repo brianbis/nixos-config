@@ -63,15 +63,7 @@ Activation scripts should therefore remain small and activation-specific. Do not
 
 ## Working Directory
 
-`/etc/nixos`. Repo is git on `main`. Do not activate or switch NixOS. Build and check configurations to test changes before
-
-finishing whenever practical. The jail permits the `nix` CLI; use `nix build`,
-
-`nix flake check`, and related read-only/build operations rather than `nixos-rebuild`,
-
-which is intentionally shimmed. For example, a flake system can be tested with
-
-`nix build --impure --print-out-paths .#nixosConfigurations.<host>.config.system.build.toplevel`.
+`/etc/nixos`. Repo is git on `main`. Do not activate or switch NixOS. Build and check configurations to test changes before finishing whenever practical. The jail permits the `nix` CLI; use `nix build`, `nix flake check`, and related read-only/build operations rather than `nixos-rebuild`, which is intentionally shimmed. **Prefer the narrowest relevant check or derivation for the files/code being changed; do not rebuild the entire NixOS system unless the change actually affects the system toplevel. When a build is needed, use the existing Nix store/cache and do not deliberately force a rebuild (for example, do not use `--rebuild` or otherwise invalidate/recompute an already-built derivation).** For example, a flake system can be tested with `nix build --impure --print-out-paths .#nixosConfigurations.<host>.config.system.build.toplevel` **only when the system toplevel is the relevant target**.
 
 Do not use activation commands to perform the test.
 
@@ -79,9 +71,9 @@ This file is generated from `home/llm/agents-gen/agents-md-template.md` (+
 
 `home/llm/agents-manifest.nix`); `just switch` overwrites it — edit the
 
-template/manifest, never this file. The llm agent user's dsh also loads it as
+template/manifest, never this file. The llm agent user's dsh also loads it as the
 
-the user-global instruction file (`$DSH_HOME/AGENTS.md`, installed by
+user-global instruction file (`$DSH_HOME/AGENTS.md`, installed by
 
 `home/llm/agent-home.nix`), so every dsh session gets it as global context
 

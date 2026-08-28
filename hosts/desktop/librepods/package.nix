@@ -30,10 +30,15 @@
 #     gated by the per-MAC `autoConnect` preference, default true),
 #   * AACP features (precise battery, ear detection, noise control, gestures).
 #
-# We patch it (patches/persist-state.patch) to persist the parsed Proximity
-# Pairing Message state to $XDG_STATE_HOME/librepods/state.json on every PPM
-# event — unconditionally, so it works headless. That file is the hook the
-# notification watcher and the Ctrl+Shift+C connect shortcut read.
+# We patch it (patches/persist-state.patch) to persist a thin "last known"
+# record per MAC to $XDG_STATE_HOME/librepods/state.json. Each record is a flat
+# set of the last REAL values observed: a null/0xFF observation never
+# overwrites a stored value, and case metrics are only written by a source
+# actually reading the case (AACP: case connected; PPM: case is the
+# advertiser). Both the PPM (advertising) and AACP (connected) handlers merge
+# into the same flat record, so readers (tray, notification watcher, the
+# Ctrl+Shift+C connect order) are dumb renderers with no freshness/source
+# heuristics. Written unconditionally, so it works headless.
 #
 # Pinned to the linux/rust branch HEAD (in-PR, not yet tagged):
 #   rev 672e65ad36eebf21ff1c1a508066f9197ee56d17 (2026-05-15)
@@ -81,7 +86,7 @@ rustPlatform.buildRustPackage rec {
   # Hash of the vendored cargo deps (computed via fetchCargoVendor).
   cargoHash = "sha256-17dE+oYvECU4f1SL6LHS95sXEea/Z0VgTPQ4u6TZTic=";
 
-  # Persist the parsed PPM state to state.json (headless-friendly).
+  # Persist a thin per-MAC last-known record to state.json (headless-friendly).
   patches = [ ./patches/persist-state.patch ];
 
   nativeBuildInputs = [ pkg-config makeWrapper patchelf ];

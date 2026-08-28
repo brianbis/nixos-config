@@ -6,9 +6,14 @@
 # user service. It owns the Apple-protocol (AACP) lifecycle for the paired
 # AirPods: continuous BLE monitor, auto-connect on case-open (shells out
 # `bluetoothctl connect <mac>`), and AACP features. Our patch makes it persist
-# the parsed Proximity Pairing Message state to
-# $XDG_STATE_HOME/librepods/state.json on every PPM event (unconditionally, so
-# it works headless).
+# a thin "last known" record per MAC to $XDG_STATE_HOME/librepods/state.json.
+# Each record is a flat set of the last REAL values observed: a null/0xFF
+# observation never overwrites a stored value, and case metrics are only
+# written by a source actually reading the case (AACP: case connected; PPM:
+# case is the advertiser). Both the PPM (advertising) and AACP (connected)
+# handlers merge into the same flat record, so readers (tray, this watcher,
+# the connect-order script) are dumb renderers with no freshness/source
+# heuristics. Written unconditionally (headless-safe).
 #
 # The notification watcher is a 10s oneshot timer that diffs state.json
 # against its own last-seen copy and fires KDE notifications on transitions
@@ -74,11 +79,20 @@ let
     state = load(STATE)
     last = load(LAST)
 
+    # A device is "active" (out of case / advertising) when its state is one
+    # of the advertising states and it was seen within GRACE seconds. The
+    # daemon owns the state field (and the last-real merge); the watcher just
+    # renders it. "connected" means the pods hold an AACP link to this PC.
+    ACTIVE_STATES = {"out_of_case", "music", "call", "ringing", "hanging_up"}
+
+    def active(e):
+        age = now - int(e.get("last_seen", 0))
+        return e.get("state") in ACTIVE_STATES and 0 <= age < GRACE
+
     # Current fresh/stale map.
     current = {}
     for mac, e in state.items():
-        age = now - int(e.get("last_seen", 0))
-        current[mac] = {"fresh": 0 <= age < GRACE, "entry": e}
+        current[mac] = {"fresh": active(e), "entry": e}
 
     for mac in set(current) | set(last):
         c = current.get(mac)
@@ -96,7 +110,7 @@ let
                    "In case or on another device")
         elif c_fresh and l_fresh and c_entry:
             # Out-of-ear while audio is active (transition from in-ear).
-            if c_entry.get("connection_state") in ("music", "call") \
+            if c_entry.get("state") in ("music", "call") \
                     and not c_entry.get("in_case"):
                 for side in ("left", "right"):
                     if not c_entry.get(f"in_ear_{side}") \

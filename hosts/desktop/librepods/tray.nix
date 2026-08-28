@@ -5,18 +5,28 @@
 
 # librepods battery system-tray indicator (StatusNotifierItem).
 #
-# A tiny AirPod SNI icon for the Plasma system tray. It reads
-# $XDG_STATE_HOME/librepods/state.json (written by the patched librepods
-# daemon) and exposes all device information as a textual dbusmenu tree on
-# right-click:
+# A tiny AirPod SNI icon for the Plasma system tray. It is a *dumb renderer*:
+# the librepods daemon (Rust) owns all merge / freshness / source-picking logic
+# and writes a flat "last known" record per MAC to
+# $XDG_STATE_HOME/librepods/state.json. The tray just reads that file and
+# displays it directly — no dual-source (PPM + AACP) model, no freshness
+# windows, no source-picking heuristics.
 #
-#   Devices
-#     Device 1 - AirPods Pro 2 - active
-#       Left - 85% - <1m
-#       Right - 82% - <1m
-#       Case - 97% - 3m
-#     Device 2 - ...
-#   Quit
+# Three surfaces:
+#   * Icon (SNI IconPixmap + Status) — always visible in the panel; colour-
+#     tinted by aggregate state (white = ok, red = low battery / desync,
+#     grey = no data) with a thin battery bar.
+#   * Hover tooltip (SNI ToolTip) — multi-line live status of every device
+#     (model, MAC, state, in-ear, case lid, L/R/Case battery, age).
+#   * Menu (com.canonical.dbusmenu) — flat, emoji-labelled, one line per
+#     device (named by model + MAC, with state + battery + age) plus a
+#     Reconnect action and Quit, e.g.:
+#
+#       🎧 AirPods Pro 2 · 74:77:86:25:E5:18 · 🎧 connected · L85 R82⚡ C97 · 42s ago
+#       🎧 AirPods 2 · A4:C6:F0:CB:F3:52 · 📡 out_of_case · L75 R73 C93 · 3m ago
+#       ⏱ last beacon 42s ago
+#       🔌 Reconnect AirPods
+#       ⏻ Quit
 #
 # Pure Python (dbus-next + Pillow) — no third-party SNI library. dbus-next's
 # pure-Python marshaller handles the exact SNI wire types (a(iiay) IconPixmap,

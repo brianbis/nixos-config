@@ -2,25 +2,29 @@
 """librepods battery system-tray indicator (StatusNotifierItem).
 
 A small AirPod icon in the Plasma system tray that is a *glanceable, live*
-status surface plus a compact action menu.
+status surface plus a compact action menu. This tray is a **dumb renderer**:
+the librepods daemon (Rust) owns all merge / freshness / source-picking logic
+and writes a flat "last-known" record per MAC to
+$XDG_STATE_HOME/librepods/state.json. The tray just reads that file and
+displays it directly — there is no dual-source (PPM + AACP) model, no
+freshness windows, and no source-picking heuristics here.
 
 Three surfaces:
 
   * Icon (SNI ``IconPixmap`` + ``Status``) — always visible in the panel.
-    The glyph is colour-tinted by aggregate state (white = ok, amber = low
-    battery, grey = disconnected) with a thin battery bar.
+    The glyph is colour-tinted by aggregate state (white = ok, red = low
+    battery / desync, grey = no data) with a thin battery bar.
   * Hover tooltip (SNI ``ToolTip``) — multi-line, shows the full live status
-    of every device (model, MAC, connection state, in-ear, case lid, L/R/Case
-    battery, age) with **no interaction**.
+    of every device (model, MAC, state, in-ear, case lid, L/R/Case battery,
+    age) with **no interaction**.
   * Menu (``com.canonical.dbusmenu``) — flat, emoji-labelled, one line per
-    device (named by model + MAC, with connection state + battery + age) plus
-    a prominent **Reconnect** action and **Quit**.
+    device (named by model + MAC, with state + battery + age) plus a
+    prominent **Reconnect** action and **Quit**.
 
-It reads $XDG_STATE_HOME/librepods/state.json (written by the patched
-librepods daemon). On every poll the layout, tooltip, and icon are rebuilt;
-when they change the ``LayoutUpdated`` and ``PropertiesChanged`` signals are
-emitted so the tray client re-fetches. The menu re-fetches fresh data on every
-open (``AboutToShow`` returns ``True``), so nothing shown is stale.
+On every poll the layout, tooltip, and icon are rebuilt; when they change the
+``LayoutUpdated`` and ``PropertiesChanged`` signals are emitted so the tray
+client re-fetches. The menu re-fetches fresh data on every open (``AboutToShow``
+returns ``True``), so nothing shown is stale.
 
 Implemented with dbus-next (pure-Python D-Bus, GLib-integrated). dbus-next
 marshals the exact SNI wire types (a(iiay) IconPixmap, (sassas) ToolTip,
@@ -72,15 +76,11 @@ WATCHER_IFACE = "org.kde.StatusNotifierWatcher"
 CONNECT_CMD = os.environ.get("LIBREPODS_CONNECT_CMD", "bt-connect-headphones")
 
 POLL_SECONDS = 5
-# A device is "fresh" (active) if its PPM was seen within this window.
-FRESH_SECONDS = 60
-# Use the precise AACP battery sub-object while it is fresh.
-AACP_FRESH_SECONDS = 300
 # Below this aggregate battery level the icon/Status raise attention.
 LOW_BATTERY_PCT = 20
-# A device is "active" if its PPM or AACP was seen within this window. Beyond
-# it the last-known state is still shown (marked stale) rather than nulled —
-# a pair that checks in every few minutes shouldn't read as disconnected.
+# Retained for API stability; freshness windows now live in the WRITER (the
+# daemon owns merge/freshness/source-picking), so the reader no longer applies
+# a staleness window.
 ACTIVE_SECONDS = 600
 # Two pods that charge together should stay close; a difference at or above
 # this signals a desync (poor seating / one pod not charging) -> red icon.
@@ -101,143 +101,166 @@ MENU_ID_LAST_BEACON = 5
 DEVICE_ID_BASE = 100
 DEVICE_ID_STRIDE = 10
 
-# Visual language: connection state -> emoji (scannable in a plain-text menu).
-CONN_EMOJI = {
+# Visual language: flat last-known state -> emoji (scannable in a plain-text
+# menu). The writer owns state derivation; we only map it to a glyph.
+STATE_EMOJI = {
+    "connected": "\U0001f3a7",  # 🎧
+    "out_of_case": "\U0001f4e1",  # 📡
     "music": "\U0001f3b5",  # 🎵
     "call": "\U0001f4de",  # 📞
-    "ringing": "\U0001f4f2",  # 📲
-    "idle": "\U0001f3a7",  # 🎧
-    "disconnected": "\U0001f50c",  # 🔌
-    "hanging_up": "\U0001f4de",  # 📞
-    "unknown": "\u2754",  # ❔
+    "ringing": "\U0001f514",  # 🔔
+    "hanging_up": "\U0001f4f5",  # 📵
 }
+# The set of valid flat-schema state values (keys of the emoji map).
+STATE_VALUES = set(STATE_EMOJI)
 DEVICE_EMOJI = "\U0001f3a7"  # 🎧
 CHARGE = "\u26a1"  # ⚡
+EN_DASH = "\u2013"  # –
 RECONNECT_EMOJI = "\U0001f50c"  # 🔌
 QUIT_EMOJI = "\u23fb"  # ⏻
 
 
 # ---------------------------------------------------------------------------
-# State model
+# State model (dumb renderer — the file already holds merged last-known values)
 # ---------------------------------------------------------------------------
 
 
 def load_state() -> dict:
+    """Read the flat per-MAC last-known records and normalize each one.
+
+    The writer owns the merge; we just fold each record to the flat schema so
+    a legacy (pre-flat) record still displays. Non-dict values are skipped.
+    """
     try:
         with open(STATE_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
         if isinstance(data, dict):
-            return data
+            return {
+                mac: normalize(entry)
+                for mac, entry in data.items()
+                if isinstance(entry, dict)
+            }
     except (OSError, ValueError):
         pass
     return {}
 
 
 def _pct(v):
+    """Coerce a battery value to an int 0-100, else None (never a bad read)."""
     if isinstance(v, (int, float)) and 0 <= v <= 100:
         return int(round(v))
     return None
 
 
-def _aacp_fresh(entry: dict) -> bool:
-    aacp = entry.get("aacp")
-    if not isinstance(aacp, dict):
-        return False
-    ls = aacp.get("last_seen")
-    return isinstance(ls, (int, float)) and (time.time() - ls) < AACP_FRESH_SECONDS
+def normalize(entry: dict) -> dict:
+    """Fold a (possibly legacy) record into the flat last-known schema.
 
+    The writer (daemon) owns all merge/freshness/source-picking logic; this
+    defensive reader-side fold lets a LEGACY record (an ``aacp`` sub-object +
+    coarse PPM fields) still display. A no-op on records already in the new
+    format. Returns a dict with exactly the 13 flat-schema keys.
+    """
+    if not isinstance(entry, dict):
+        entry = {}
+    raw_aacp = entry.get("aacp")
+    aacp = raw_aacp if isinstance(raw_aacp, dict) else {}
+    has_aacp = isinstance(raw_aacp, dict)
 
-def _entry_last_seen(entry: dict):
+    # model: top-level, default "AirPods".
+    model = entry.get("model") or "AirPods"
+
+    # state: explicit top-level state (one of the 6) wins; else an audio
+    # connection_state; else advertising => out_of_case; else an aacp
+    # sub-object => connected; else out_of_case.
+    state = entry.get("state")
+    if state not in STATE_VALUES:
+        conn = entry.get("connection_state")
+        if conn in ("music", "call", "ringing", "hanging_up"):
+            state = conn
+        elif entry.get("advertising"):
+            state = "out_of_case"
+        elif has_aacp:
+            state = "connected"
+        else:
+            state = "out_of_case"
+
+    # left/right: top-level (if not null) else aacp, else null.
+    def pick(key):
+        v = entry.get(key)
+        return v if v is not None else aacp.get(key)
+
+    left = _pct(pick("left"))
+    right = _pct(pick("right"))
+
+    # case: top-level (if not null) else aacp.case ONLY while the case is
+    # connected, else null. (Filters the AACP case:0/case_connected:false
+    # sentinel; the writer owns that protection too.)
+    case_src = entry.get("case")
+    if case_src is None and aacp.get("case_connected"):
+        case_src = aacp.get("case")
+    case = _pct(case_src)
+
+    def flag(key):
+        v = entry.get(key)
+        return bool(v) if v is not None else False
+
+    # last_seen: top-level else last_change else 0.
     ls = entry.get("last_seen")
-    return ls if isinstance(ls, (int, float)) else None
+    if not isinstance(ls, (int, float)):
+        ls = entry.get("last_change")
+    if not isinstance(ls, (int, float)):
+        ls = 0
+
+    return {
+        "model": model,
+        "state": state,
+        "left": left,
+        "right": right,
+        "case": case,
+        "charging_left": flag("charging_left"),
+        "charging_right": flag("charging_right"),
+        "charging_case": flag("charging_case"),
+        "in_ear_left": flag("in_ear_left"),
+        "in_ear_right": flag("in_ear_right"),
+        "in_case": flag("in_case"),
+        "lid_open": flag("lid_open"),
+        "last_seen": ls,
+    }
 
 
 def _age_str(ts) -> str:
-    """Rounded age of a timestamp: '<1m', '3m', '2h', '5d'."""
+    """Human-readable age of a timestamp: 'just now', '42s ago', '3m ago',
+    '2h ago', '5d ago'."""
     if not isinstance(ts, (int, float)) or ts <= 0:
         return "n/a"
     age = max(0, int(time.time() - ts))
+    if age < 5:
+        return "just now"
     if age < 60:
-        return "<1m"
+        return f"{age}s ago"
     if age < 3600:
-        return f"{age // 60}m"
+        return f"{age // 60}m ago"
     if age < 86400:
-        return f"{age // 3600}h"
-    return f"{age // 86400}d"
+        return f"{age // 3600}h ago"
+    return f"{age // 86400}d ago"
 
 
-def _source(entry: dict):
-    """Return (src_dict, src_last_seen) — the precise AACP sub-object while it
-    is fresh, else the coarse PPM entry."""
-    use_aacp = _aacp_fresh(entry)
-    src = entry.get("aacp") if use_aacp else entry
-    src_ls = src.get("last_seen") if use_aacp else _entry_last_seen(entry)
-    return src, src_ls
-
-
-def _case_value(entry: dict):
-    """Best known case charge. The precise AACP case reading is only reliable
-    while the case is connected to the pods; when the pods are out of the case
-    (in use) the AACP reports case=0 with case_connected=false, which must not
-    supplant a known PPM charge. So: use the AACP case while the case is
-    connected, else the last-known PPM case value (None if never reported)."""
-    aacp = entry.get("aacp")
-    if isinstance(aacp, dict) and _aacp_fresh(entry) and aacp.get("case_connected"):
-        v = _pct(aacp.get("case"))
-        if v is not None:
-            return v
-    return _pct(entry.get("case"))
-
-
-def _battery_str(entry: dict) -> str:
-    """Compact 'L85 R82⚡ C97' (nulls as '—'). The case value uses
-    _case_value so a 'case not connected' AACP reading (0) never supplants a
-    known PPM charge."""
-    src, _ = _source(entry)
+def _battery_str(rec: dict) -> str:
+    """Compact 'L85 R82⚡ C97' (nulls as an en dash); reads the flat record
+    directly — no source picking (the writer owns the merge)."""
 
     def p(v):
-        return "—" if v is None else str(v)
+        return EN_DASH if v is None else str(v)
 
-    def bolt(key):
-        return CHARGE if src.get(f"charging_{key}") else ""
-
-    l, r = _pct(src.get("left")), _pct(src.get("right"))
-    c = _case_value(entry)
-    return f"L{p(l)}{bolt('left')} R{p(r)}{bolt('right')} C{p(c)}{bolt('case')}"
+    l, r, c = rec.get("left"), rec.get("right"), rec.get("case")
+    cl = CHARGE if rec.get("charging_left") else ""
+    cc = CHARGE if rec.get("charging_case") else ""
+    return f"L{p(l)} R{p(r)}{cl} C{p(c)}{cc}"
 
 
-def _conn_emoji(conn: str) -> str:
-    return CONN_EMOJI.get(conn, CONN_EMOJI["unknown"])
-
-
-def _status(e: dict, now: float):
-    """Last-known (emoji, label) for a device — never nulled.
-
-    The PPM ``connection_state`` is audio-centric and reads 'unknown' even
-    when the pods are connected to the PC. Instead we infer the last known
-    state from which source was most recent (AACP = connected to the PC, PPM
-    = out of case / advertising), and mark it stale when the last activity is
-    beyond ACTIVE_SECONDS. A pair that checks in every few minutes keeps
-    showing its last state (marked stale) rather than 'disconnected'.
-    """
-    aacp_ls = _aacp_last_seen(e)
-    ppm_ls = _entry_last_seen(e) or 0
-    last_activity = max(aacp_ls, ppm_ls)
-    if last_activity == 0:
-        return CONN_EMOJI["unknown"], "no data"
-
-    conn = e.get("connection_state") or ""
-    if aacp_ls >= ppm_ls and aacp_ls > 0:
-        if conn in ("music", "call", "ringing"):
-            emoji, label = CONN_EMOJI[conn], conn
-        else:
-            emoji, label = DEVICE_EMOJI, "connected"
-    else:
-        emoji, label = DEVICE_EMOJI, "out of case"
-
-    if now - last_activity >= ACTIVE_SECONDS:
-        label = f"{label} (stale)"
-    return emoji, label
+def _state_emoji(state: str) -> str:
+    """Map a flat state to its emoji (🎧 fallback for unknown)."""
+    return STATE_EMOJI.get(state, DEVICE_EMOJI)
 
 
 # ---------------------------------------------------------------------------
@@ -259,32 +282,27 @@ def _separator() -> dict:
     return {"type": Variant("s", "separator")}
 
 
-def _device_line(mac: str, e: dict, now: float) -> str:
-    """One scannable line: '🎧 AirPods Pro 2 · MAC · 🎧 connected · L85 R82⚡ C97 · <1m'."""
-    model = e.get("model") or "AirPods"
-    emoji, status = _status(e, now)
-    _, src_ls = _source(e)
+def _device_line(mac: str, rec: dict) -> str:
+    """One scannable line:
+    '🎧 AirPods Pro 2 · MAC · 🎧 connected · L85 R82⚡ C97 · 42s ago'."""
+    model = rec.get("model") or "AirPods"
+    state = rec.get("state") or "out_of_case"
+    emoji = _state_emoji(state)
     return (
         f"{DEVICE_EMOJI} {model} · {mac} · "
-        f"{emoji} {status} · {_battery_str(e)} · {_age_str(src_ls)}"
+        f"{emoji} {state} · {_battery_str(rec)} · {_age_str(rec.get('last_seen'))}"
     )
 
 
-def build_menu_layout(pairs: dict) -> dict:
-    """Build the flat dbusmenu tree: {menu_id: (props, [child_ids])}.
-
-    Devices are ordered most-recently-seen first and labelled by model + MAC
-    (not 'Device N'). Each device is a single disabled (informational) line;
-    the only enabled actions are Reconnect and Quit.
-    """
-    now = time.time()
+def _sorted_devices(pairs: dict):
+    """Devices ordered most-recently-seen first (max last_seen), dicts only."""
 
     def sort_key(mac):
         e = pairs[mac]
-        ls = _entry_last_seen(e) if isinstance(e, dict) else None
-        return ls if ls is not None else 0
+        ls = e.get("last_seen") if isinstance(e, dict) else None
+        return ls if isinstance(ls, (int, float)) else 0
 
-    devices = [
+    return [
         (mac, e)
         for mac, e in sorted(
             pairs.items(), key=lambda kv: sort_key(kv[0]), reverse=True
@@ -292,14 +310,27 @@ def build_menu_layout(pairs: dict) -> dict:
         if isinstance(e, dict)
     ]
 
-    # Last reported activity by ANY beacon (most recent PPM/AACP across all
-    # beacons) — a recent value proves the daemon is alive and checking in.
+
+def _beacon_label(pairs: dict) -> str:
+    """Footer line: most recent last_seen across all MACs (proves the daemon
+    is alive and checking in)."""
     last_beacon = _last_beacon_activity(pairs)
-    beacon_label = (
-        f"\u23F1 last beacon: {_age_str(last_beacon)}"
+    return (
+        f"\u23F1 last beacon {_age_str(last_beacon)}"
         if last_beacon
         else "\u23F1 no beacon activity"
     )
+
+
+def build_menu_layout(pairs: dict) -> dict:
+    """Build the flat dbusmenu tree: {menu_id: (props, [child_ids])}.
+
+    Devices are ordered most-recently-seen first (max last_seen) and labelled
+    by model + MAC. Each device is a single disabled (informational) line; the
+    only enabled actions are Reconnect and Quit.
+    """
+    devices = _sorted_devices(pairs)
+    beacon_label = _beacon_label(pairs)
 
     layout = {
         MENU_ID_SEPARATOR: (_separator(), []),
@@ -326,7 +357,7 @@ def build_menu_layout(pairs: dict) -> dict:
     for i, (mac, e) in enumerate(devices):
         base = DEVICE_ID_BASE + i * DEVICE_ID_STRIDE
         device_ids.append(base)
-        layout[base] = (_props(_device_line(mac, e, now), enabled=False), [])
+        layout[base] = (_props(_device_line(mac, e), enabled=False), [])
 
     layout[MENU_ID_ROOT] = (
         _props("", display="none"),
@@ -341,45 +372,32 @@ def build_menu_layout(pairs: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _device_detail(mac: str, e: dict, now: float) -> str:
-    """Detailed line: '🎧 connected · in-ear L/R · case open · L85 R82⚡ C97 · <1m'."""
-    emoji, status = _status(e, now)
-    _, src_ls = _source(e)
+def _device_detail(mac: str, rec: dict) -> str:
+    """Detailed line: '🎧 connected · in-ear L/R · case open · L85 R82⚡ C97 · 42s ago'."""
+    state = rec.get("state") or "out_of_case"
+    emoji = _state_emoji(state)
 
-    ear = [s for s, k in (("L", "in_ear_left"), ("R", "in_ear_right")) if e.get(k)]
+    ear = [s for s, k in (("L", "in_ear_left"), ("R", "in_ear_right")) if rec.get(k)]
     ear_s = "in-ear " + "/".join(ear) if ear else "out-of-ear"
 
-    lid = e.get("lid_open")
+    lid = rec.get("lid_open")
     lid_s = "case open" if lid else ("case closed" if lid is False else "case ?")
 
     parts = [
-        f"{emoji} {status}",
+        f"{emoji} {state}",
         ear_s,
         lid_s,
-        _battery_str(e),
-        _age_str(src_ls),
+        _battery_str(rec),
+        _age_str(rec.get("last_seen")),
     ]
-    if e.get("in_case"):
+    if rec.get("in_case"):
         parts.insert(1, "in case")
     return " · ".join(parts)
 
 
 def build_tooltip(pairs: dict) -> list:
     """Multi-line hover text: one two-line block per device (most recent first)."""
-    now = time.time()
-
-    def sort_key(mac):
-        e = pairs[mac]
-        ls = _entry_last_seen(e) if isinstance(e, dict) else None
-        return ls if ls is not None else 0
-
-    devices = [
-        (mac, e)
-        for mac, e in sorted(
-            pairs.items(), key=lambda kv: sort_key(kv[0]), reverse=True
-        )
-        if isinstance(e, dict)
-    ]
+    devices = _sorted_devices(pairs)
 
     if not devices:
         return ["No AirPods detected"]
@@ -388,15 +406,8 @@ def build_tooltip(pairs: dict) -> list:
     for mac, e in devices:
         model = e.get("model") or "AirPods"
         lines.append(f"{model} · {mac}")
-        lines.append("  " + _device_detail(mac, e, now))
-    # Last reported activity by any beacon — a recent value proves the daemon
-    # is alive and checking in.
-    last_beacon = _last_beacon_activity(pairs)
-    lines.append(
-        f"\u23F1 last beacon: {_age_str(last_beacon)}"
-        if last_beacon
-        else "\u23F1 no beacon activity"
-    )
+        lines.append("  " + _device_detail(mac, e))
+    lines.append(_beacon_label(pairs))
     return lines
 
 
@@ -410,74 +421,51 @@ def _tooltip_struct(lines: list, main_text: str = "AirPods") -> list:
 # ---------------------------------------------------------------------------
 
 
-def _aacp_last_seen(e: dict):
-    """AACP sub-object last_seen for a device (0 if none)."""
-    a = e.get("aacp")
-    if isinstance(a, dict):
-        als = a.get("last_seen")
-        if isinstance(als, (int, float)):
-            return als
-    return 0
-
-
-def _last_activity(e: dict):
-    """Most recent PPM or AACP last_seen for a device (0 if none)."""
-    return max(_entry_last_seen(e) or 0, _aacp_last_seen(e))
-
-
-def _desync(pods: dict) -> bool:
-    """True when the two pods differ by >= DESYNC_PCT (poor seating / one pod
-    not charging). Both pods must be present to judge it."""
-    l, r = pods.get("left"), pods.get("right")
-    if l is None or r is None:
-        return False
-    return abs(l - r) >= DESYNC_PCT
-
-
 def _last_beacon_activity(pairs: dict) -> float:
-    """Most recent PPM/AACP activity across ALL beacons (0 if none). This is
-    the 'last reported activity by any beacon' — a recent value proves the
-    daemon is alive and checking in."""
+    """Most recent last_seen across ALL MACs (0 if none). A recent value proves
+    the daemon is alive and checking in."""
     best = 0
     for e in pairs.values():
         if isinstance(e, dict):
-            best = max(best, _last_activity(e))
+            ls = e.get("last_seen")
+            if isinstance(ls, (int, float)) and ls > 0:
+                best = max(best, ls)
     return best
 
 
 def _aggregate(pairs: dict):
-    """Return (pods, no_data, desync, stale, bucket) for the icon.
+    """Return (no_data, desync, bucket) for the icon + SNI Status.
 
-    Each beacon aggregates separately: pods is the *last-known* L/R of the
-    most-recently-active beacon (the case is excluded — it may not check in
-    while connected, so it must not gate the reading). no_data is True only
-    when no beacon has ever reported a pod battery (the sole case that greys
-    the icon). desync is True when the two pods disagree by >= DESYNC_PCT.
-    stale is True when the most recent activity is beyond ACTIVE_SECONDS.
-    bucket is a coarse (//10) level so the icon only re-renders when the
-    reading crosses a 10% boundary (no 'spazzing').
+    The tray is a dumb renderer: the file already holds the merged last-known
+    values, so we pick the most-recently-seen MAC (max last_seen) and read its
+    left/right directly.
+      * no_data — no records at all, or the chosen record has both left and
+                  right null (greys the icon).
+      * desync  — abs(left - right) >= DESYNC_PCT (nulls treated as 0).
+      * bucket  — min(left, right) // 10 (nulls as 0); the coarse 10%-stepped
+                  level the icon bar is drawn at.
     """
-    now = time.time()
-    best = None  # (last_activity, {left, right})
+    best_mac = None
+    best_ts = 0
     for mac, e in pairs.items():
         if not isinstance(e, dict):
             continue
-        ts = _last_activity(e)
-        if ts == 0:
-            continue
-        src, _ = _source(e)
-        pods = {"left": _pct(src.get("left")), "right": _pct(src.get("right"))}
-        if all(v is None for v in pods.values()):
-            continue
-        if best is None or ts > best[0]:
-            best = (ts, pods)
-    if best is None:
-        return {"left": None, "right": None}, True, False, False, None
-    ts, pods = best
-    vals = [v for v in pods.values() if v is not None]
-    level = min(vals) if vals else 0
-    stale = now - ts >= ACTIVE_SECONDS
-    return pods, False, _desync(pods), stale, level // 10
+        ls = e.get("last_seen")
+        if isinstance(ls, (int, float)) and ls > 0 and ls > best_ts:
+            best_ts = ls
+            best_mac = mac
+    if best_mac is None:
+        return True, False, None
+    rec = pairs[best_mac]
+    l = rec.get("left")
+    r = rec.get("right")
+    if l is None and r is None:
+        return True, False, None
+    lv = l if l is not None else 0
+    rv = r if r is not None else 0
+    level = min(lv, rv)
+    desync = abs(lv - rv) >= DESYNC_PCT
+    return False, desync, level // 10
 
 
 def _palette(level, no_data, desync):
@@ -833,11 +821,10 @@ class Tray:
 
         layout = build_menu_layout(pairs)
         tooltip = _tooltip_struct(build_tooltip(pairs))
-        pods, no_data, desync, stale, bucket = _aggregate(pairs)
+        no_data, desync, bucket = _aggregate(pairs)
         # Coarse (10%-stepped) value drives both the icon and the SNI Status,
         # so the icon only re-renders when the reading crosses a 10% boundary
-        # (no per-poll 'spazzing'). The last-known level is shown even when
-        # stale; only 'no data at all' greys the icon.
+        # (no per-poll 'spazzing'). Only 'no data at all' greys the icon.
         coarse = 0 if no_data else (bucket * 10)
         status = (
             "NeedsAttention"
