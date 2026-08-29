@@ -1,12 +1,13 @@
 { lib, pkgs, ... }:
 
-# hushmic (real-time DPDFNet inference) runs on cpu6/7, pinned via the user
-# service's CPUAffinity. Hold those cores at performance governor + EPP
-# statically so there is no runtime flapping or low-clock artifacts.
+# hushmic (real-time DPDFNet inference) runs on cpu0-7 (all the P-cores),
+# pinned via the user service's CPUAffinity. Hold those cores at performance
+# governor + EPP statically so there is no runtime flapping or low-clock
+# artifacts.
 let
-  # The dedicated audio cores: the two 5.8 GHz P-cores (highest turbo on
-  # this machine).
-  audioCores = [ "cpu6" "cpu7" ];
+  # The dedicated audio cores: all 8 P-cores (cpu0-7) on this 13900K — the
+  # machine's performance cores per /sys/devices/cpu_core/cpus.
+  audioCores = [ "cpu0" "cpu1" "cpu2" "cpu3" "cpu4" "cpu5" "cpu6" "cpu7" ];
 
   # -u without -e: a failed sysfs write (read-only fs, transient race) must
   # not abort the script mid-loop; the core-pin guard re-checks every 60s and
@@ -82,7 +83,7 @@ let
 in
 {
   systemd.services.hushmic-audio-cores = {
-    description = "Pin audio cores (cpu6/7) to performance governor + EPP";
+    description = "Pin audio cores (cpu0-7) to performance governor + EPP";
     # sysinit.target: must run before intel_pstate HWP init locks cpufreq
     # sysfs; multi-user.target is too late (files are 644). No Before=: a
     # RemainAfterExit oneshot ordered before its wantedBy target cycles.

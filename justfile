@@ -5,11 +5,12 @@ secrets-dir := "secrets"
 # These recipes run under sudo, so root can read the 0400 tmpfs key.
 identity-key := "/run/agenix-tpm/key.txt"
 
-# Cap build parallelism. The box is 24 cores / 64 GB with NO swap, so a
-# 24-way rustc build of the heavy local Rust package (librepods:
-# iced/wgpu/winit + bluer + libpulse + dbus) OOMs and hard-crashes the box.
-# --cores caps rustc parallelism INSIDE a cargo build (NIX_BUILD_CORES);
-# --max-jobs caps how many derivations build at once. 4-way is safe.
+# Cap build parallelism. The box is 24 cores / 64 GB with NO swap, so an
+# uncapped 24-way rustc build of the heavy local Rust package (librepods:
+# iced/wgpu/winit + bluer + libpulse + dbus) would OOM and hard-crash the box.
+# The caps below keep it within the memory budget: --cores caps rustc
+# parallelism INSIDE a cargo build (NIX_BUILD_CORES) and --max-jobs caps how
+# many derivations build at once. 4-way is the safe setting.
 # These are client-side flags, so they apply to the very next build
 # (no chicken-and-egg: no successful switch required first).
 build-flags := "--cores 4 --max-jobs 4"

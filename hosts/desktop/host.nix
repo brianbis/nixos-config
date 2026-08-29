@@ -18,10 +18,10 @@ in
   # many *derivations* build in parallel. It does NOT cap rustc parallelism
   # inside a single cargo build — that is `NIX_BUILD_CORES` (the `--cores`
   # flag), and it is the 24-way rustc fan-out of the heavy local Rust build
-  # (librepods: iced/wgpu/winit + bluer) that actually OOMs this 64 GB / no-swap
-  # box. The real OOM fix is the `--cores` cap in the justfile (build-flags),
-  # which is client-side and applies to the very next build. This line is kept
-  # only as a persistent default so builds outside the justfile stay bounded.
+  # (librepods: iced/wgpu/winit + bluer) that would OOM this 64 GB / no-swap
+  # box. The `--cores` cap in the justfile (build-flags) is the client-side
+  # fix that applies to the very next build. This line is kept only as a
+  # persistent default so builds outside the justfile stay bounded.
   nix.settings.max-jobs = 4;
 
   nix.gc = {
@@ -76,11 +76,11 @@ in
     # intel_pstate + HWP locks cpufreq sysfs (644) after driver init, so
     # scaling_governor is writable only at udev device registration — before
     # any systemd service (e.g. hushmic-audio-cores) runs.
-    ACTION=="add", SUBSYSTEM=="cpu", KERNEL=="cpu[67]", ATTR{cpufreq/scaling_governor}="performance"
-    ACTION=="add", SUBSYSTEM=="cpu", KERNEL=="cpu[67]", ATTR{cpufreq/energy_performance_preference}="performance"
+    ACTION=="add", SUBSYSTEM=="cpu", KERNEL=="cpu[0-7]", ATTR{cpufreq/scaling_governor}="performance"
+    ACTION=="add", SUBSYSTEM=="cpu", KERNEL=="cpu[0-7]", ATTR{cpufreq/energy_performance_preference}="performance"
   '';
   # TLP re-asserts its own governor (powersave on AC), conflicting with the
-  # per-core policy: hushmic-audio-cores owns cpu6/7 and steam-gaming-mode owns
+  # per-core policy: hushmic-audio-cores owns cpu0-7 and steam-gaming-mode owns
   # the all-core gaming boost.
   services.tlp.enable = false;
 

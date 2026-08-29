@@ -1,7 +1,7 @@
 { pkgs, ... }:
 
 # Steam gaming CPU boost: while a game is running, flip all cores except the
-# audio cores (cpu6/7, owned by hushmic-audio-cores) to performance, and back
+# audio cores (cpu0-7, owned by hushmic-audio-cores) to performance, and back
 # to powersave/balance_power on exit. GameMode still applies per-process tuning.
 let
   gamingMode = pkgs.writeShellScript "steam-gaming-mode" ''
@@ -23,8 +23,8 @@ let
     esac
     for cpu in /sys/devices/system/cpu/cpu[0-9]*; do
       base=$(basename "$cpu")
-      # Audio cores 6/7 are permanently pinned to performance by hushmic
-      [ "$base" = cpu6 ] || [ "$base" = cpu7 ] && continue
+      # Audio cores cpu0-7 are permanently pinned to performance by hushmic
+      case "$base" in cpu[0-7]) continue ;; esac
       [ -e "$cpu/cpufreq/scaling_governor" ] && echo "$perf" > "$cpu/cpufreq/scaling_governor" || true
       [ -e "$cpu/cpufreq/energy_performance_preference" ] && echo "$epp" > "$cpu/cpufreq/energy_performance_preference" || true
     done
@@ -33,8 +33,8 @@ let
   steamGameWatcher = pkgs.writeShellScript "steam-game-watcher" ''
     ${pkgs.bash}/bin/bash -euo pipefail
     gm=${gamingMode}
-    # Keep watcher off audio cores 6/7
-    taskset -pc "0-5,8-23" $$ 2>/dev/null || true
+    # Watcher may run on any core (hushmic is single-threaded; no exclusive cores)
+    taskset -pc "0-23" $$ 2>/dev/null || true
     trap 'exit 0' INT TERM
     trap '$gm normal' EXIT
     gaming=0
@@ -72,10 +72,10 @@ let
 
   steamCpuIsolate = pkgs.writeShellScript "steam-cpu-isolate" ''
     ${pkgs.bash}/bin/bash -euo pipefail
-    mask="0-5,8-23"
+    mask="0-23"
     trap 'exit 0' INT TERM
     while :; do
-      # Isolate Steam client and its children from audio cores 6/7
+      # Steam may run on any core (hushmic is single-threaded; no exclusive cores)
       for pid in $(pgrep -f '^/nix/store/.*/bin/steam' 2>/dev/null || true); do
         taskset -pc "$mask" "$pid" 2>/dev/null || true
       done
@@ -108,12 +108,11 @@ in
       RestartSec = 3;
       KillSignal = "SIGTERM";
       TimeoutStopSec = "5s";
-      CPUAffinity = [ 0 1 2 3 4 5 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 ];
     };
   };
 
   systemd.services.steam-cpu-isolate = {
-    description = "Keep Steam/Proton off audio cores 6/7";
+    description = "Steam/Proton process affinity (all cores)";
     wantedBy = [ "multi-user.target" ];
     after = [ "steam-gaming-mode.service" ];
     serviceConfig = {

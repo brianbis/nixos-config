@@ -11,60 +11,83 @@ local resurrect = require 'YedPool-Wezurrect'
 resurrect.state_manager.change_state_save_dir(
     os.getenv('HOME') .. '/.local/share/resurrect/state/')
 
+-- Keep the rolling .bak of the workspace JSON but disable the dated archive
+-- copies: with a 60s periodic save, 10 extra full-workspace JSONs per save
+-- site is pure disk amplification for a single-user box.
+resurrect.state_manager.backup_retention_count = 0
+
 resurrect.setup(config, {
     keybindings = false,
     claude_hooks = false,
+    status_bar = false,
     auto_restore_prompt = false,
     save_workspaces = true,
-    save_windows = true,
-    save_tabs = true,
+    -- Only the workspace + per-instance saves are needed: the restore flow
+    -- reads instance state, and the named window/tab saves would duplicate
+    -- the same scrollback up to ~4x more (the workspace JSON already
+    -- contains every window and tab).
+    save_windows = false,
+    save_tabs = false,
     periodic_interval = 60,
 })
 
--- Capture the full session when a window closes so every window, tab, and
--- pane of the remaining session is persisted for restore on next launch.
-wezterm.on('window-close-request', function(window, pane)
-    resurrect.state_manager.save_workspace_full()
-    window:perform_action(wezterm.action.CloseCurrentWindow, pane)
-end)
-
--- Always drop back into the most recent saved session on startup.
-wezterm.on('gui-startup', function()
-    wezterm.time.call_after(100, function()
-        -- Skip this boot's own instance id (fresh, may not exist yet) and any
-        -- empty entries, so restore lands in the newest snapshot that actually
-        -- has tabs — the real previous session, not a blank window.
-        local instances = resurrect.instance_manager.list_instances()
-        local current = resurrect.instance_manager.instance_id
-        local latest = nil
-        for _, inst in ipairs(instances) do
-            if inst.instance_id ~= current
-                and inst.meta and (inst.meta.tab_count or 0) > 0 then
-                latest = inst
-                break
-            end
+-- WezTerm has no window-close event (verified against the pinned rev), so the
+-- periodic save above is the crash safety net: a crash loses at most
+-- periodic_interval of session structure.
+--
+-- Restore the most recent saved session on startup, into the default window
+-- that wezterm spawns for an empty mux (gui-startup fires before that window
+-- exists, so poll briefly for it). The restored instance is tombstoned
+-- (parity with the plugin's own restore_instances) and the restored session
+-- is immediately re-saved under this boot's instance id, so a crash before
+-- the next periodic save cannot regress the on-disk state to the pre-restore
+-- snapshot.
+local function restore_latest_session()
+    local instances = resurrect.instance_manager.list_instances()
+    local current = resurrect.instance_manager.instance_id
+    local latest = nil
+    for _, inst in ipairs(instances) do
+        if inst.instance_id ~= current
+            and inst.meta and (inst.meta.tab_count or 0) > 0 then
+            latest = inst
+            break
         end
-        if not latest then return end
+    end
+    if not latest then return end
 
-        local state = resurrect.instance_manager.load_instance(latest.instance_id)
-        if not state then return end
+    local state = resurrect.instance_manager.load_instance(latest.instance_id)
+    if not state then return end
 
-        -- Spawn a guaranteed window and reuse it for the restore, mirroring the
-        -- plugin's own auto-restore flow so no blank shell lingers behind.
-        wezterm.mux.spawn_window({})
-        wezterm.time.call_after(1, function()
-            local gui_win = wezterm.gui.gui_windows()[1]
-            if not gui_win then return end
-            local mux_win = gui_win:mux_window()
-            resurrect.workspace_state.restore_workspace(state, {
-                window = mux_win,
-                pane = mux_win:active_pane(),
-                relative = true,
-                restore_text = true,
-                on_pane_restore = resurrect.tab_state.default_on_pane_restore,
-            })
+    local gui_win = wezterm.gui.gui_windows()[1]
+    if not gui_win then return end
+    local mux_win = gui_win:mux_window()
+    resurrect.workspace_state.restore_workspace(state, {
+        window = mux_win,
+        pane = mux_win:active_pane(),
+        relative = true,
+        restore_text = true,
+        on_pane_restore = resurrect.tab_state.default_on_pane_restore,
+    })
+
+    resurrect.instance_manager.tombstone_instance(latest.instance_id)
+    resurrect.state_manager.save_workspace_full()
+end
+
+local function wait_for_window_and_restore(attempts)
+    if wezterm.gui.gui_windows()[1] then
+        -- Grace period so the default pane's shell has initialized before
+        -- the restore sends `cd`/process commands into it.
+        wezterm.time.call_after(0.5, restore_latest_session)
+    elseif attempts > 0 then
+        wezterm.time.call_after(0.05, function()
+            wait_for_window_and_restore(attempts - 1)
         end)
-    end)
+    end
+end
+
+wezterm.on('gui-startup', function()
+    -- ~10s budget: the default window appears within milliseconds normally.
+    wait_for_window_and_restore(200)
 end)
 
 config.font = wezterm.font 'JetBrains Mono'

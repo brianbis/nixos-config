@@ -43,7 +43,9 @@
 # Pinned to the linux/rust branch HEAD (in-PR, not yet tagged):
 #   rev 672e65ad36eebf21ff1c1a508066f9197ee56d17 (2026-05-15)
 # The build is heavy (iced/wgpu/winit + bluer + libpulse + dbus) because the
-# `ui` module compiles even in headless mode.
+# `ui` module compiles even in headless mode. It is built locally under the
+# justfile build-flags caps (--cores 4 --max-jobs 4), which keep it within the
+# box's memory budget.
 let
   # System libraries required by bluer / iced / libpulse-binding / ksni.
   # Mirrors the buildInputs in the project's own flake.nix.

@@ -232,6 +232,19 @@ in
         Restart = "always";
         RestartSec = "5";
         Environment = [ "RUST_LOG=info" ];
+        # The daemon is a multi-threaded tokio runtime (a worker thread per core)
+        # at default priority, doing bursty work (battery notifications ->
+        # parse + log + state.json write, plus a 1s D-Bus poll). The A2DP audio
+        # output path (bluetoothd -> PipeWire -> speaker) also runs at default
+        # priority, so the daemon's bursts can delay the audio decode/write
+        # thread on a shared core -> sink underrun -> choppy audio. Back the
+        # daemon off so it yields to the audio pipeline. It is a control daemon
+        # (battery/ear readings, auto-connect) NOT on the audio data path and
+        # needs no latency, so this is safe. (audio.nix's priority.driver=2000
+        # is WirePlumber node-selection, not CPU priority, so it does not
+        # protect the A2DP threads on its own.)
+        Nice = 10;
+        CPUWeight = 50;
       };
     };
 

@@ -1,8 +1,8 @@
 { pkgs, ... }:
 
 # Mic chain: MOTU M4 Mic1 -> hushmic (DPDFNet LADSPA filter-chain) ->
-# virtual "hushmic" source. The hushmic service is pinned to cpu6/7
-# (the P-cores).
+# virtual "hushmic" source. The hushmic service is pinned to cpu0-7
+# (all the P-cores).
 {
   services.pulseaudio.enable = false;
 
@@ -126,7 +126,7 @@
       Restart = "on-failure";
       RestartSec = 3;
 
-      CPUAffinity = [ 6 7 ];
+      CPUAffinity = [ 0 1 2 3 4 5 6 7 ];
       Nice = -10;
       CPUWeight = 1000;
       OOMScoreAdjust = -1000;

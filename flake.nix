@@ -79,7 +79,7 @@
 
       # LibrePods (Rust rewrite) — AirPods lifecycle daemon, patched to persist
       # the parsed PPM state to state.json. Built locally (heavy: iced/wgpu +
-      # bluer + libpulse + dbus).
+      # bluer + libpulse + dbus) under the justfile build-flags caps.
       librepods = pkgs.callPackage ./hosts/desktop/librepods/package.nix { };
 
       # LibrePods battery system-tray indicator (StatusNotifierItem). Slim,
@@ -148,6 +148,11 @@
               inherit pkgs;
               lib = nixpkgs.lib;
             }).ca;
+
+          # Pinned WezTerm session-persistence plugin (resurrect.wezterm fork);
+          # built here so the artifact is testable in isolation (nix build
+          # .#packages.x86_64-linux.wezurrect, --rebuild for reproducibility).
+          wezurrect = pkgs.callPackage ./home/wezterm/resurrect.nix { };
         };
 
       nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {

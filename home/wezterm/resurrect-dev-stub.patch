@@ -1,0 +1,30 @@
+--- a/plugin/init.lua
++++ b/plugin/init.lua
+@@ -1,5 +1,26 @@
+ local wezterm = require("wezterm") --[[@as Wezterm]] --- this type cast invokes the LSP module for Wezterm
+-local dev = wezterm.plugin.require("https://github.com/chrisgve/dev.wezterm")
++-- dev.wezterm (chrisgve) used to be fetched from GitHub at config-load time
++-- (a runtime network dependency not declared in the flake). This inline
++-- stub provides the two things this plugin needs from it: the plugin
++-- checkout dir (used as the default state dir, which the user config
++-- overrides) and the <checkout>/plugin/?.lua package.path entry that makes
++-- require("resurrect.*") resolve.
++local dev = {}
++function dev.setup(opts)
++	local home
++	for entry in package.path:gmatch("[^;]+") do
++		home = entry:match("^(.+)/plugins/%?/plugin/init%.lua$")
++		if home then
++			break
++		end
++	end
++	if not home then
++		error("YedPool-Wezurrect: plugin home not found in package.path")
++	end
++	local plugin_dir = home .. "/plugins/YedPool-Wezurrect"
++	package.path = package.path .. ";" .. plugin_dir .. "/plugin/?.lua"
++	return plugin_dir
++end
+ 
+ local pub = {}
+ 

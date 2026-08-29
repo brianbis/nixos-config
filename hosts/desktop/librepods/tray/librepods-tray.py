@@ -316,9 +316,9 @@ def _beacon_label(pairs: dict) -> str:
     is alive and checking in)."""
     last_beacon = _last_beacon_activity(pairs)
     return (
-        f"\u23F1 last beacon {_age_str(last_beacon)}"
+        f"\u23f1 last beacon {_age_str(last_beacon)}"
         if last_beacon
-        else "\u23F1 no beacon activity"
+        else "\u23f1 no beacon activity"
     )
 
 
@@ -859,10 +859,10 @@ class Tray:
             }
             self.sni.emit_properties_changed({k: values[k] for k in changed})
 
-        # Retry watcher registration until plasmashell's StatusNotifierWatcher
-        # is up (it may lag the service at session start).
-        if not self._registered:
-            self.register_with_watcher()
+        # Keep the watcher registration alive (see _ensure_registered). The
+        # watcher (kded6) may start after us or restart, dropping our one-time
+        # registration; this re-establishes it so the icon survives.
+        self._ensure_registered()
         return True
 
     # -- actions ------------------------------------------------------------
@@ -910,6 +910,55 @@ class Tray:
             self._registered = True
         except Exception as e:  # noqa: BLE001
             print(f"Watcher registration failed (will retry): {e}", file=sys.stderr)
+
+    def _watcher_registered_items(self) -> list:
+        """Read the watcher's RegisteredStatusNotifierItems (a list of strings).
+
+        Each entry is "<bus-name>/StatusNotifierItem" where <bus-name> is the
+        item's well-known or UNIQUE connection name. We register by object
+        path, so our entry uses our unique name (e.g.
+        ":1.11/StatusNotifierItem"). Raises if the watcher is not up
+        (NameHasNoOwner) or the call fails.
+        """
+        msg = Message(
+            destination=WATCHER_NAME,
+            path=WATCHER_PATH,
+            interface="org.freedesktop.DBus.Properties",
+            member="Get",
+            message_type=MessageType.METHOD_CALL,
+            signature="ss",
+            body=[WATCHER_IFACE, "RegisteredStatusNotifierItems"],
+        )
+        reply = self.bus.call_sync(msg)
+        value = reply.body[0].value
+        return list(value) if value is not None else []
+
+    def _ensure_registered(self):
+        """Keep us registered with the watcher; re-register if it lost us.
+
+        We register exactly once at startup (register_with_watcher). But the
+        watcher (kded6) can start AFTER us or RESTART, resetting its in-memory
+        RegisteredStatusNotifierItems list and silently dropping our item —
+        leaving the icon invisible to Plasma until a service restart. So on
+        every poll we read the watcher's list and re-register whenever our
+        entry (unique bus name + object path) is missing. If the watcher isn't
+        up yet the read fails and we simply (re)attempt registration, which
+        fails fast (NameHasNoOwner) and is retried on the next poll.
+        """
+        expected = f"{self.bus.unique_name}{OBJECT_PATH}"
+        try:
+            still_listed = expected in self._watcher_registered_items()
+        except Exception:  # noqa: BLE001
+            # Watcher not up / transient error: can't tell. Keep the prior
+            # state; if we were never registered we still (re)attempt below.
+            still_listed = self._registered
+        if still_listed:
+            self._registered = True
+            return
+        # Not (still) listed with the watcher -> (re)register. Reset the flag
+        # so register_with_watcher's guard lets the call through.
+        self._registered = False
+        self.register_with_watcher()
 
     def quit(self):
         # Ask systemd to stop us (we run as a user service).
