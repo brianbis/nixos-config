@@ -1,4 +1,5 @@
 {
+  "workbench.colorTheme": "Fluent OLED",
   "nix.serverPath": "nil",
   "nix.formatterPath": "nixfmt-rfc-style",
   "nix.enableLanguageServer": true,
