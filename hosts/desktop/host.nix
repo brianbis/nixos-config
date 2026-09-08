@@ -120,11 +120,16 @@ in
     chmod -R g+rwX /etc/nixos
   '';
 
-  # NixOS creates homes 0755; force 0700 so b cannot snoop the agent's tool
-  # state and the llm agent cannot read b's unencrypted session state. mkAfter
-  # so these run after the users module's home-creation rule.
+  # NixOS creates homes 0755; force them tighter than the default. b's home
+  # stays 0700 so the llm agent cannot read b's unencrypted session state.
+  # The agent home is 0750 (group llm r-x): b is in the llm group, so b can
+  # always read and run llm's files (the agent's umask 0022 keeps created
+  # files group-readable/executable), while other users are excluded. The `z`
+  # type re-asserts the mode at every boot, so this holds across reboots and
+  # switches without any manual chmod. mkAfter so these run after the users
+  # module's home-creation rule.
   systemd.tmpfiles.rules = [
     (lib.mkAfter "z ${users.b.homeDirectory} 0700 ${users.b.username} users -")
-    (lib.mkAfter "z ${users.llm.homeDirectory} 0700 ${users.llm.username} ${users.llm.username} -")
+    (lib.mkAfter "z ${users.llm.homeDirectory} 0750 ${users.llm.username} ${users.llm.username} -")
   ];
 }

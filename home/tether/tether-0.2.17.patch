@@ -1,0 +1,73 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -32,35 +32,14 @@
+ find_package(OpenSSL REQUIRED)
+ find_package(Intl REQUIRED)
+ 
+-include(FetchContent)
+-
+-FetchContent_Declare(
+-  json
+-  GIT_REPOSITORY https://github.com/nlohmann/json.git
+-  GIT_TAG v3.12.0
+-  GIT_SHALLOW ON
+-)
+-set(JSON_Install OFF CACHE BOOL "" FORCE)
+-FetchContent_MakeAvailable(json)
+-
+-FetchContent_Declare(
+-  googletest
+-  GIT_REPOSITORY https://github.com/google/googletest.git
+-  GIT_TAG v1.17.0
+-  GIT_SHALLOW ON
+-)
+-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+-set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+-set(CMAKE_WARN_DEPRECATED OFF CACHE BOOL "" FORCE)
+-FetchContent_MakeAvailable(googletest)
+-set(CMAKE_WARN_DEPRECATED ON CACHE BOOL "" FORCE)
+-
+-enable_testing()
++# nixpkgs provides nlohmann/json; the upstream FetchContent block git-clones it
++# at build time, which the Nix sandbox forbids. Tests (and their googletest
++# FetchContent) are disabled, so only the JSON dependency is declared here.
++find_package(nlohmann_json REQUIRED)
+ 
+ # subdirectories for the targets
+ add_subdirectory(src)
+ add_subdirectory(po)
+-add_subdirectory(test)
+ 
+ # Add uninstall target
+ if(NOT TARGET uninstall)
+@@ -95,27 +74,9 @@
+ install(PROGRAMS "${CMAKE_CURRENT_BINARY_DIR}/tether-native-host"
+         DESTINATION ${CMAKE_INSTALL_BINDIR})
+ 
+-# native messaging manifests
+-set(CHROME_MESSAGING_DIR "/etc/chromium/native-messaging-hosts" CACHE PATH "Chrome native messaging hosts directory")
+-set(GOOGLE_CHROME_MESSAGING_DIR "/etc/opt/chrome/native-messaging-hosts" CACHE PATH "Google Chrome native messaging hosts directory")
+-set(MOZILLA_MESSAGING_DIR "${CMAKE_INSTALL_LIBDIR}/mozilla/native-messaging-hosts" CACHE PATH "Mozilla native messaging hosts directory")
+-set(THUNDERBIRD_MESSAGING_DIR "${CMAKE_INSTALL_LIBDIR}/thunderbird/native-messaging-hosts" CACHE PATH "Thunderbird native messaging hosts directory")
+-
+-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.tether.extension.chrome.json"
+-        DESTINATION "${CHROME_MESSAGING_DIR}"
+-        RENAME "com.tether.extension.json")
+-
+-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.tether.extension.chrome.json"
+-        DESTINATION "${GOOGLE_CHROME_MESSAGING_DIR}"
+-        RENAME "com.tether.extension.json")
+-
+-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.tether.extension.mozilla.json"
+-        DESTINATION "${MOZILLA_MESSAGING_DIR}"
+-        RENAME "com.tether.extension.json")
+-
+-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.tether.extension.mozilla.json"
+-        DESTINATION "${THUNDERBIRD_MESSAGING_DIR}"
+-        RENAME "com.tether.extension.json")
++# Native-messaging manifests install to absolute /etc paths (Chrome,
++# Google-Chrome) that the Nix sandbox cannot write, and the Mozilla/Thunderbird
++# variants are unused here; drop the whole section.
+ 
+ string(TIMESTAMP BUILD_DATE "%B %Y")
+ 

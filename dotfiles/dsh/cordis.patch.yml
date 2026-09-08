@@ -10,10 +10,13 @@
 
 # Web search uses the self-hosted SearXNG provider (an out-of-tree plugin
 # mounted by relative module name) instead of DeepSeek's hosted tool; the
-# `web` row pins it as the selected backend and fetch stays disabled.
+# `web` row pins it as the selected backend and fetch stays disabled. The
+# patch engine replaces a row's whole `config`, so restate `fetchProvider`
+# (added to the base row in 0.1.2) or it reverts to the plugin default.
 - id: web
   config:
     searchProvider: searxng
+    fetchProvider: http
 
 # The provider row is NEW, so it must be added with `insert`: the patch
 # engine only targets rows that already exist by id, and a bare patch for an

@@ -120,10 +120,11 @@ in
 
       settings = {
         General = {
-          # Force BlueZ to use Classic Bluetooth (BR/EDR) only for audio devices.
-          # This prevents BlueZ from getting confused by AirPods BLE "Find My" addresses.
-          ControllerMode = "bredr";
-
+          # Do NOT set ControllerMode = "bredr" here. It is a machine-wide
+          # controller setting, not a per-device one: "bredr" restricts every
+          # controller to BR/EDR and disables LE entirely (BlueZ refuses to
+          # create any LE bearer), which makes ANCS notification mirroring
+          # from the iPhone impossible. The default "dual" is required.
           Experimental = true;
           FastConnectable = true;
           JustWorksRepairing = "always";

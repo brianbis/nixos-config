@@ -1,0 +1,73 @@
+/* ---------------------------------------------------------------------------
+ * OLED palette for GTK3 — pure black backgrounds, high-contrast foreground.
+ *
+ * GTK3 loads ~/.config/gtk-3.0/gtk.css (this file, managed by home-manager
+ * via gtk.gtk3.extraCss) AFTER the active theme. Redefining the theme's
+ * @define-color tokens here therefore replaces the palette everywhere,
+ * including tether-gtk's own stylesheet, which references the @theme_*
+ * tokens. Widgets that hard-code light colors are covered by the explicit
+ * rules at the bottom.
+ * ------------------------------------------------------------------------- */
+
+/* Core palette */
+@define-color theme_bg_color #000000;
+@define-color theme_fg_color #e6e6e6;
+@define-color theme_base_color #000000;
+@define-color theme_selected_bg_color #0a84ff;
+@define-color theme_selected_fg_color #ffffff;
+@define-color theme_unfocused_bg_color #000000;
+@define-color theme_unfocused_fg_color #b3b3b3;
+@define-color theme_unfocused_selected_bg_color #3a3a3a;
+@define-color theme_unfocused_selected_fg_color #e6e6e6;
+
+/* Borders */
+@define-color borders #2e2e2e;
+@define-color dark_borders #2e2e2e;
+
+/* Menus and popovers */
+@define-color menus_bg_color #0a0a0a;
+@define-color menus_fg_color #e6e6e6;
+@define-color menus_separator_color #2e2e2e;
+@define-color menus_border_color #2e2e2e;
+
+/* Header bar / title bar */
+@define-color headerbar_bg_color #000000;
+@define-color headerbar_bg #000000;
+@define-color headerbar_fg_color #e6e6e6;
+@define-color headerbar_border_color #2e2e2e;
+@define-color headerbar_backdrop_bg_color #000000;
+@define-color headerbar_backdrop_bg #000000;
+@define-color headerbar_backdrop_fg_color #b3b3b3;
+@define-color headerbar_backdrop_border_color #1f1f1f;
+
+/* Window decorations (client-side) */
+@define-color wm_titlebar #000000;
+@define-color wm_titlebar_active #000000;
+@define-color wm_titlebar_unactive #000000;
+
+/* Tooltips */
+@define-color tooltip_bg_color #1a1a1a;
+@define-color tooltip_fg_color #e6e6e6;
+@define-color tooltip_border_color #2e2e2e;
+
+/* OSD (brightness, volume, screen recorder) */
+@define-color osd_bg_color #1a1a1a;
+@define-color osd_fg_color #e6e6e6;
+@define-color osd_bg_color_dim #0a0a0a;
+@define-color osd_fg_color_dim #b3b3b3;
+@define-color osd_border_color #2e2e2e;
+@define-color osd_progress_bg #0a84ff;
+@define-color osd_progress_fg #ffffff;
+
+/* Status colors — tuned to stay legible on black */
+@define-color success_color #30d158;
+@define-color warning_color #ffd60a;
+@define-color error_color #ff453a;
+@define-color destructive_color #ff453a;
+
+/* Explicit fallbacks for widgets that do not resolve through the tokens */
+window.background,
+.background {
+    background-color: #000000;
+    color: #e6e6e6;
+}

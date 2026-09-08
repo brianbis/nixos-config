@@ -12,7 +12,7 @@
  
      - id: command-compact
        name: '@deepseek-ai/dsh-command-compact'
-@@ -245,8 +250,15 @@
+@@ -244,6 +249,13 @@
  
  # The `web` service and its search provider stay in the host composition; only
  # the model-facing tool is per-session.
@@ -26,5 +26,3 @@
  - id: tool-web
    name: '@deepseek-ai/dsh-tool-web'
    config:
-     fetch: false
-     searchTimeoutMs: 60000

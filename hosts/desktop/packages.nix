@@ -32,6 +32,7 @@ in
     gdb
     mangohud
     vulkan-tools
+    inputs.tether.packages.${pkgs.stdenv.hostPlatform.system}.default
     (python3.withPackages my-python-packages)
   ];
 }

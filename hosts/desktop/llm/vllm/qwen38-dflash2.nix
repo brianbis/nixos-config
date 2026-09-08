@@ -1,7 +1,7 @@
 { config, lib, pkgs, ... }:
 
 let
-  idleSeconds = 300;
+  idleSeconds = 120;
 
   releaseRev = "fdb45641d9ef7d663b633037467b6949f1daecf7";
 
@@ -350,6 +350,24 @@ in
    */
   systemd.services."docker-vllm-qwen38-dflash2".serviceConfig.Restart =
     lib.mkForce "no";
+
+  /*
+   * The container service depends on the preparation target (HF checkpoint
+   * downloads + pinned image pull). The socket-activated wrapper already pulls
+   * this in, but the DIRECT start path (`just vllm-qwen38-dflash2`, which
+   * starts this service without the wrapper) also needs the checkpoints +
+   * image present before `docker run`. Declaring the dependency on the service
+   * itself (rather than only in the justfile recipe) makes it self-sufficient
+   * for either start path; it is a no-op when the wrapper has already started
+   * the target.
+   */
+  systemd.services."docker-vllm-qwen38-dflash2".requires = [
+    "vllm-qwen38-dflash2-prep.target"
+  ];
+
+  systemd.services."docker-vllm-qwen38-dflash2".after = [
+    "vllm-qwen38-dflash2-prep.target"
+  ];
 
   /*
    * Cache directories are created/chowned immediately before docker run.

@@ -27,12 +27,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # iMessage client via Bluetooth MAP/PBAP
-    imsg = {
-      url = "path:./home/imsg";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
     # Jailed LLM tooling
     jail-nix.url = "sourcehut:~alexdavid/jail.nix";
     llm-agents.url = "github:numtide/llm-agents.nix";
@@ -40,6 +34,12 @@
     # GPU-accelerated Whisper transcription (on-demand VRAM residency)
     whisper-service = {
       url = "path:hosts/desktop/whisper-service";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    # Linux + iPhone Continuity bridge (clipboard, files, messages, notifications)
+    tether = {
+      url = "path:./home/tether";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -54,6 +54,7 @@
     , jail-nix
     , llm-agents
     , whisper-service
+    , tether
     , ...
     }@inputs:
     let
@@ -139,8 +140,6 @@
               inherit userHome;
             };
 
-          imsg = inputs.imsg.packages.${system}.default;
-
           # Local CA + leaf certificate for the Caddy-served *.local service
           # names (see hosts/desktop/local-ca.nix).
           local-services-ca =
@@ -153,6 +152,9 @@
           # built here so the artifact is testable in isolation (nix build
           # .#packages.x86_64-linux.wezurrect, --rebuild for reproducibility).
           wezurrect = pkgs.callPackage ./home/wezterm/resurrect.nix { };
+
+          # Tether — Linux + iPhone Continuity bridge.
+          tether = inputs.tether.packages.${system}.default;
         };
 
       nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
@@ -202,11 +204,30 @@
                 librepodsTray = librepodsTray;
               })
 
+              # Tether — Linux + iPhone Continuity bridge.
+              (final: prev: {
+                tether = inputs.tether.packages.${system}.default;
+              })
+
               # headroom-ai: context compression layer for the jailed LLM
               # agents. Same single definition as the base `pkgs` in the
               # let-block (home/llm/tools/overlay.nix), so the standalone
               # agents-md doc build can evaluate jails.nix.
               headroomOverlay
+
+              # Force Discord into X11 (XWayland) mode. On this Plasma 6 Wayland
+              # + NVIDIA setup, Discord's Wayland renderer SIGSEGVs at launch:
+              # Chromium 148 auto-selects Wayland when WAYLAND_DISPLAY is set.
+              # The nixpkgs wrapper appends commandLineArgs last, so
+              # --ozone-platform=x11 overrides the auto-detected platform.
+              # Applying it as an overlay (rather than in home.packages) means
+              # both the home.packages entry and the autostart (home/discord.nix),
+              # which both reference pkgs.discord, get the flag.
+              (final: prev: {
+                discord = prev.discord.override {
+                  commandLineArgs = "--ozone-platform=x11";
+                };
+              })
             ];
 
             home-manager.useGlobalPkgs = true;
@@ -228,7 +249,6 @@
               };
 
               deepseekSecret = config.age.secrets.deepseek-api-key.path;
-              imsgMacSecret = config.age.secrets.imsg-mac.path;
             };
 
             home-manager.users.b = import ./home;

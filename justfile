@@ -103,6 +103,15 @@ vllm-gemma4-nvfp4-turbo:
 vllm-gemma4-awq:
     sudo systemctl start docker-vllm-gemma4-awq.service
 
+# Start the Qwen3.8 DFlash2 container DIRECTLY (no socket-activated idle
+# wrapper), so it stays up with no auto-shutdown and no router in between.
+# The container service depends on the prep target, so the HF checkpoints +
+# pinned image are pulled in on first use. Reach it at
+# http://127.0.0.1:18090 (model name qwen3.8-27b-nvfp4-dflash2).
+# Stop it with `just vllm-stop` (it stops whichever vLLM container is up).
+vllm-qwen38-dflash2:
+    sudo systemctl start docker-vllm-qwen38-dflash2.service
+
 # Re-pull the pinned DFlash2 runtime image (e.g. after re-pinning the digest
 # in hosts/desktop/llm/vllm/qwen38-dflash2.nix). Normally a no-op: `just switch`
 # pulls it (activation script) and docker skips present layers.
@@ -160,6 +169,31 @@ fmt:
     @nix shell nixpkgs#pre-commit nixpkgs#nix -c pre-commit run --all-files
 
 alias f := fmt
+
+# dsh web GUI
+#
+# dsh mints a per-process launch token at startup (printed to the journal)
+# that a browser exchanges for a 30-day signed cookie (hosts/desktop/dsh-web.nix).
+# Once the cookie is set you don't need the token again until it expires (~30
+# days) or you clear cookies. Run `just dsh-url` to (re-)authenticate a
+# browser: first access via a host, after ~30 days, or after clearing cookies.
+# The two doors are dsh.local (Caddy, loopback; caddy.nix) and
+# dsh.tail835824.ts.net (tailscale serve; networking.nix).
+dsh-url:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    # Read the journal without sudo first (works when the user has journal
+    # access); fall back to sudo otherwise.
+    log="$(journalctl -u dsh-web -o cat --no-pager 2>/dev/null || sudo journalctl -u dsh-web -o cat --no-pager 2>/dev/null || true)"
+    token="$(printf '%s\n' "$log" | grep -oE 'token=[A-Za-z0-9_-]+' | tail -1 | cut -d= -f2 || true)"
+    if [ -z "$token" ]; then
+      echo "dsh-url: no token in the dsh-web journal; is dsh-web running?" >&2
+      exit 1
+    fi
+    echo "dsh web token: $token"
+    echo
+    echo "  https://dsh.local/?token=$token"
+    echo "  https://dsh.tail835824.ts.net/?token=$token"
 
 # llama.cpp shortcuts
 

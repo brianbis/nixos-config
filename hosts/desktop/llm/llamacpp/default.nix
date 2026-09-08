@@ -193,7 +193,7 @@ in
     };
     dwellSeconds = lib.mkOption {
       type = lib.types.int;
-      default = 30;
+      default = 120;
       description = "Idle seconds before the router enters sleep mode.";
     };
   };

@@ -4,7 +4,7 @@ let
   modelsDir = "/var/lib/ninfer/models";
   logDir = "/var/log/ninfer";
   requestLog = "${logDir}/requests.jsonl";
-  idleSeconds = 30;
+  idleSeconds = 120;
   childPort = 8081;
   childPortA3B = 8083;
 
@@ -12,11 +12,16 @@ let
     pname = "ninfer";
     version = "master";
 
+    # fetchFromGitHub in this nixpkgs pin downloads
+    # https://github.com/OWNER/REPO/archive/REV.tar.gz and hashes the
+    # *unpacked* tree (fetchzip, recursiveHash = true) — NOT the tarball
+    # sha256. Assemble the hash with (substitute OWNER/REPO/REV):
+    #   d=$(mktemp -d) && curl -sL "https://github.com/OWNER/REPO/archive/REV.tar.gz" | tar -xz -C "$d" --strip-components=1 && nix hash path "$d" && rm -rf "$d"
     src = pkgs.fetchFromGitHub {
       owner = "Neroued";
       repo = "ninfer";
-      rev = "feaf4dd0983fdaeb2ba4c06eec6da350e644fb3a";
-      hash = "sha256-99ci7v85ldqrgTXzcCkHtis2YBimLKuodn2vwNuXwpI=";
+      rev = "ad0f3d384b5cbcec4a48a3951c287b4e9831443e";
+      hash = "sha256-tJdT99C8TarRwHQW/aoH5wjNGUEk3X7d1230EzogLoc=";
     };
 
     nativeBuildInputs = with pkgs; [
@@ -111,6 +116,8 @@ let
     "int8"
     "--max-context"
     "240000"
+    "--kv-capacity"
+    "240000"
     "--default-max-tokens"
     "200000"
     "--pending-timeout-ms"
@@ -118,11 +125,19 @@ let
     "--prefill-chunk"
     "1024"
     "--max-concurrency"
-    "1"
+    "2"
     "--max-pending-requests"
     "128"
+    "--device-state-slots"
+    "2"
+    "--host-state-slots"
+    "8"
+    "--host-kv-mib"
+    "32768"
     "--temperature"
     "0.7"
+    "--presence-penalty"
+    "0.0"
     "--spec"
     "mtp"
     "--draft-tokens"
@@ -138,7 +153,7 @@ let
   ninferModelFile = "qwen3_8_27b_nvfp4.ninfer";
 
   # Qwen3.6-35B-A3B (sparse MoE, 3B active params). Requires ninfer rev
-  # bd265a3 or later (the pinned feaf4dd satisfies this).
+  # bd265a3 or later (the pinned ad0f3d3 satisfies this).
   ninferModelRepoA3B = "neroued/Qwen3.6-35B-A3B-NInfer";
   ninferModelFileA3B = "qwen3_6_35b_a3b.ninfer";
 

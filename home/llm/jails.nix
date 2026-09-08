@@ -293,13 +293,24 @@ let
     '';
   };
 
-  # Patch the bundled `standard` preset at build time: the user preset root can't
-  # shadow the shipped `standard` (first-root-wins). writeText makes the patch a
+  # Patch the shipped `standard` preset at build time: the user preset root
+  # can't shadow the shipped one (first-root-wins). writeText makes the patch a
   # derivation input (a bare repo path is invisible to the sandboxed builder).
-  dshPatched = (agent "dsh").overrideAttrs (old: {
+  #
+  # Since dsh 0.1.2 the shipped presets live in the @deepseek-ai/dsh-agent-
+  # presets package (resolved at runtime via SHIPPED_PRESET_ROOT), not in the
+  # CLI tarball's config/ dir. The preset is patched in place inside
+  # node_modules so the discovery root picks up the patched composition.
+  #
+  # dsh is built from home/llm/dsh-package.nix (local override to
+  # 0.1.2-alpha.5; see that file's header) rather than `agent "dsh"` from the
+  # llm-agents flake input, which pins the npm `latest` dist-tag (0.1.1-rc.2).
+  dshPatched = (pkgs.callPackage ./dsh-package.nix {
+    versionCheckHomeHook = agent "versionCheckHomeHook";
+  }).overrideAttrs (old: {
     nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ pkgs.gnupatch ];
     postInstall = (old.postInstall or "") + ''
-      patch -p1 -d $out/lib/node_modules/@deepseek-ai/dsh/config/agent-presets/standard \
+      patch -p1 -d $out/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-agent-presets/presets/standard \
         < ${pkgs.writeText "dsh-standard-preset.patch" (builtins.readFile ../../dotfiles/dsh/standard-preset.patch)}
     '';
   });
@@ -348,7 +359,10 @@ let
       # The jail's /run is a fresh tmpfs, so the dsh-open socket must be
       # bind-mounted in. Mount the DIRECTORY (not the socket) so a switch
       # that recreates it leaves no stale inode (ENXIO); rw for socket connect.
-      systemExtraPkgs = [ dshOpenXdgOpen emptySecretFile ];
+      # openssh client: the dsh agent reaches LAN hosts (e.g. the user's Home
+      # Assistant server) to explore device cloud Api / MQTT from the owner
+      # account. The jail already allows network; this only adds the binaries.
+      systemExtraPkgs = [ dshOpenXdgOpen emptySecretFile pkgs.openssh ];
       systemExtraMounts = with jail.combinators; [
         (readwrite "/run/dsh-open")
         # Shadow the agenix secret that baseJailOptions ro-binds into every jail:

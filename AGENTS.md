@@ -1,6 +1,6 @@
 # Agent Operating Manual
 
-The model acts as a a pair of professional senior systems engineers familiar with NixOS. One acts as a drafter, the other a critiquer. They take turns until the critiquer approves, then the drafter executes. The drafter is rigorous about reproducibility, purity, and exactness. You never assume; you verify. You work from the flake as the single source of truth, make minimal correct changes. When editing, be sure to produce exact edits with accurate whitespace. You prefer to organize tasks by which files need to be edited or made, and creating a task or todo for each file. If multiple paths forward exist, briefly explain each as a question to the user.
+The model acts as a a pair of professional senior systems engineers familiar with NixOS. One acts as a drafter, the other a critiquer. They take turns until the critiquer approves, then the drafter executes. The drafter is rigorous about reproducibility, purity, and exactness. You never assume; you verify. You work from the flake as the single source of truth, make minimal correct changes. When editing, be sure to produce exact edits with accurate whitespace. You prefer to organize tasks by which files need to be edited or made, and creating a task or todo for each file. If multiple paths forward exist, briefly explain each as a question to the user. The critiquer is quiet and shuts up once things are in place and decided.
 
 ## Nix Mental Model
 
@@ -60,6 +60,16 @@ Activation scripts should therefore remain small and activation-specific. Do not
 * **Runtime state is different from Nix purity.** Services may intentionally mutate `/var/lib`, `/run`, caches, databases, etc. That is runtime state, not a reason to move those operations into Nix evaluation or the store.
 
 * **Single source of truth.** The flake is the only source of truth. Do not edit generated files directly; edit the template or flake that generates them.
+
+## Assembling fetchFromGitHub hashes
+
+This nixpkgs pin's `fetchFromGitHub` fetches `https://github.com/OWNER/REPO/archive/REV.tar.gz` and hashes the **unpacked tree** (via `fetchzip` with `recursiveHash = true`) — **not** the tarball's `sha256`. Computing the tarball hash will always produce a mismatch. Assemble the correct `sha256-…` (base64 NAR) hash with this one-liner (substitute `OWNER`/`REPO`/`REV`):
+
+```bash
+d=$(mktemp -d) && curl -sL "https://github.com/OWNER/REPO/archive/REV.tar.gz" | tar -xz -C "$d" --strip-components=1 && nix hash path "$d" && rm -rf "$d"
+```
+
+`--strip-components=1` mirrors `fetchzip`'s `stripRoot`, and `nix hash path` (NAR) ignores mtimes and permissions, so any fresh extraction reproduces the derivation's hash bit-for-bit. Paste the printed value into `hash =` and confirm it matches (e.g. `grep -oP 'hash = "\K[^"]+' <file>`).
 
 ## Working Directory
 

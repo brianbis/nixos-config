@@ -88,6 +88,29 @@ let
       costInCached = 0;
       costOutCached = 0;
     };
+    # Same Qwen3.8-27B NVFP4 + DFlash2 K7 checkpoint, but routed DIRECTLY to
+    # the container's child port (:18090) instead of the socket-activated idle
+    # wrapper (:18089). Use this when the container is started manually with
+    # `just vllm-qwen38-dflash2` (no auto-shutdown, no router/wrapper in
+    # between). The two entries are mutually exclusive at the port level: the
+    # on-demand wrapper owns :18089, the direct container owns :18090.
+    qwen38_dflash2_direct = {
+      providerName = "vllm_dflash2_direct";
+      # Must equal the container's --served-model-name (vLLM rejects any other
+      # model id); the "(direct)" distinction lives in the display name only.
+      id = "qwen3.8-27b-nvfp4-dflash2";
+      name = "Qwen3.8-27B NVFP4 DFlash2 (direct)";
+      url = "http://127.0.0.1:18090";
+      # Must match --max-model-len 262144 in hosts/desktop/llm/vllm/qwen38-dflash2.nix.
+      context = 262144;
+      maxTok = 32768;
+      reason = true;
+      attachments = false;
+      costIn = 0;
+      costOut = 0;
+      costInCached = 0;
+      costOutCached = 0;
+    };
     muse = {
       providerName = "llamacpp";
       id = "muse-glimmer-30B";
@@ -277,6 +300,9 @@ let
     vllm_dflash2.name = "vLLM DFlash2 (local)";
     vllm_dflash2.type = "openai-compat";
     vllm_dflash2.api_key = "sk-local";
+    vllm_dflash2_direct.name = "vLLM DFlash2 direct (local)";
+    vllm_dflash2_direct.type = "openai-compat";
+    vllm_dflash2_direct.api_key = "sk-local";
     ninfer.name = "NInfer (local)";
     ninfer.type = "openai-compat";
     ninfer.api_key = "sk-local";
@@ -468,6 +494,7 @@ let
       vllm_awq = opencodeProvider "vllm_awq";
       vllm_nvfp4 = opencodeProvider "vllm_nvfp4";
       vllm_dflash2 = opencodeProvider "vllm_dflash2";
+      vllm_dflash2_direct = opencodeProvider "vllm_dflash2_direct";
       ninfer = opencodeProvider "ninfer";
       ninfer_a3b = opencodeProvider "ninfer_a3b";
       deepseek = opencodeProvider "deepseek";
