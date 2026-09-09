@@ -38,12 +38,13 @@
 #      CLAIM on FEATURES_ACK, the keep-alive silence stream, CLAIM-storm rate
 #      limiting, firmware guards (config watchdog + CA reset), ghost-session
 #      detection + UI, BlueZ corruption diagnostic, raw-volume snapshot/restore,
-#      codec warm-up, MPRIS playback cache, the startup contention gate, and the
+#      codec warm-up, MPRIS playback cache, the startup contention gate, the
 #      polite-peer fixes (gated early CLAIM, libpulse default-sink, robust pactl
-#      path, silence-stream Ready+backoff, zero-MAC AUDIO_SOURCE guard).
+#      path, silence-stream Ready+backoff, zero-MAC AUDIO_SOURCE guard), and
+#      downgraded logging of unrecognized (benign) AACP control-command ids.
 #      These are local git commits on the linux/rust branch (rendered as a patch
 #      because they are not pushed upstream); the patch is the diff from the
-#      pinned rev below to the handoff HEAD (286f8f4).
+#      pinned rev below to the handoff HEAD (516b105).
 #
 #   2. patches/persist-state.patch — persists a thin "last known" record per MAC
 #      to $XDG_STATE_HOME/librepods/state.json. Each record is a flat set of the
@@ -59,7 +60,7 @@
 #
 # Pinned to the linux/rust branch base (in-PR, not yet tagged):
 #   rev 672e65ad36eebf21ff1c1a508066f9197ee56d17 (2026-05-15)
-# handoff.patch is the diff 672e65a..286f8f4 (the handoff HEAD, local only).
+# handoff.patch is the diff 672e65a..516b105 (the handoff HEAD, local only).
 # The build is heavy (iced/wgpu/winit + bluer + libpulse + dbus) because the
 # `ui` module compiles even in headless mode. It is built locally under the
 # justfile build-flags caps (--cores 4 --max-jobs 4), which keep it within the

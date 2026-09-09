@@ -1,5 +1,5 @@
 diff --git a/linux-rust/src/bluetooth/aacp.rs b/linux-rust/src/bluetooth/aacp.rs
-index bed6ca8..2f70a68 100644
+index bed6ca8..135dba6 100644
 --- a/linux-rust/src/bluetooth/aacp.rs
 +++ b/linux-rust/src/bluetooth/aacp.rs
 @@ -5,7 +5,7 @@ use bluer::{
@@ -357,7 +357,24 @@ index bed6ca8..2f70a68 100644
                      });
                  }
                  let mut state = self.state.lock().await;
-@@ -894,8 +1102,12 @@ impl AACPManager {
+@@ -603,8 +811,14 @@ impl AACPManager {
+                         hex::encode(&value)
+                     );
+                 } else {
+-                    error!(
+-                        "Unknown Control Command identifier: {:#04x}",
++                    // Expected, not a fault: the AirPods sync their full settings set on
++                    // every AACP connect, and this identifier is simply one we do not
++                    // model (see docs/control_commands.md). None are ownership-relevant
++                    // (OwnsConnection is 0x06), so this is informational. New firmware
++                    // adds identifiers over time, so keep it at debug to avoid spamming
++                    // on every reconnect.
++                    debug!(
++                        "Unrecognized Control Command identifier: {:#04x} (benign, not modeled)",
+                         identifier_byte
+                     );
+                 }
+@@ -894,8 +1108,12 @@ impl AACPManager {
                      });
                  }
                  let mut state = self.state.lock().await;
@@ -371,7 +388,7 @@ index bed6ca8..2f70a68 100644
                  if let Some(ref tx) = state.event_tx {
                      let _ = tx.send(AACPEvent::ConnectedDevices(
                          state.old_connected_devices.clone(),
-@@ -914,6 +1126,13 @@ impl AACPManager {
+@@ -914,6 +1132,13 @@ impl AACPManager {
                      }
                  }
              }
@@ -385,7 +402,7 @@ index bed6ca8..2f70a68 100644
              opcodes::EQ_DATA => {
                  debug!("Received EQ Data");
              }
-@@ -929,9 +1148,22 @@ impl AACPManager {
+@@ -929,9 +1154,22 @@ impl AACPManager {
      }
  
      pub async fn send_set_feature_flags_packet(&self) -> Result<()> {
@@ -410,7 +427,7 @@ index bed6ca8..2f70a68 100644
          let packet = [opcode.as_slice(), data.as_slice()].concat();
          self.send_data_packet(&packet).await
      }
-@@ -973,6 +1205,34 @@ impl AACPManager {
+@@ -973,6 +1211,34 @@ impl AACPManager {
          &self,
          identifier: ControlCommandIdentifiers,
          value: &[u8],
@@ -445,7 +462,7 @@ index bed6ca8..2f70a68 100644
      ) -> Result<()> {
          let opcode = [opcodes::CONTROL_COMMAND, 0x00];
          let mut data = vec![identifier as u8];
-@@ -983,6 +1243,111 @@ impl AACPManager {
+@@ -983,6 +1249,111 @@ impl AACPManager {
          self.send_data_packet(&packet).await
      }
  
@@ -557,7 +574,7 @@ index bed6ca8..2f70a68 100644
      pub async fn send_media_information_new_device(
          &self,
          self_mac_address: &str,
-@@ -1232,6 +1597,67 @@ async fn recv_thread(manager: AACPManager, sp: Arc<SeqPacket>) {
+@@ -1232,6 +1603,67 @@ async fn recv_thread(manager: AACPManager, sp: Arc<SeqPacket>) {
      state.sender = None;
  }
  
