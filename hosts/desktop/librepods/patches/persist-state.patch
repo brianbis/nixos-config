@@ -1,8 +1,10 @@
---- a/linux-rust/src/bluetooth/aacp.rs	2026-08-27 13:17:29.623511613 -0700
-+++ b/linux-rust/src/bluetooth/aacp.rs	2026-08-27 13:17:29.624970911 -0700
-@@ -20,6 +20,59 @@
- const POLL_INTERVAL: Duration = Duration::from_millis(200);
- const HEADER_BYTES: [u8; 4] = [0x04, 0x00, 0x04, 0x00];
+diff --git a/linux-rust/src/bluetooth/aacp.rs b/linux-rust/src/bluetooth/aacp.rs
+index 4a59412..96edba7 100644
+--- a/linux-rust/src/bluetooth/aacp.rs
++++ b/linux-rust/src/bluetooth/aacp.rs
+@@ -25,6 +25,59 @@ const HEADER_BYTES: [u8; 4] = [0x04, 0x00, 0x04, 0x00];
+ /// failure with no success in between is.
+ const BLUEZ_CORRUPTION_THRESHOLD: u32 = 5;
  
 +// --- librepods-persist-state patch: thin last-known state persistence --------
 +// Each MAC owns one flat "last known" record in state.json (the same file the
@@ -60,7 +62,7 @@
  pub mod opcodes {
      pub const SET_FEATURE_FLAGS: u8 = 0x4D;
      pub const REQUEST_NOTIFICATIONS: u8 = 0x0F;
-@@ -555,7 +608,73 @@
+@@ -749,7 +802,77 @@ impl AACPManager {
                  if let Some(ref tx) = state.event_tx {
                      let _ = tx.send(AACPEvent::BatteryInfo(batteries));
                  }
@@ -101,10 +103,14 @@
 +                            .battery_info
 +                            .iter()
 +                            .find(|b| b.component == c)
-+                            .map(|b| match b.status {
-+                                BatteryStatus::Charging => "charging",
-+                                BatteryStatus::NotCharging => "not_charging",
-+                                BatteryStatus::Disconnected => "disconnected",
++                            .map(|b| {
++                                if b.status.is_disconnected() {
++                                    "disconnected"
++                                } else if b.status.is_charging() {
++                                    "charging"
++                                } else {
++                                    "not_charging"
++                                }
 +                            })
 +                            .unwrap_or("unknown")
 +                    };
@@ -135,7 +141,7 @@
              }
              opcodes::CONTROL_COMMAND => {
                  if payload.len() < 7 {
-@@ -696,7 +815,7 @@
+@@ -890,7 +1013,7 @@ impl AACPManager {
                      }
                  }
                  strings.remove(0);
@@ -144,7 +150,7 @@
                      name: strings.first().cloned().unwrap_or_default(),
                      model_number: strings.get(1).cloned().unwrap_or_default(),
                      manufacturer: strings.get(2).cloned().unwrap_or_default(),
-@@ -717,6 +836,21 @@
+@@ -911,6 +1034,21 @@ impl AACPManager {
                  if let Some(mac) = state.airpods_mac
                      && let Some(device_data) = state.devices.get_mut(&mac.to_string())
                  {
@@ -166,7 +172,7 @@
                      device_data.name = info.name.clone();
                      device_data.information = Some(DeviceInformation::AirPods(info.clone()));
                  }
-@@ -767,8 +901,16 @@
+@@ -961,8 +1099,16 @@ impl AACPManager {
                      keys.push((key_type, key_data));
                      offset += key_length;
                  }
@@ -184,9 +190,11 @@
                      keys.iter()
                          .map(|(kt, kd)| (kt, hex::encode(kd)))
                          .collect::<Vec<_>>()
---- a/linux-rust/src/bluetooth/le.rs	2026-08-27 13:17:29.622788462 -0700
-+++ b/linux-rust/src/bluetooth/le.rs	2026-08-27 13:17:29.624240588 -0700
-@@ -23,6 +23,59 @@
+diff --git a/linux-rust/src/bluetooth/le.rs b/linux-rust/src/bluetooth/le.rs
+index 340ee9e..5150b69 100644
+--- a/linux-rust/src/bluetooth/le.rs
++++ b/linux-rust/src/bluetooth/le.rs
+@@ -23,6 +23,59 @@ fn decrypt(key: &[u8; 16], data: &[u8; 16]) -> [u8; 16] {
      block.into()
  }
  
@@ -246,7 +254,7 @@
  fn verify_rpa(addr: &str, irk: &[u8; 16]) -> bool {
      let rpa: Vec<u8> = addr
          .split(':')
-@@ -365,6 +418,79 @@
+@@ -365,6 +418,79 @@ pub async fn start_le_monitor(tray_handle: Option<ksni::Handle<MyTray>>) -> blue
                                              is_left_in_ear,
                                              is_right_in_ear
                                          );

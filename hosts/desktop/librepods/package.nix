@@ -30,18 +30,34 @@
 #     gated by the per-MAC `autoConnect` preference, default true),
 #   * AACP features (precise battery, ear detection, noise control, gestures).
 #
-# We patch it (patches/persist-state.patch) to persist a thin "last known"
-# record per MAC to $XDG_STATE_HOME/librepods/state.json. Each record is a flat
-# set of the last REAL values observed: a null/0xFF observation never
-# overwrites a stored value, and case metrics are only written by a source
-# actually reading the case (AACP: case connected; PPM: case is the
-# advertiser). Both the PPM (advertising) and AACP (connected) handlers merge
-# into the same flat record, so readers (tray, notification watcher, the
-# Ctrl+Shift+C connect order) are dumb renderers with no freshness/source
-# heuristics. Written unconditionally, so it works headless.
+# Two patches are applied, in order:
 #
-# Pinned to the linux/rust branch HEAD (in-PR, not yet tagged):
+#   1. patches/handoff.patch — the Linux<->iPhone audio-handoff implementation
+#      (spec 0-6): the ownership state machine (yield / guarded reclaim /
+#      eviction guard), B-field (A/B) tracking + transition logging, early
+#      CLAIM on FEATURES_ACK, the keep-alive silence stream, CLAIM-storm rate
+#      limiting, firmware guards (config watchdog + CA reset), ghost-session
+#      detection + UI, BlueZ corruption diagnostic, raw-volume snapshot/restore,
+#      codec warm-up, MPRIS playback cache, and the startup contention gate.
+#      These are local git commits on the linux/rust branch (rendered as a patch
+#      because they are not pushed upstream); the patch is the diff from the
+#      pinned rev below to the handoff HEAD (dfa5bc7).
+#
+#   2. patches/persist-state.patch — persists a thin "last known" record per MAC
+#      to $XDG_STATE_HOME/librepods/state.json. Each record is a flat set of the
+#      last REAL values observed: a null/0xFF observation never overwrites a
+#      stored value, and case metrics are only written by a source actually
+#      reading the case (AACP: case connected; PPM: case is the advertiser).
+#      Both the PPM (advertising) and AACP (connected) handlers merge into the
+#      same flat record, so readers (tray, notification watcher, the
+#      Ctrl+Shift+C connect order) are dumb renderers with no freshness/source
+#      heuristics. Written unconditionally, so it works headless. It is rebased
+#      onto the post-handoff tree: its battery-status mapping now uses the
+#      bitmask BatteryStatus struct (spec 3.6) introduced by handoff.patch.
+#
+# Pinned to the linux/rust branch base (in-PR, not yet tagged):
 #   rev 672e65ad36eebf21ff1c1a508066f9197ee56d17 (2026-05-15)
+# handoff.patch is the diff 672e65a..dfa5bc7 (the handoff HEAD, local only).
 # The build is heavy (iced/wgpu/winit + bluer + libpulse + dbus) because the
 # `ui` module compiles even in headless mode. It is built locally under the
 # justfile build-flags caps (--cores 4 --max-jobs 4), which keep it within the
@@ -88,8 +104,13 @@ rustPlatform.buildRustPackage rec {
   # Hash of the vendored cargo deps (computed via fetchCargoVendor).
   cargoHash = "sha256-17dE+oYvECU4f1SL6LHS95sXEea/Z0VgTPQ4u6TZTic=";
 
-  # Persist a thin per-MAC last-known record to state.json (headless-friendly).
-  patches = [ ./patches/persist-state.patch ];
+  # handoff.patch first (base -> handoff HEAD), then persist-state.patch
+  # (rebased onto the post-handoff tree). Order matters: persist-state's
+  # battery mapping depends on the BatteryStatus struct handoff introduces.
+  patches = [
+    ./patches/handoff.patch
+    ./patches/persist-state.patch
+  ];
 
   nativeBuildInputs = [ pkg-config makeWrapper patchelf ];
   buildInputs = guiLibs;
