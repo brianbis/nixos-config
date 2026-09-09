@@ -40,11 +40,13 @@
 #      detection + UI, BlueZ corruption diagnostic, raw-volume snapshot/restore,
 #      codec warm-up, MPRIS playback cache, the startup contention gate, the
 #      polite-peer fixes (gated early CLAIM, libpulse default-sink, robust pactl
-#      path, silence-stream Ready+backoff, zero-MAC AUDIO_SOURCE guard), and
-#      downgraded logging of unrecognized (benign) AACP control-command ids.
+#      path, silence-stream Ready+backoff, zero-MAC AUDIO_SOURCE guard), downgraded
+#      logging of unrecognized (benign) AACP control-command ids, and a forced
+#      BR/EDR connect on reclaim when the A2DP card is missing (so the PC can grab
+#      the AirPods back from the iPhone when the user starts playing on the PC).
 #      These are local git commits on the linux/rust branch (rendered as a patch
 #      because they are not pushed upstream); the patch is the diff from the
-#      pinned rev below to the handoff HEAD (516b105).
+#      pinned rev below to the handoff HEAD (731c406).
 #
 #   2. patches/persist-state.patch — persists a thin "last known" record per MAC
 #      to $XDG_STATE_HOME/librepods/state.json. Each record is a flat set of the
@@ -60,7 +62,7 @@
 #
 # Pinned to the linux/rust branch base (in-PR, not yet tagged):
 #   rev 672e65ad36eebf21ff1c1a508066f9197ee56d17 (2026-05-15)
-# handoff.patch is the diff 672e65a..516b105 (the handoff HEAD, local only).
+# handoff.patch is the diff 672e65a..731c406 (the handoff HEAD, local only).
 # The build is heavy (iced/wgpu/winit + bluer + libpulse + dbus) because the
 # `ui` module compiles even in headless mode. It is built locally under the
 # justfile build-flags caps (--cores 4 --max-jobs 4), which keep it within the

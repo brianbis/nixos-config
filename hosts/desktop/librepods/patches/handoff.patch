@@ -1042,7 +1042,7 @@ index f43f575..9facd0a 100644
      tokio::spawn(async move {
          info!("Starting LE monitor...");
 diff --git a/linux-rust/src/media_controller.rs b/linux-rust/src/media_controller.rs
-index 5bd68b1..04f0d1f 100644
+index 5bd68b1..9b84b43 100644
 --- a/linux-rust/src/media_controller.rs
 +++ b/linux-rust/src/media_controller.rs
 @@ -4,12 +4,14 @@ use dbus::arg::RefArg;
@@ -1125,16 +1125,16 @@ index 5bd68b1..04f0d1f 100644
  }
  
  impl MediaController {
-@@ -88,9 +126,90 @@ impl MediaController {
+@@ -88,7 +126,88 @@ impl MediaController {
          state.local_mac = local_mac;
          MediaController {
              state: Arc::new(Mutex::new(state)),
 +            silence_stop: Arc::new(std::sync::atomic::AtomicBool::new(false)),
 +            silence_suppressed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
 +            silence_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-         }
-     }
- 
++        }
++    }
++
 +    /// Start the silence stream (spec 6.1). Resolves the Bluetooth sink and spawns a
 +    /// dedicated thread that writes inaudible silence. The thread restarts the stream
 +    /// unconditionally whenever the writer exits, and idles while suppressed (peer
@@ -1144,7 +1144,7 @@ index 5bd68b1..04f0d1f 100644
 +        if self.silence_running.swap(true, Ordering::SeqCst) {
 +            debug!("Silence stream already running");
 +            return;
-+        }
+         }
 +        let mac = self.state.lock().await.connected_device_mac.clone();
 +        let stop = self.silence_stop.clone();
 +        let suppressed = self.silence_suppressed.clone();
@@ -1211,12 +1211,10 @@ index 5bd68b1..04f0d1f 100644
 +        use std::sync::atomic::Ordering;
 +        self.silence_stop.store(true, Ordering::SeqCst);
 +        self.silence_running.store(false, Ordering::SeqCst);
-+    }
-+
+     }
+ 
      pub async fn start_playback_listener(
-         &self,
-         aacp_manager: AACPManager,
-@@ -127,72 +246,120 @@ impl MediaController {
+@@ -127,72 +246,129 @@ impl MediaController {
          loop {
              tokio::time::sleep(Duration::from_millis(500)).await;
  
@@ -1311,24 +1309,33 @@ index 5bd68b1..04f0d1f 100644
 +                    info!("CLAIM cooldown active; suppressing playback takeover.");
 +                } else {
 +                    self.state.lock().await.last_claim_at = Some(std::time::Instant::now());
-+                    let aacp_state = aacp_manager.state.lock().await;
-+                    if !aacp_state
++                    // Ear-detection guard (brief lock; do NOT hold the AACP state lock
++                    // across the async A2DP activation below, which can take ~15 s).
++                    let in_ear = aacp_manager
++                        .state
++                        .lock()
++                        .await
 +                        .ear_detection_status
-+                        .contains(&EarDetectionStatus::InEar)
-+                    {
++                        .contains(&EarDetectionStatus::InEar);
++                    if !in_ear {
 +                        info!("Media playback started but buds not in ear, skipping takeover");
 +                        continue;
 +                    }
 +                    info!("Media playback started, taking ownership and activating a2dp");
++                    // Activate A2DP first: if the AirPods are held by a peer (the
++                    // iPhone) the PC's link is down, and activate_a2dp_profile forces a
++                    // BR/EDR connect (which also reconnects the AACP) before the card
++                    // appears. Only then is the AACP up for the CLAIM.
++                    self.activate_a2dp_profile().await;
 +                    let _ = control_tx.send((
 +                        crate::bluetooth::aacp::ControlCommandIdentifiers::OwnsConnection,
 +                        vec![0x01],
 +                    ));
-+                    self.activate_a2dp_profile().await;
 +
 +                    info!("already connected locally, hijacking connection by asking AirPods");
 +
-+                    let connected_devices = aacp_state.connected_devices.clone();
++                    let connected_devices =
++                        aacp_manager.state.lock().await.connected_devices.clone();
 +                    for device in connected_devices {
 +                        if device.mac != local_mac {
 +                            if let Err(e) = aacp_manager
@@ -1390,7 +1397,7 @@ index 5bd68b1..04f0d1f 100644
      }
  
      fn is_kdeconnect_service(service: &str) -> bool {
-@@ -247,8 +414,16 @@ impl MediaController {
+@@ -247,8 +423,16 @@ impl MediaController {
                  }
              }
          } else if new_all_out {
@@ -1409,7 +1416,7 @@ index 5bd68b1..04f0d1f 100644
              {
                  let state = self.state.lock().await;
                  if state.disconnect_when_not_wearing {
-@@ -284,9 +459,15 @@ impl MediaController {
+@@ -284,9 +468,15 @@ impl MediaController {
                  self.resume().await;
                  self.state.lock().await.i_paused_the_media = false;
              } else if !old_all_out {
@@ -1428,7 +1435,19 @@ index 5bd68b1..04f0d1f 100644
              } else {
                  debug!("Playing media");
                  self.resume().await;
-@@ -358,8 +539,11 @@ impl MediaController {
+@@ -319,6 +509,11 @@ impl MediaController {
+         if current_device_index.is_none() {
+             warn!("Device index not found, trying to get it.");
+             current_device_index = self.get_audio_device_index(&mac).await;
++            // If the card is missing (the AirPods are held by a peer, e.g. the iPhone),
++            // force a BR/EDR connect and wait for the card to appear.
++            if current_device_index.is_none() {
++                current_device_index = self.force_connect_and_wait_for_card(&mac).await;
++            }
+             if let Some(idx) = current_device_index {
+                 self.state.lock().await.device_index = Some(idx);
+             } else {
+@@ -358,8 +553,11 @@ impl MediaController {
          if let Some(idx) = device_index {
              info!("Activating A2DP profile for AirPods: {}", preferred_profile);
              let profile_name = preferred_profile.clone();
@@ -1441,7 +1460,7 @@ index 5bd68b1..04f0d1f 100644
                      .await
                      .unwrap_or(false);
  
-@@ -376,38 +560,36 @@ impl MediaController {
+@@ -376,38 +574,36 @@ impl MediaController {
      async fn pause(&self) {
          debug!("Pausing playback");
  
@@ -1497,7 +1516,7 @@ index 5bd68b1..04f0d1f 100644
                  }
              }
  
-@@ -429,33 +611,30 @@ impl MediaController {
+@@ -429,33 +625,30 @@ impl MediaController {
      pub async fn pause_all_media(&self) {
          debug!("Pausing all media (without tracking for resume)");
  
@@ -1546,7 +1565,7 @@ index 5bd68b1..04f0d1f 100644
                  }
              }
              paused_count
-@@ -471,7 +650,81 @@ impl MediaController {
+@@ -471,7 +664,81 @@ impl MediaController {
          }
      }
  
@@ -1629,7 +1648,7 @@ index 5bd68b1..04f0d1f 100644
          debug!("Resuming playback");
          let services = self.state.lock().await.paused_by_app_services.clone();
  
-@@ -512,6 +765,15 @@ impl MediaController {
+@@ -512,6 +779,15 @@ impl MediaController {
          }
      }
  
@@ -1645,7 +1664,64 @@ index 5bd68b1..04f0d1f 100644
      pub async fn next_track(&self) {
          info!("Skipping to next track");
          self.mpris_command("Next").await;
-@@ -652,25 +914,12 @@ impl MediaController {
+@@ -635,6 +911,56 @@ impl MediaController {
+             .unwrap_or(None)
+     }
+ 
++    /// Force a BR/EDR connection to the AirPods and wait for the A2DP card to appear.
++    ///
++    /// Used when the user starts playing on the PC but the AirPods are held by a peer
++    /// (the iPhone): the PC's BR/EDR link (and thus the A2DP card and the AACP) is
++    /// down, and the PPM-driven auto-connect does not fire because the AirPods are not
++    /// advertising while connected. Forcing `bluetoothctl connect` re-establishes the
++    /// BR/EDR link (the AirPods accept it via multipoint / automatic switching), which
++    /// in turn re-runs the AACP init and creates the A2DP card.
++    async fn force_connect_and_wait_for_card(&self, mac: &str) -> Option<u32> {
++        info!("A2DP card missing; forcing BR/EDR connect to {} to reclaim.", mac);
++        let mac_owned = mac.to_string();
++        let connect_result =
++            tokio::task::spawn_blocking(move || {
++                Command::new("bluetoothctl")
++                    .arg("connect")
++                    .arg(&mac_owned)
++                    .output()
++            })
++            .await;
++        match connect_result {
++            Ok(Ok(output)) if output.status.success() => {
++                info!("Forced BR/EDR connect to {} succeeded.", mac);
++            }
++            Ok(Ok(output)) => {
++                let stderr = String::from_utf8_lossy(&output.stderr);
++                warn!("Forced BR/EDR connect to {} failed: {}", mac, stderr.trim());
++            }
++            Ok(Err(e)) => {
++                warn!("Failed to run bluetoothctl connect to {}: {}", mac, e);
++            }
++            Err(e) => {
++                warn!("Failed to spawn bluetoothctl connect to {}: {}", mac, e);
++            }
++        }
++        // Poll for the A2DP card to appear (the BR/EDR connect + AACP init + BlueZ
++        // card creation take a few seconds).
++        let deadline = std::time::Instant::now() + Duration::from_secs(15);
++        loop {
++            if let Some(idx) = self.get_audio_device_index(mac).await {
++                info!("A2DP card appeared after forced connect: index {}", idx);
++                return Some(idx);
++            }
++            if std::time::Instant::now() >= deadline {
++                warn!("A2DP card did not appear after forced connect to {}.", mac);
++                return None;
++            }
++            tokio::time::sleep(Duration::from_millis(500)).await;
++        }
++    }
++
+     pub async fn deactivate_a2dp_profile(&self) {
+         debug!("Entering deactivate_a2dp_profile");
+         let mut state = self.state.lock().await;
+@@ -652,25 +978,12 @@ impl MediaController {
          let device_index = state.device_index.unwrap();
          drop(state);
  
@@ -1677,7 +1753,7 @@ index 5bd68b1..04f0d1f 100644
      }
  
      pub async fn handle_conversational_awareness(&self, status: u8) {
-@@ -968,18 +1217,244 @@ fn get_sink_volume_percent_by_name_sync(sink_name: &str) -> Option<u32> {
+@@ -968,18 +1281,244 @@ fn get_sink_volume_percent_by_name_sync(sink_name: &str) -> Option<u32> {
      Some(percent)
  }
  
