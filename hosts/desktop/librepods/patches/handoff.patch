@@ -1,5 +1,5 @@
 diff --git a/linux-rust/src/bluetooth/aacp.rs b/linux-rust/src/bluetooth/aacp.rs
-index bed6ca8..4a59412 100644
+index bed6ca8..2f70a68 100644
 --- a/linux-rust/src/bluetooth/aacp.rs
 +++ b/linux-rust/src/bluetooth/aacp.rs
 @@ -5,7 +5,7 @@ use bluer::{
@@ -130,13 +130,18 @@ index bed6ca8..4a59412 100644
  #[derive(Debug, Clone)]
  pub enum AACPEvent {
      BatteryInfo(Vec<BatteryInfo>),
-@@ -320,6 +394,17 @@ pub struct AACPManagerState {
+@@ -320,6 +394,22 @@ pub struct AACPManagerState {
      pub control_command_subscribers:
          HashMap<ControlCommandIdentifiers, Vec<mpsc::UnboundedSender<Vec<u8>>>>,
      pub owns: bool,
 +    /// Set once the early CLAIM has been sent (spec 4.1). Prevents the
 +    /// FEATURES_ACK path and the init fallback from double-claiming.
 +    pub early_claim_sent: bool,
++    /// Gate for the early CLAIM (spec 5, polite peer). Defaults to false so an idle
++    /// PC does not assert ownership on connect and bump a peer (the iPhone) off the
++    /// AirPods on every reconnect. The init path sets it true only when the PC is
++    /// actively playing media at connect time.
++    pub early_claim_allowed: bool,
 +    /// True while the CA 10 s safety timer (spec 7.5) is armed. Prevents stacked
 +    /// timers from repeated CA enables.
 +    pub ca_safety_timer_armed: bool,
@@ -148,7 +153,7 @@ index bed6ca8..4a59412 100644
      pub old_connected_devices: Vec<ConnectedDevice>,
      pub connected_devices: Vec<ConnectedDevice>,
      pub audio_source: Option<AudioSource>,
-@@ -330,6 +415,9 @@ pub struct AACPManagerState {
+@@ -330,6 +420,9 @@ pub struct AACPManagerState {
      event_tx: Option<mpsc::UnboundedSender<AACPEvent>>,
      pub devices: HashMap<String, DeviceData>,
      pub airpods_mac: Option<Address>,
@@ -158,18 +163,19 @@ index bed6ca8..4a59412 100644
  }
  
  impl AACPManagerState {
-@@ -343,6 +431,10 @@ impl AACPManagerState {
+@@ -343,6 +436,11 @@ impl AACPManagerState {
              control_command_status_list: Vec::new(),
              control_command_subscribers: HashMap::new(),
              owns: false,
 +            early_claim_sent: false,
++            early_claim_allowed: false,
 +            ca_safety_timer_armed: false,
 +            l2cap_failure_count: 0,
 +            last_l2cap_failure: None,
              old_connected_devices: Vec::new(),
              connected_devices: Vec::new(),
              audio_source: None,
-@@ -353,6 +445,7 @@ impl AACPManagerState {
+@@ -353,6 +451,7 @@ impl AACPManagerState {
              event_tx: None,
              devices,
              airpods_mac: None,
@@ -177,7 +183,7 @@ index bed6ca8..4a59412 100644
          }
      }
  }
-@@ -439,17 +532,27 @@ impl AACPManager {
+@@ -439,17 +538,27 @@ impl AACPManager {
      }
  
      async fn send_packet(&self, data: &[u8]) -> Result<()> {
@@ -213,7 +219,7 @@ index bed6ca8..4a59412 100644
              Err(Error::from(std::io::Error::new(
                  std::io::ErrorKind::NotConnected,
                  "L2CAP stream not connected",
-@@ -457,6 +560,28 @@ impl AACPManager {
+@@ -457,6 +566,28 @@ impl AACPManager {
          }
      }
  
@@ -242,13 +248,21 @@ index bed6ca8..4a59412 100644
      async fn send_data_packet(&self, data: &[u8]) -> Result<()> {
          let packet = [HEADER_BYTES.as_slice(), data].concat();
          self.send_packet(&packet).await
-@@ -467,6 +592,82 @@ impl AACPManager {
+@@ -467,6 +598,90 @@ impl AACPManager {
          state.event_tx = Some(tx);
      }
  
 +    pub async fn set_local_mac(&self, mac: String) {
 +        let mut state = self.state.lock().await;
 +        state.local_mac = Some(mac);
++    }
++
++    /// Gate the early CLAIM (spec 5, polite peer). When `allowed` is false, the early
++    /// CLAIM is suppressed so an idle PC does not assert ownership on connect and bump
++    /// a peer off the AirPods.
++    pub async fn set_early_claim_allowed(&self, allowed: bool) {
++        let mut state = self.state.lock().await;
++        state.early_claim_allowed = allowed;
 +    }
 +
 +    /// The local MAC in BlueZ byte order (spec 3.5).
@@ -325,7 +339,7 @@ index bed6ca8..4a59412 100644
      pub async fn subscribe_to_control_command(
          &self,
          identifier: ControlCommandIdentifiers,
-@@ -539,15 +740,8 @@ impl AACPManager {
+@@ -539,15 +754,8 @@ impl AACPManager {
                              }
                          },
                          level: payload[base_index + 2],
@@ -343,7 +357,7 @@ index bed6ca8..4a59412 100644
                      });
                  }
                  let mut state = self.state.lock().await;
-@@ -894,8 +1088,12 @@ impl AACPManager {
+@@ -894,8 +1102,12 @@ impl AACPManager {
                      });
                  }
                  let mut state = self.state.lock().await;
@@ -357,7 +371,7 @@ index bed6ca8..4a59412 100644
                  if let Some(ref tx) = state.event_tx {
                      let _ = tx.send(AACPEvent::ConnectedDevices(
                          state.old_connected_devices.clone(),
-@@ -914,6 +1112,13 @@ impl AACPManager {
+@@ -914,6 +1126,13 @@ impl AACPManager {
                      }
                  }
              }
@@ -371,7 +385,7 @@ index bed6ca8..4a59412 100644
              opcodes::EQ_DATA => {
                  debug!("Received EQ Data");
              }
-@@ -929,9 +1134,22 @@ impl AACPManager {
+@@ -929,9 +1148,22 @@ impl AACPManager {
      }
  
      pub async fn send_set_feature_flags_packet(&self) -> Result<()> {
@@ -396,7 +410,7 @@ index bed6ca8..4a59412 100644
          let packet = [opcode.as_slice(), data.as_slice()].concat();
          self.send_data_packet(&packet).await
      }
-@@ -973,6 +1191,34 @@ impl AACPManager {
+@@ -973,6 +1205,34 @@ impl AACPManager {
          &self,
          identifier: ControlCommandIdentifiers,
          value: &[u8],
@@ -431,7 +445,7 @@ index bed6ca8..4a59412 100644
      ) -> Result<()> {
          let opcode = [opcodes::CONTROL_COMMAND, 0x00];
          let mut data = vec![identifier as u8];
-@@ -983,6 +1229,107 @@ impl AACPManager {
+@@ -983,6 +1243,111 @@ impl AACPManager {
          self.send_data_packet(&packet).await
      }
  
@@ -514,6 +528,10 @@ index bed6ca8..4a59412 100644
 +    pub async fn send_early_claim(&self) {
 +        let should_send = {
 +            let mut state = self.state.lock().await;
++            if !state.early_claim_allowed {
++                debug!("Early CLAIM suppressed: PC idle at connect (polite peer).");
++                return;
++            }
 +            if state.early_claim_sent {
 +                false
 +            } else {
@@ -539,7 +557,7 @@ index bed6ca8..4a59412 100644
      pub async fn send_media_information_new_device(
          &self,
          self_mac_address: &str,
-@@ -1232,6 +1579,67 @@ async fn recv_thread(manager: AACPManager, sp: Arc<SeqPacket>) {
+@@ -1232,6 +1597,67 @@ async fn recv_thread(manager: AACPManager, sp: Arc<SeqPacket>) {
      state.sender = None;
  }
  
@@ -657,10 +675,35 @@ index 69918bf..340ee9e 100644
                                                  })
                                                  .await;
 diff --git a/linux-rust/src/devices/airpods.rs b/linux-rust/src/devices/airpods.rs
-index f0e876c..f31947a 100644
+index f0e876c..fd4a002 100644
 --- a/linux-rust/src/devices/airpods.rs
 +++ b/linux-rust/src/devices/airpods.rs
-@@ -49,29 +49,45 @@ impl AirPodsDevice {
+@@ -30,6 +30,24 @@ impl AirPodsDevice {
+         let mut aacp_manager = AACPManager::new();
+         aacp_manager.connect(mac_address).await;
+ 
++        // Polite-peer gate (spec 5): the early CLAIM is suppressed by default so an
++        // idle PC does not assert ownership on connect and bump the iPhone off the
++        // AirPods on every reconnect (the claim war). Only allow it when the PC is
++        // actively playing media right now; the playback listener claims when the
++        // user starts playing on the PC. Must be set before the connection sequence
++        // (which triggers the early CLAIM via FEATURES_ACK).
++        let playing_at_connect = tokio::task::spawn_blocking(
++            || !MediaController::list_playing_services().is_empty(),
++        )
++        .await
++        .unwrap_or(false);
++        if playing_at_connect {
++            aacp_manager.set_early_claim_allowed(true).await;
++            info!("PC playing at connect; allowing early CLAIM.");
++        } else {
++            info!("PC idle at connect; suppressing early CLAIM (polite peer).");
++        }
++
+         // let mut att_manager = ATTManager::new();
+         // att_manager.connect(mac_address).await.expect("Failed to connect ATT");
+ 
+@@ -49,29 +67,45 @@ impl AirPodsDevice {
                  .await;
          }
  
@@ -712,7 +755,7 @@ index f0e876c..f31947a 100644
  
          info!("Requesting Proximity Keys: IRK and ENC_KEY");
          if let Err(e) = aacp_manager
-@@ -81,6 +97,14 @@ impl AirPodsDevice {
+@@ -81,6 +115,14 @@ impl AirPodsDevice {
              error!("Failed to request proximity keys: {}", e);
          }
  
@@ -727,7 +770,7 @@ index f0e876c..f31947a 100644
          let app_settings_path = get_app_settings_path();
          let settings = std::fs::read_to_string(&app_settings_path)
              .ok()
-@@ -118,6 +142,11 @@ impl AirPodsDevice {
+@@ -118,6 +160,11 @@ impl AirPodsDevice {
              .expect("Failed to get adapter address")
              .to_string();
  
@@ -739,7 +782,7 @@ index f0e876c..f31947a 100644
          let media_controller = Arc::new(Mutex::new(MediaController::new(
              mac_address.to_string(),
              local_mac.clone(),
-@@ -149,6 +178,59 @@ impl AirPodsDevice {
+@@ -149,6 +196,59 @@ impl AirPodsDevice {
              .await;
          drop(mc_listener);
  
@@ -799,7 +842,7 @@ index f0e876c..f31947a 100644
          let (listening_mode_tx, mut listening_mode_rx) = tokio::sync::mpsc::unbounded_channel();
          aacp_manager
              .subscribe_to_control_command(
-@@ -214,23 +296,18 @@ impl AirPodsDevice {
+@@ -214,23 +314,18 @@ impl AirPodsDevice {
                  owns_connection_tx,
              )
              .await;
@@ -826,7 +869,7 @@ index f0e876c..f31947a 100644
          tokio::spawn(async move {
              while let Some(event) = rx.recv().await {
                  let event_clone = event.clone();
-@@ -246,8 +323,10 @@ impl AirPodsDevice {
+@@ -246,8 +341,10 @@ impl AirPodsDevice {
                              old_status, new_status
                          );
                          controller
@@ -838,7 +881,7 @@ index f0e876c..f31947a 100644
                      }
                      AACPEvent::BatteryInfo(battery_info) => {
                          debug!("Received BatteryInfo event: {:?}", battery_info);
-@@ -300,6 +379,10 @@ impl AirPodsDevice {
+@@ -300,6 +397,10 @@ impl AirPodsDevice {
                          controller.handle_conversational_awareness(status).await;
                      }
                      AACPEvent::ConnectedDevices(old_devices, new_devices) => {
@@ -849,7 +892,7 @@ index f0e876c..f31947a 100644
                          let local_mac = local_mac_events.clone();
                          let new_devices_filtered = new_devices.iter().filter(|new_device| {
                              let not_in_old = old_devices
-@@ -342,13 +425,20 @@ impl AirPodsDevice {
+@@ -342,13 +443,20 @@ impl AirPodsDevice {
                      }
                      AACPEvent::OwnershipToFalseRequest => {
                          info!(
@@ -982,10 +1025,17 @@ index f43f575..9facd0a 100644
      tokio::spawn(async move {
          info!("Starting LE monitor...");
 diff --git a/linux-rust/src/media_controller.rs b/linux-rust/src/media_controller.rs
-index 5bd68b1..492a208 100644
+index 5bd68b1..04f0d1f 100644
 --- a/linux-rust/src/media_controller.rs
 +++ b/linux-rust/src/media_controller.rs
-@@ -10,6 +10,8 @@ use libpulse_binding::def::Retval;
+@@ -4,12 +4,14 @@ use dbus::arg::RefArg;
+ use dbus::blocking::Connection;
+ use dbus::blocking::stdintf::org_freedesktop_dbus::Properties;
+ use libpulse_binding::callbacks::ListResult;
+-use libpulse_binding::context::introspect::SinkInfo;
++use libpulse_binding::context::introspect::{ServerInfo, SinkInfo};
+ use libpulse_binding::context::{Context, FlagSet as ContextFlagSet};
+ use libpulse_binding::def::Retval;
  use libpulse_binding::mainloop::standard::Mainloop;
  use libpulse_binding::operation::State as OperationState;
  use libpulse_binding::proplist::Proplist;
@@ -1058,7 +1108,7 @@ index 5bd68b1..492a208 100644
  }
  
  impl MediaController {
-@@ -88,9 +126,83 @@ impl MediaController {
+@@ -88,9 +126,90 @@ impl MediaController {
          state.local_mac = local_mac;
          MediaController {
              state: Arc::new(Mutex::new(state)),
@@ -1085,6 +1135,7 @@ index 5bd68b1..492a208 100644
 +            .name("librepods-silence".into())
 +            .spawn(move || {
 +                info!("Silence stream thread started for {}", mac);
++                let mut backoff_ms: u64 = 500;
 +                loop {
 +                    if stop.load(Ordering::SeqCst) {
 +                        break;
@@ -1105,20 +1156,26 @@ index 5bd68b1..492a208 100644
 +                        }
 +                    };
 +                    // Write silence until the stream dies or we are stopped/suppressed.
++                    let run_start = std::time::Instant::now();
 +                    write_silence_stream(&sink, &stop, &suppressed);
 +                    if stop.load(Ordering::SeqCst) {
 +                        break;
 +                    }
-+                    // The writer exited unexpectedly (or was suppressed). Restart
-+                    // unconditionally (spec 6.1) — do not assume a short-lived failure
-+                    // was a bad open.
 +                    if suppressed.load(Ordering::SeqCst) {
 +                        // Suppressed: idle briefly, then re-check (peer owns the device).
 +                        std::thread::sleep(Duration::from_millis(250));
 +                        continue;
 +                    }
-+                    warn!("Silence stream exited; restarting.");
-+                    std::thread::sleep(Duration::from_millis(500));
++                    // The writer exited unexpectedly. If it had been running for a while,
++                    // the failure is transient (e.g. a codec renegotiation) — reset the
++                    // backoff. Otherwise back off exponentially so a persistently-failing
++                    // sink does not hot-loop (spec 6.1).
++                    if run_start.elapsed() > Duration::from_secs(5) {
++                        backoff_ms = 500;
++                    }
++                    warn!("Silence stream exited; restarting in {} ms.", backoff_ms);
++                    std::thread::sleep(Duration::from_millis(backoff_ms));
++                    backoff_ms = (backoff_ms * 2).min(30_000);
 +                }
 +                info!("Silence stream thread stopped.");
 +            })
@@ -1142,7 +1199,7 @@ index 5bd68b1..492a208 100644
      pub async fn start_playback_listener(
          &self,
          aacp_manager: AACPManager,
-@@ -127,72 +239,119 @@ impl MediaController {
+@@ -127,72 +246,120 @@ impl MediaController {
          loop {
              tokio::time::sleep(Duration::from_millis(500)).await;
  
@@ -1288,7 +1345,8 @@ index 5bd68b1..492a208 100644
 -    fn check_if_playing() -> bool {
 +    /// List the MPRIS services currently playing (spec 10.2). The playback listener
 +    /// caches this; pause/resume decisions read the cache instead of re-querying.
-+    fn list_playing_services() -> Vec<String> {
++    /// Also queried at connect time to gate the early CLAIM (spec 5, polite peer).
++    pub(crate) fn list_playing_services() -> Vec<String> {
          let conn = match Connection::new_session() {
              Ok(c) => c,
 -            Err(_) => return false,
@@ -1315,7 +1373,7 @@ index 5bd68b1..492a208 100644
      }
  
      fn is_kdeconnect_service(service: &str) -> bool {
-@@ -247,8 +406,16 @@ impl MediaController {
+@@ -247,8 +414,16 @@ impl MediaController {
                  }
              }
          } else if new_all_out {
@@ -1334,7 +1392,7 @@ index 5bd68b1..492a208 100644
              {
                  let state = self.state.lock().await;
                  if state.disconnect_when_not_wearing {
-@@ -284,9 +451,15 @@ impl MediaController {
+@@ -284,9 +459,15 @@ impl MediaController {
                  self.resume().await;
                  self.state.lock().await.i_paused_the_media = false;
              } else if !old_all_out {
@@ -1353,7 +1411,7 @@ index 5bd68b1..492a208 100644
              } else {
                  debug!("Playing media");
                  self.resume().await;
-@@ -358,8 +531,11 @@ impl MediaController {
+@@ -358,8 +539,11 @@ impl MediaController {
          if let Some(idx) = device_index {
              info!("Activating A2DP profile for AirPods: {}", preferred_profile);
              let profile_name = preferred_profile.clone();
@@ -1366,7 +1424,7 @@ index 5bd68b1..492a208 100644
                      .await
                      .unwrap_or(false);
  
-@@ -376,38 +552,36 @@ impl MediaController {
+@@ -376,38 +560,36 @@ impl MediaController {
      async fn pause(&self) {
          debug!("Pausing playback");
  
@@ -1422,7 +1480,7 @@ index 5bd68b1..492a208 100644
                  }
              }
  
-@@ -429,33 +603,30 @@ impl MediaController {
+@@ -429,33 +611,30 @@ impl MediaController {
      pub async fn pause_all_media(&self) {
          debug!("Pausing all media (without tracking for resume)");
  
@@ -1471,7 +1529,7 @@ index 5bd68b1..492a208 100644
                  }
              }
              paused_count
-@@ -471,7 +642,81 @@ impl MediaController {
+@@ -471,7 +650,81 @@ impl MediaController {
          }
      }
  
@@ -1554,7 +1612,7 @@ index 5bd68b1..492a208 100644
          debug!("Resuming playback");
          let services = self.state.lock().await.paused_by_app_services.clone();
  
-@@ -512,6 +757,15 @@ impl MediaController {
+@@ -512,6 +765,15 @@ impl MediaController {
          }
      }
  
@@ -1570,7 +1628,7 @@ index 5bd68b1..492a208 100644
      pub async fn next_track(&self) {
          info!("Skipping to next track");
          self.mpris_command("Next").await;
-@@ -652,25 +906,12 @@ impl MediaController {
+@@ -652,25 +914,12 @@ impl MediaController {
          let device_index = state.device_index.unwrap();
          drop(state);
  
@@ -1602,7 +1660,7 @@ index 5bd68b1..492a208 100644
      }
  
      pub async fn handle_conversational_awareness(&self, status: u8) {
-@@ -968,18 +1209,210 @@ fn get_sink_volume_percent_by_name_sync(sink_name: &str) -> Option<u32> {
+@@ -968,18 +1217,244 @@ fn get_sink_volume_percent_by_name_sync(sink_name: &str) -> Option<u32> {
      Some(percent)
  }
  
@@ -1663,11 +1721,9 @@ index 5bd68b1..492a208 100644
 +            }
 +        }
 +    });
-     while op.get_state() == OperationState::Running {
-         mainloop.iterate(false);
-     }
--    mainloop.quit(Retval(0));
--    true
++    while op.get_state() == OperationState::Running {
++        mainloop.iterate(false);
++    }
 +
 +    if let Some(info) = sink_info.borrow().as_ref() {
 +        let channels = info.volume.len();
@@ -1686,15 +1742,23 @@ index 5bd68b1..492a208 100644
 +    }
 +}
 +
++/// Path to `pactl` (spec 6.2). The daemon runs as a systemd user service whose PATH
++/// may not include the PulseAudio CLI, so the service sets `LIBREPODS_PACTL` to the
++/// absolute store path. Falls back to `pactl` on PATH.
++fn pactl_bin() -> String {
++    std::env::var("LIBREPODS_PACTL").unwrap_or_else(|_| "pactl".to_string())
++}
++
 +/// Set a card profile via `pactl` (spec 6.2).
 +///
 +/// `pa_context_set_card_profile_by_name()` followed by an in-process mainloop wait
 +/// deadlocks when BlueZ is concurrently processing a profile change (PipeWire waits
 +/// for BlueZ, BlueZ waits for PipeWire). Driving the change through a separate `pactl`
 +/// process avoids that in-process mainloop entirely; PipeWire handles the race with
-+/// BlueZ on its own.
++/// BlueZ on its own. `pactl` talks to PipeWire's PulseAudio-compatible server, so it
++/// works on a PipeWire/WirePlumber system.
 +fn set_card_profile_pactl(card_index: u32, profile_name: &str) -> bool {
-+    let output = Command::new("pactl")
++    let output = Command::new(pactl_bin())
 +        .args(["set-card-profile", &card_index.to_string(), profile_name])
 +        .output()
 +        .ok();
@@ -1717,18 +1781,30 @@ index 5bd68b1..492a208 100644
 +    }
 +}
 +
-+/// Get the default sink name via `pactl` (spec 10.1). Used to gate pause-on-ear-removal
-+/// on whether the media is actually playing on the AirPods, not on the A2DP profile or
-+/// stream inputs (which are unreliable signals).
++/// Get the default sink name via the libpulse C API (spec 10.1). Used to gate
++/// pause-on-ear-removal on whether the media is actually playing on the AirPods.
++/// This is a read (no card-profile change), so the in-process mainloop wait is safe —
++/// there is no PipeWire/BlueZ profile-change race here, unlike `set_card_profile`.
++/// `pactl` is not installed on a PipeWire/WirePlumber system, so the libpulse API
++/// (already used successfully for the silence stream) is the robust source.
 +fn get_default_sink() -> Option<String> {
-+    let output = Command::new("pactl")
-+        .args(["get-default-sink"])
-+        .output()
-+        .ok()?;
-+    if !output.status.success() {
-+        return None;
-+    }
-+    Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
++    let (mut mainloop, context) = pulse_connect()?;
++    let introspector = context.introspect();
++    let name: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
++    let op = introspector.get_server_info({
++        let name = name.clone();
++        move |info: &ServerInfo| {
++            if let Some(n) = &info.default_sink_name {
++                *name.borrow_mut() = Some(n.to_string());
++            }
++        }
++    });
+     while op.get_state() == OperationState::Running {
+         mainloop.iterate(false);
+     }
+     mainloop.quit(Retval(0));
+-    true
++    name.borrow().clone()
 +}
 +
 +/// Continuously write inaudible silence to `sink` (spec 6.1). Runs on a dedicated
@@ -1797,6 +1873,21 @@ index 5bd68b1..492a208 100644
 +    }
 +    info!("Silence stream open to {}", sink);
 +
++    // Wait for the *stream* (not just the context) to reach Ready before the first
++    // write. Writing before Ready fails immediately, which was the cause of the
++    // restart loop (spec 6.1). Bounded so a wedged server can't hang us.
++    for _ in 0..20 {
++        if stream.get_state() == libpulse_binding::stream::State::Ready {
++            break;
++        }
++        mainloop.iterate(false);
++        std::thread::sleep(Duration::from_millis(100));
++    }
++    if stream.get_state() != libpulse_binding::stream::State::Ready {
++        warn!("Silence stream: stream not ready after connect_playback to {}", sink);
++        return;
++    }
++
 +    // ~100 ms of 16-bit stereo silence at 48 kHz (4800 frames * 2 ch * 2 bytes).
 +    // Zeros are inaudible regardless of the negotiated sample format, and the length
 +    // is a multiple of the frame size (4 bytes for S16LE stereo).
@@ -1819,10 +1910,10 @@ index 5bd68b1..492a208 100644
  pub fn transition_sink_volume(sink_name: &str, target_volume: u32) -> bool {
 diff --git a/linux-rust/src/ownership.rs b/linux-rust/src/ownership.rs
 new file mode 100644
-index 0000000..49a8d31
+index 0000000..3358289
 --- /dev/null
 +++ b/linux-rust/src/ownership.rs
-@@ -0,0 +1,461 @@
+@@ -0,0 +1,468 @@
 +//! Ownership arbitration between the Linux host and a peer (iPhone) sharing the
 +//! AirPods (spec 5).
 +//!
@@ -2005,6 +2096,13 @@ index 0000000..49a8d31
 +
 +    /// Feed an `AUDIO_SOURCE` event (spec 5, 7.3).
 +    pub async fn on_audio_source(&self, src: &AudioSource) {
++        // The firmware emits an all-zero MAC to mean "no audio source" (handoff in
++        // progress). It is not a real peer — ignore it so it does not trigger a
++        // spurious yield/reclaim.
++        if src.mac == "00:00:00:00:00:00" {
++            debug!("Audio source is all-zero (no source / handoff); ignoring.");
++            return;
++        }
 +        let local = self.aacp.local_mac().await;
 +        let local_rev = self.aacp.local_mac_reversed().await;
 +        let is_peer = src.mac != local && local_rev.as_deref() != Some(src.mac.as_str());

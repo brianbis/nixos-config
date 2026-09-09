@@ -231,7 +231,13 @@ in
         ExecStart = "${pkgs.librepods}/bin/librepods --no-tray";
         Restart = "always";
         RestartSec = "5";
-        Environment = [ "RUST_LOG=info" ];
+        Environment = [
+          "RUST_LOG=info"
+          # The daemon shells out to `pactl` for the A2DP card-profile switch (spec 6.2).
+          # `pactl` is not on the default user-service PATH, so point it at the store
+          # path explicitly. `pactl` talks to PipeWire's PulseAudio-compatible server.
+          "LIBREPODS_PACTL=${pkgs.pulseaudio}/bin/pactl"
+        ];
         # The daemon is a multi-threaded tokio runtime (a worker thread per core)
         # at default priority, doing bursty work (battery notifications ->
         # parse + log + state.json write, plus a 1s D-Bus poll). The A2DP audio
