@@ -63,4 +63,14 @@
   # (An After= reference to a unit that does not exist is a no-op.)
   systemd.services."crystal-forge-server".after = [ "postgresql-setup.service" ];
   systemd.services."crystal-forge-postgres-jobs".after = [ "postgresql-setup.service" ];
+
+  # The module never conveys server.auth_mode to the server process: it is
+  # not written into the generated TOML, and the AUTH_MODE env assignment in
+  # the module's server environment is commented out. The server defaults
+  # auth_mode to $AUTH_MODE or "oidc" (default_auth_mode), so without this
+  # the UI only offers OIDC login. The README documents AUTH_MODE as the
+  # server's auth env var.
+  systemd.services."crystal-forge-server".environment = {
+    AUTH_MODE = "local";
+  };
 }
