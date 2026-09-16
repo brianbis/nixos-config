@@ -145,7 +145,7 @@ let
     "--max-context"
     "240000"
     "--kv-capacity"
-    "240000"
+    "250000"
     "--default-max-tokens"
     "200000"
     "--pending-timeout-ms"

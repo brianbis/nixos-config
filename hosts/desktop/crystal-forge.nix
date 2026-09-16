@@ -14,8 +14,10 @@
 {
   imports = [ inputs.crystal-forge.nixosModules.crystal-forge ];
 
-  # Provides pkgs.crystal-forge.* (server/builder/agent packages,
-  # run-postgres-jobs, dashboards) that the module references.
+  # The snowfall-lib module wrapper hands the module Crystal Forge's own
+  # nixpkgs instance (with its overlay), so pkgs.crystal-forge.* resolves
+  # without host-side help. The overlay is kept anyway so host-side consumers
+  # can use pkgs.crystal-forge.* too.
   nixpkgs.overlays = [ inputs.crystal-forge.overlays.default ];
 
   services.crystal-forge = {
@@ -42,4 +44,13 @@
   # module's value with the module's list plus b.
   nix.settings.allowed-users = lib.mkForce [ "root" "b" "crystal-forge" ];
   nix.settings.trusted-users = lib.mkForce [ "root" "b" "crystal-forge" ];
+
+  # Upstream ordering gap: the module's server and postgres-jobs units only
+  # order After=postgresql.service, but current nixpkgs moved the
+  # ensureUsers/ensureDatabases work into postgresql-setup.service, which runs
+  # after postgresql.service. Without this, the server starts before the
+  # crystal_forge role exists and crash-loops until systemd's start limit.
+  # (An After= reference to a unit that does not exist is a no-op.)
+  systemd.services."crystal-forge-server".after = [ "postgresql-setup.service" ];
+  systemd.services."crystal-forge-postgres-jobs".after = [ "postgresql-setup.service" ];
 }
