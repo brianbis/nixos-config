@@ -181,14 +181,15 @@ let
   ninferModelFile = "qwen3_8_27b_nvfp4.ninfer";
 
   # Qwen3.6-35B-A3B (sparse MoE, 3B active params). Requires ninfer rev
-  # bd265a3 or later (the pinned ad0f3d3 satisfies this).
+  # bd265a3 or later (the pinned 8eaed53 satisfies this).
   ninferModelRepoA3B = "neroued/Qwen3.6-35B-A3B-NInfer";
   ninferModelFileA3B = "qwen3_6_35b_a3b.ninfer";
 
   # Second serving child: Qwen3.6-35B-A3B on its own loopback port.
   # No --reasoning-effort: the A3B chat template does not support a
-  # reasoning-effort control, and the engine rejects the flag at startup
-  # ("default reasoning effort is not supported by the loaded chat template").
+  # reasoning-effort control. The flag stays off for this child so the server
+  # default stays unset; the template layer rejects an effort it cannot honor
+  # at prepare time (the old serve-level startup check was removed upstream).
   childCommandA3B = [
     "${ninfer}/bin/ninfer-serve"
     "${modelsDir}/${ninferModelFileA3B}"

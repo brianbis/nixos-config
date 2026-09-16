@@ -351,11 +351,11 @@
     "ninfer": {
       "flake": false,
       "locked": {
-        "lastModified": 1788547835,
-        "narHash": "sha256-tJdT99C8TarRwHQW/aoH5wjNGUEk3X7d1230EzogLoc=",
+        "lastModified": 1789529517,
+        "narHash": "sha256-juVAJuSh8d21pFONHtXZWgaDa+Iiocw0PXBa1lpR69E=",
         "owner": "Neroued",
         "repo": "ninfer",
-        "rev": "ad0f3d384b5cbcec4a48a3951c287b4e9831443e",
+        "rev": "8eaed5381e842dd22ef64f54bc992b7416f607ab",
         "type": "github"
       },
       "original": {

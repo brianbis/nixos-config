@@ -1,49 +1,31 @@
-diff --git a/src/serve/generation_service.cpp b/src/serve/generation_service.cpp
-index 686992f..a99a258 100644
---- a/src/serve/generation_service.cpp
-+++ b/src/serve/generation_service.cpp
-@@ -253,6 +253,11 @@ GenerationService::GenerationService(ServeOptions options, StartupObserver start
-     engine_options.startup_observer         = std::move(startup_observer);
-     engine_              = std::make_unique<ninfer::Engine>(std::move(engine_options));
-     prompt_capabilities_ = engine_->prompt_capabilities();
-+    if (options_.default_reasoning_effort &&
-+        !prompt_capabilities_.reasoning_effort.supports(*options_.default_reasoning_effort)) {
-+        throw std::invalid_argument(
-+            "default reasoning effort is not supported by the loaded chat template");
-+    }
-     request_capacity_    = std::make_shared<RequestCapacity>(
-         static_cast<std::size_t>(options_.max_concurrency) + options_.max_pending_requests);
- }
 diff --git a/src/serve/request_log.cpp b/src/serve/request_log.cpp
-index b0dba5f..4568881 100644
 --- a/src/serve/request_log.cpp
 +++ b/src/serve/request_log.cpp
-@@ -440,6 +440,10 @@ std::string format_server_start_json(
-                                                           {"request_log_jsonl", options.request_log_jsonl},
-                                                           {"default_output_tokens", options.default_max_tokens},
-                                                           {"default_thinking", options.enable_thinking},
-+                                                          {"default_reasoning_effort",
-+                                                           options.default_reasoning_effort
-+                                                               ? Json(reasoning_effort_name(*options.default_reasoning_effort))
-+                                                               : Json(nullptr)},
-                                                           {"default_thinking_budget", std::move(default_thinking_budget)},
-                                                           {"default_preserve_thinking", options.preserve_thinking}};
-     record["artifact"]                             = Json{{"path", options.artifact_path},
+@@ -434,6 +434,10 @@
+              {"default_output_tokens", options.default_max_tokens},
+              {"default_thinking",
+               options.enable_thinking ? Json(*options.enable_thinking) : Json(nullptr)},
++          {"default_reasoning_effort",
++           options.default_reasoning_effort
++               ? Json(ninfer::reasoning_effort_name(*options.default_reasoning_effort))
++               : Json(nullptr)},
+              {"default_thinking_budget", std::move(default_thinking_budget)},
+              {"default_preserve_thinking",
+               options.preserve_thinking ? Json(*options.preserve_thinking) : Json(nullptr)}};
 diff --git a/src/serve/serve_options.cpp b/src/serve/serve_options.cpp
-index 73c43a5..2a28f38 100644
 --- a/src/serve/serve_options.cpp
 +++ b/src/serve/serve_options.cpp
-@@ -81,7 +81,8 @@ std::string serve_usage_text(const char* argv0) {
-            "[--kv-dtype bf16|int8|fp8|nvfp4|k8v4] [--spec mtp|dflash --draft-tokens N] "
+@@ -82,7 +82,7 @@
             "[--default-max-tokens N] [--default-thinking-budget N] "
             "[--vision] [--no-cuda-graph] [--no-prefix-reuse] "
--           "[--lm-head-draft] [--no-thinking] [--preserve-thinking] [--cors] "
-+           "[--lm-head-draft] [--no-thinking] [--reasoning-effort low|medium|xhigh] "
-+           "[--preserve-thinking] [--cors] "
+-           "[--chat-template FILE] [--lm-head-draft] [--no-thinking] [--preserve-thinking] "
+-           "[--cors] "
++           "[--chat-template FILE] [--lm-head-draft] [--no-thinking] "
++           "[--reasoning-effort low|medium|xhigh] [--preserve-thinking] [--cors] "
             "[--temperature F] [--top-p F] [--top-k N] [--min-p F] [--presence-penalty F] "
             "[--frequency-penalty F] [--seed N] [--greedy]\n"
             "       [--log-level trace|debug|info|warning|error|critical|off]\n"
-@@ -110,6 +111,9 @@ std::string serve_usage_text(const char* argv0) {
+@@ -111,6 +111,9 @@
             "       --default-thinking-budget caps model-origin thinking for enabled requests; "
             "control tokens count toward the request output limit\n"
             "       --preserve-thinking retains closed-turn assistant reasoning in later prompts\n"
@@ -53,8 +35,7 @@ index 73c43a5..2a28f38 100644
             "       sampler defaults come from the loaded model and resolved thinking mode; "
             "server flags and request fields override individual values.\n"
             "       --greedy forces temperature 0 (exact argmax).\n";
-@@ -288,6 +292,18 @@ ServeOptions parse_serve_options(int argc, char** argv) {
-             options.speculative.proposal_head = ProposalHead::Optimized;
+@@ -292,5 +295,17 @@
          } else if (arg == "--no-thinking") {
              options.enable_thinking = false;
 +        } else if (arg == "--reasoning-effort") {
@@ -73,36 +54,31 @@ index 73c43a5..2a28f38 100644
              options.preserve_thinking = true;
          } else if (arg == "--cors") {
 diff --git a/src/serve/serve_options.h b/src/serve/serve_options.h
-index e147539..b5878db 100644
 --- a/src/serve/serve_options.h
 +++ b/src/serve/serve_options.h
-@@ -50,6 +50,9 @@ struct ServeOptions {
+@@ -50,6 +50,9 @@
+     bool use_cuda_graph     = true;
      bool allow_prefix_reuse = true;
-     bool enable_thinking =
-         true; // default thinking mode for the generation prompt (--no-thinking opts out)
+     std::optional<bool> enable_thinking;
 +    // Default reasoning effort for requests that omit one (--reasoning-effort);
 +    // applies only while thinking is enabled. A per-request effort always wins.
 +    std::optional<ninfer::ReasoningEffort> default_reasoning_effort;
-     bool preserve_thinking = false;
+     std::optional<bool> preserve_thinking;
      std::optional<std::uint32_t> default_thinking_budget;
      int default_max_tokens = kDefaultMaxTokens;
 diff --git a/src/serve/translate.cpp b/src/serve/translate.cpp
-index c2effe3..0c67d8b 100644
 --- a/src/serve/translate.cpp
 +++ b/src/serve/translate.cpp
-@@ -130,7 +130,14 @@ ResolvedPromptSemantics resolve_prompt_semantics(const GenerationRequest& reques
+@@ -186,6 +186,12 @@
+             break;
          }
-         return result;
-     };
--    if (!request.reasoning_effort) { return complete(); }
-+    if (!request.reasoning_effort) {
-+        // The server default applies only while thinking is enabled; an
-+        // explicit request effort always wins over it.
-+        if (result.enable_thinking && server.default_reasoning_effort) {
-+            result.reasoning_effort = *server.default_reasoning_effort;
-+        }
-+        return complete();
+     }
++
++    if (!effort && result.enable_thinking != false && server.default_reasoning_effort) {
++        // The server default applies unless thinking is explicitly disabled;
++        // an explicit request effort (field or chat_template_kwargs) always wins.
++        result.reasoning_effort = *server.default_reasoning_effort;
 +    }
- 
-     const RequestedReasoningEffort requested = *request.reasoning_effort;
-     const bool enables_thinking              = requested != RequestedReasoningEffort::None;
+     if (request.continuation == ninfer::PromptContinuationMode::ContinueFinalAssistant &&
+         result.enable_thinking == true) {
+         invalid_prompt_option("assistant prefill cannot be combined with enabled thinking",
