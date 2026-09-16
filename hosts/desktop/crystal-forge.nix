@@ -206,4 +206,10 @@ in
   systemd.services."crystal-forge-agent".preStart = lib.mkAfter ''
     ${fixCfDeploymentPollInterval "/var/lib/crystal-forge-agent/config.toml"}
   '';
+  # The hardening worker's preStart also regenerates the shared
+  # /var/lib/crystal-forge/config.toml (configScriptServer) and the worker
+  # parses it from WorkingDirectory=/var/lib/crystal-forge — same fix.
+  systemd.services."crystal-forge-hardening".preStart = lib.mkAfter ''
+    ${fixCfDeploymentPollInterval "/var/lib/crystal-forge/config.toml"}
+  '';
 }
