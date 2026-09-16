@@ -24,6 +24,16 @@
     enable = true;
     local-database = true;
 
+    # The module default host is the socket path "/run/postgresql", but the
+    # server builds a postgres:// URL from it (to_url:
+    # "postgres://user:pass@host:port/db"); a leading "/" leaves the URL
+    # authority empty, so tokio-postgres fails with "both host and hostaddr
+    # are missing" (upstream CF bug). TCP loopback works: the module adds
+    # trust-auth pg_hba lines for crystal_forge on 127.0.0.1/::1.
+    database = {
+      host = "127.0.0.1";
+    };
+
     server = {
       enable = true;
       host = "127.0.0.1";
