@@ -95,6 +95,15 @@ in
     text = ''
       [http]
         sslCAInfo = /etc/ca-bundle/git-ca.crt
+
+      [safe]
+        # nix's libgit2 fetcher refuses to open a repo not owned by the
+        # calling user ("repository path ... is not owned by current user",
+        # NixOS/nix#10202). The crystal-forge server (user crystal-forge)
+        # evaluates this repo via builtins.getFlake "git+file:///etc/nixos?rev=..."
+        # while the repo is owned by llm. safe.directory is the documented
+        # exception; the system config covers every user (daemon, services).
+        directory = /etc/nixos
     '';
     mode = "0644";
   };
