@@ -6,12 +6,9 @@ let
     pname = "fluent-oled";
     version = "1.0.1";
 
-    src = pkgs.fetchFromGitHub {
-      owner = "fermeridamagni";
-      repo = "fluent-oled";
-      rev = "4b013f5";
-      hash = "sha256-WsbG1k0D6h8XecuEojRM9KfamkuJpKThqK1AYQrCa94=";
-    };
+    # Source from the flakeless `fluent-oled` input (see flake.nix);
+    # `nix flake update fluent-oled` re-pins it.
+    src = inputs.fluent-oled;
 
     installPhase = ''
       mkdir -p $out/share/vscode/extensions/fermeridamagni.fluent-oled
@@ -33,12 +30,9 @@ let
     pname = "nix-ide";
     version = "0.5.13";
 
-    src = pkgs.fetchFromGitHub {
-      owner = "nix-community";
-      repo = "vscode-nix-ide";
-      rev = "1d26f139a6ff4ce22ca18faabc3d2596513470ac";
-      hash = "sha256-TAElWtpoiZmMRUUc+TADezwlNuX5AGnqe2Qn+fB2qy8=";
-    };
+    # Source from the flakeless `nix-ide` input (see flake.nix);
+    # `nix flake update nix-ide` re-pins it.
+    src = inputs.nix-ide;
 
     installPhase = ''
       mkdir -p $out/share/vscode/extensions/jnoortheen.nix-ide
@@ -84,6 +78,11 @@ in
 
   home.packages = with pkgs; [
     inputs.sidra.packages.${pkgs.system}.default
+    # Archipelago entry points (archipelago-webhost/-server/-generate/-launcher).
+    # The web UI + tracker + hosted rooms run as the archipelago system service;
+    # these wrappers are for ad-hoc CLI use (seed generation, "Build APWorlds",
+    # standalone MultiServer, the kivy Launcher GUI).
+    archipelago
     foot
     ghostty
     jetbrains-mono

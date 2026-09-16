@@ -5,7 +5,7 @@
 # No home.packages: the `jc`/`jcs`/`dsh`/`dshs` wrappers live in b's profile
 # and the jail provides its own PATH via bwrap. No user services: the headroom
 # proxies run in b's session and are reachable from any user over loopback.
-{ lib, pkgs, jail-nix, llm-agents, shared, ... }:
+{ lib, pkgs, inputs, jail-nix, llm-agents, shared, ... }:
 
 let
   # The agent operating manual, installed as dsh's user-global instruction file
@@ -15,6 +15,9 @@ let
     inherit jail-nix llm-agents;
     inherit shared;
     userHome = (import ../users.nix).b.homeDirectory;
+    # Upstream dsh source (flakeless input); the doc renders the jail config,
+    # which builds dsh from this tree.
+    dshSrc = inputs.dsh;
   };
   # Embed the content as one single-quoted shell word so apostrophes in the
   # manual can never break the activation script's quoting.

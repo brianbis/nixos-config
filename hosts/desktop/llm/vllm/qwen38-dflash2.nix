@@ -1,45 +1,103 @@
+# Qwen3.8-27B NVFP4 + DFlash2 K7, served as a NATIVE (non-docker) process on
+# the RTX 5090.
+#
+# This is the undockerified counterpart to the former `vllm-qwen38-dflash2`
+# docker container (the community `seanyourhighness/vllm-sm12x-nvfp4-dflash2`
+# image). The engine is now the `pkgs.vllmDflash2` derivation (a pinned-wheel
+# vLLM v0.27.1 venv with the DFlash2 Python overlays applied — see
+# ./dflash2-package.nix) and runs as a socket-activated child process under
+# the shared idle wrapper, exactly like the SGLang native engine. Between
+# requests no process is resident and the model's VRAM is released.
+#
+# The weights are the SAME artifacts the SGLang engine and the old container
+# used:
+#   - target: gittensor-model-hub/Qwen3.8-27B-NVFP4-RTX5090
+#             (downloaded to /var/lib/vllm/qwen38-nvfp4-target; the SGLang
+#             service also requires this download service)
+#   - draft:  YourHighnessLA/Qwen3.8-27B-DFlash2-NVFP4
+#             (downloaded to /var/lib/vllm/qwen38-nvfp4-draft)
+# The two download services below are unchanged from the docker version and
+# remain the single source of the checkpoints.
 { config, lib, pkgs, ... }:
 
 let
   idleSeconds = 120;
+  frontPort = 18089; # socket-activated front (the catalog / Caddy face)
+  childPort = 18090; # loopback-only child (the vllm server)
 
-  releaseRev = "fdb45641d9ef7d663b633037467b6949f1daecf7";
+  # The shared socket-activated idle wrapper (child-process backend; the same
+  # wrapper the SGLang native engine runs).
+  idleWrapper = pkgs.callPackage ../idle-wrapper { };
 
-  dflash2Image =
-    "ghcr.io/seanyourhighness/vllm-sm12x-nvfp4-dflash2@sha256:48436de2f21d9eb77c9a4a7697e16227de12b0ea46638d95f09da0b27f436974";
+  # Checkpoint locations (downloaded by the prep services below).
+  targetDir = "/var/lib/vllm/qwen38-nvfp4-target";
+  draftDir = "/var/lib/vllm/qwen38-nvfp4-draft";
 
-  dflash2TargetRepo = "gittensor-model-hub/Qwen3.8-27B-NVFP4-RTX5090";
-  dflash2TargetRevision = "0cc27958cefbbe231782ec8511de8c4eb5233348";
-  dflash2TargetDir = "/var/lib/vllm/qwen38-nvfp4-target";
-
-  dflash2TargetSentinels = [
-    "model-00001-of-00003.safetensors"
-    "model-00002-of-00003.safetensors"
-    "model-00003-of-00003.safetensors"
-    "model.safetensors.index.json"
-  ];
-
-  dflash2DraftRepo = "YourHighnessLA/Qwen3.8-27B-DFlash2-NVFP4";
-  dflash2DraftRevision = "d913b0b5603a67c26f3edaf7e42a9f8cf89886be";
-  dflash2DraftDir = "/var/lib/vllm/qwen38-nvfp4-draft";
-
-  dflash2DraftSentinels = [
-    "model.safetensors"
-  ];
-
-  dflash2ChatTemplate = pkgs.fetchurl {
+  # Pinned chat template (the fork's release template; intentionally overrides
+  # the different template bundled with the model).
+  chatTemplate = pkgs.fetchurl {
     url =
-      "https://raw.githubusercontent.com/seanyourhighness/vllm-sm12x-nvfp4-dflash2/${releaseRev}/chat-template.jinja";
+      "https://raw.githubusercontent.com/seanyourhighness/vllm-sm12x-nvfp4-dflash2/fdb45641d9ef7d663b633037467b6949f1daecf7/chat-template.jinja";
     sha256 =
       "398edf5b5bb802fb6b9c9a8dba670d09f2aaeef6fdcaa0b2ca307265f59f78dc";
   };
 
+  # The full `vllm serve` invocation, baked into a runner script. The JSON
+  # args (--speculative-config, --compilation-config, --attention-config, ...)
+  # must survive systemd's ExecStart parser, which treats double quotes as
+  # quoting characters and would strip them from the JSON (the value would
+  # arrive as {method:dflash,...} and vllm's argparse would reject it).
+  # Putting the command in a bash script sidesteps that: systemd passes only
+  # the script path (a plain token) to the idle wrapper, which execs it; the
+  # JSON is single-quoted for bash, not systemd. `exec` replaces the shell, so
+  # the wrapper's child PID is the vllm process itself (clean SIGTERM/SIGKILL).
+  #
+  # The model is a POSITIONAL argument (vllm 0.27.1 deprecates --model for
+  # `serve`), and the validated capacity-first profile (the "everything we
+  # run" defaults from the community release) is applied verbatim:
+  #   - DFlash2 K7 block-diffusion drafter (NVFP4 draft weights + NVFP4 KV)
+  #   - explicit 8 GiB NVFP4 KV pin -> ~325k-token pool at 262K context;
+  #     BF16 GDN/SSM state
+  #   - FULL_DECODE_ONLY CUDA graphs (the piecewise prefill graphs are
+  #     re-captured on every cold start and almost never dispatched here, so
+  #     dropping them halves the capture phase with no regression on the
+  #     latency-critical FULL decode/verification path)
+  runScript = pkgs.writeShellScript "vllm-dflash2-serve" ''
+    set -euo pipefail
+
+    exec ${pkgs.vllmDflash2}/bin/vllm serve ${targetDir} \
+      --served-model-name qwen3.8-27b-nvfp4-dflash2 \
+      --host 127.0.0.1 --port ${toString childPort} \
+      --quantization modelopt \
+      --trust-remote-code \
+      --reasoning-parser qwen3 \
+      --enable-auto-tool-choice --tool-call-parser qwen3_coder \
+      --chat-template ${chatTemplate} \
+      --speculative-config '{"method":"dflash","model":"${draftDir}","num_speculative_tokens":7,"kv_cache_dtype":"nvfp4"}' \
+      --kv-cache-dtype nvfp4 \
+      --kv-cache-memory-bytes 8589934592 \
+      --mamba-ssm-cache-dtype bfloat16 \
+      --max-model-len 262144 \
+      --max-num-seqs 4 \
+      --max-num-batched-tokens 4096 \
+      --long-prefill-token-threshold 2048 \
+      --scheduling-policy priority \
+      --enable-prefix-caching --enable-chunked-prefill \
+      --compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY","cudagraph_capture_sizes":[8,16,24,32]}' \
+      --attention-config '{"flash_attn_version":2}' \
+      --enable-mm-embeds \
+      --limit-mm-per-prompt '{"image":0,"video":0}' \
+      --default-chat-template-kwargs '{"enable_thinking":true,"reasoning_effort":"medium"}' \
+      --override-generation-config '{"temperature":0.6}'
+  '';
+
+  # The idle wrapper's child is the runner script (a single token, so systemd
+  # passes it through verbatim; the JSON lives inside the script).
+  childCommand = [ runScript ];
+
   /*
-   * Runtime download helper.
-   *
-   * IMPORTANT:
-   * This is now called by a normal systemd service, never by
-   * system.activationScripts.
+   * Runtime download helper (unchanged from the docker version). Called by
+   * normal systemd services, never by system.activationScripts.
    */
   downloadVllm =
     name: repo: revision: dir: sentinels: pkgs.writeShellScript name ''
@@ -88,86 +146,44 @@ let
 
   targetDownloadScript = downloadVllm
     "vllm-qwen38-nvfp4-target"
-    dflash2TargetRepo
-    dflash2TargetRevision
-    dflash2TargetDir
-    dflash2TargetSentinels;
+    "gittensor-model-hub/Qwen3.8-27B-NVFP4-RTX5090"
+    "0cc27958cefbbe231782ec8511de8c4eb5233348"
+    targetDir
+    [
+      "model-00001-of-00003.safetensors"
+      "model-00002-of-00003.safetensors"
+      "model-00003-of-00003.safetensors"
+      "model.safetensors.index.json"
+    ];
 
   draftDownloadScript = downloadVllm
     "vllm-qwen38-nvfp4-draft"
-    dflash2DraftRepo
-    dflash2DraftRevision
-    dflash2DraftDir
-    dflash2DraftSentinels;
-
-  /*
-   * Image preparation.
-   *
-   * Also normal userspace now. No 60-second Docker wait during activation.
-   */
-  dflash2PullScript = pkgs.writeShellScriptBin "pull-vllm-dflash2" ''
-    set -euo pipefail
-
-    export PATH="${pkgs.docker}/bin:${pkgs.coreutils}/bin:$PATH"
-
-    IMAGE="${dflash2Image}"
-
-    echo "Checking Docker..."
-    docker info >/dev/null
-
-    if docker image inspect "$IMAGE" >/dev/null 2>&1; then
-      echo "image $IMAGE already present; skipping pull"
-      exit 0
-    fi
-
-    echo "==> pulling $IMAGE"
-    docker pull "$IMAGE"
-    echo "==> done: $IMAGE"
-  '';
-
-  mkVllm = import ./lib.nix;
-
-  # Socket-activated idle wrapper (shared with the NInfer engines; the
-  # relay/health/idle machinery lives in ../idle-wrapper once).
-  idleWrapper = pkgs.callPackage ../idle-wrapper { };
+    "YourHighnessLA/Qwen3.8-27B-DFlash2-NVFP4"
+    "d913b0b5603a67c26f3edaf7e42a9f8cf89886be"
+    draftDir
+    [ "model.safetensors" ];
 in
 {
   systemd.tmpfiles.rules = [
     "d /var/lib/vllm/qwen38-nvfp4-target 0755 root root -"
     "d /var/lib/vllm/qwen38-nvfp4-draft 0755 root root -"
-    "d /var/lib/vllm/hf-cache 0755 2000 root -"
-    "d /var/lib/vllm/vllm-cache 0755 2000 root -"
   ];
 
   /*
    * ------------------------------------------------------------------------
-   * PREPARATION SERVICES
+   * CHECKPOINT DOWNLOAD SERVICES
    * ------------------------------------------------------------------------
    *
-   * These are deliberately NOT WantedBy=multi-user.target.
-   *
-   * They are pulled in by the first vLLM request through the preparation
-   * target below. Therefore:
-   *
-   *   boot -> no HF download
-   *   boot -> no GHCR pull
-   *   boot -> no Docker dependency
-   *
-   * First request:
-   *
-   *   socket -> wrapper -> prep.target -> downloads/image -> container
+   * Deliberately NOT WantedBy=multi-user.target. They are pulled in by the
+   * first request through the preparation target below, so boot performs no
+   * HF download. (The SGLang engine requires the target service directly.)
    */
 
   systemd.services.vllm-qwen38-dflash2-target = {
     description = "Download Qwen3.8 DFlash2 target checkpoint";
 
-    after = [
-      "network-online.target"
-    ];
-
-    wants = [
-      "network-online.target"
-    ];
+    after = [ "network-online.target" ];
+    wants = [ "network-online.target" ];
 
     serviceConfig = {
       Type = "oneshot";
@@ -178,13 +194,8 @@ in
   systemd.services.vllm-qwen38-dflash2-draft = {
     description = "Download Qwen3.8 DFlash2 draft checkpoint";
 
-    after = [
-      "network-online.target"
-    ];
-
-    wants = [
-      "network-online.target"
-    ];
+    after = [ "network-online.target" ];
+    wants = [ "network-online.target" ];
 
     serviceConfig = {
       Type = "oneshot";
@@ -192,33 +203,10 @@ in
     };
   };
 
-  systemd.services.vllm-qwen38-dflash2-image = {
-    description = "Pull pinned Qwen3.8 DFlash2 vLLM image";
-
-    after = [
-      "docker.service"
-      "network-online.target"
-    ];
-
-    wants = [
-      "network-online.target"
-    ];
-
-    requires = [
-      "docker.service"
-    ];
-
-    serviceConfig = {
-      Type = "oneshot";
-      ExecStart = "${dflash2PullScript}/bin/pull-vllm-dflash2";
-    };
-  };
-
   /*
-   * The first request pulls this target in through the wrapper service.
-   *
-   * All three preparation jobs can run independently, and the wrapper
-   * waits until this target has completed.
+   * The first request pulls this target in through the wrapper service. Both
+   * downloads can run independently; the wrapper waits until this target has
+   * completed. (No image pull any more: the engine is a native process.)
    */
   systemd.targets.vllm-qwen38-dflash2-prep = {
     description = "Prepare Qwen3.8 DFlash2 runtime";
@@ -226,252 +214,134 @@ in
     wants = [
       "vllm-qwen38-dflash2-target.service"
       "vllm-qwen38-dflash2-draft.service"
-      "vllm-qwen38-dflash2-image.service"
     ];
 
     after = [
       "vllm-qwen38-dflash2-target.service"
       "vllm-qwen38-dflash2-draft.service"
-      "vllm-qwen38-dflash2-image.service"
     ];
   };
 
   /*
    * ------------------------------------------------------------------------
-   * CONTAINER
+   * NATIVE ENGINE (socket-activated child process)
    * ------------------------------------------------------------------------
-   */
-
-  virtualisation.oci-containers.containers.vllm-qwen38-dflash2 = mkVllm {
-    image = dflash2Image;
-
-    model = "/models/target";
-
-    servedName = "qwen3.8-27b-nvfp4-dflash2";
-
-    port = 18090;
-
-    maxModelLen = 262144;
-
-    quantization = "modelopt";
-    kvCacheDtype = "nvfp4";
-
-    toolCallParser = "qwen3_coder";
-    reasoningParser = "qwen3";
-
-    chatTemplate = "/opt/vllm-release/chat-template.jinja";
-
-    speculativeConfig =
-      ''{"method":"dflash","model":"/models/draft","num_speculative_tokens":7,"kv_cache_dtype":"nvfp4"}'';
-
-    /*
-     * Still useful as a final safety net.
-     *
-     * The normal path is the preparation target above.
-     */
-    pull = "missing";
-
-    volumes = [
-      "${dflash2TargetDir}:/models/target:ro"
-      "${dflash2DraftDir}:/models/draft:ro"
-      "${dflash2ChatTemplate}:/opt/vllm-release/chat-template.jinja:ro"
-      "/var/lib/vllm/hf-cache:/home/vllm/.cache/huggingface"
-      "/var/lib/vllm/vllm-cache:/home/vllm/.cache/vllm"
-    ];
-
-    environment = {
-      HF_HOME = "/home/vllm/.cache/huggingface";
-
-      VLLM_DFLASH_FORCE_EAGER = "1";
-      VLLM_XQA_DEDICATED_STREAM = "1";
-      VLLM_USE_FLASHINFER_SAMPLER = "0";
-
-      VLLM_WSL2_ENABLE_PIN_MEMORY = "1";
-
-      TRITON_CACHE_DIR =
-        "/home/vllm/.cache/vllm/triton";
-    };
-
-    extraArgs = [
-      "--trust-remote-code"
-
-      "--kv-cache-memory-bytes"
-      "8589934592"
-
-      "--mamba-ssm-cache-dtype"
-      "bfloat16"
-
-      "--max-num-seqs"
-      "4"
-
-      "--max-num-batched-tokens"
-      "4096"
-
-      "--long-prefill-token-threshold"
-      "2048"
-
-      "--scheduling-policy"
-      "priority"
-
-      "--enable-chunked-prefill"
-
-      "--compilation-config"
-      # FULL_DECODE_ONLY, not FULL_AND_PIECEWISE: the piecewise (prefill)
-      # graphs are re-captured on every cold start (never persisted) and are
-      # almost never dispatched here — chunked prefill runs up to 2048-token
-      # chunks (long-prefill-token-threshold), so mixed batches exceed the
-      # 32-token piecewise capture sizes. Dropping them halves the capture
-      # phase (6 of 12 capture-like forward passes) with no regression on the
-      # latency-critical FULL decode/verification path. The DFlash2 drafter
-      # already runs in this mode.
-      ''{"cudagraph_mode":"FULL_DECODE_ONLY","cudagraph_capture_sizes":[8,16,24,32]}''
-
-      "--attention-config"
-      ''{"flash_attn_version":2}''
-
-      "--enable-mm-embeds"
-
-      "--limit-mm-per-prompt"
-      ''{"image":0,"video":0}''
-
-      "--default-chat-template-kwargs"
-      ''{"enable_thinking":true,"reasoning_effort":"medium"}''
-
-      "--override-generation-config"
-      ''{"temperature":0.6}''
-    ];
-
-    shmSize = "8g";
-  };
-
-  /*
-   * The generated container service must NOT restart the container itself.
-   * The Python wrapper owns the lifecycle.
-   */
-  systemd.services."docker-vllm-qwen38-dflash2".serviceConfig.Restart =
-    lib.mkForce "no";
-
-  /*
-   * The container service depends on the preparation target (HF checkpoint
-   * downloads + pinned image pull). The socket-activated wrapper already pulls
-   * this in, but the DIRECT start path (`just vllm-qwen38-dflash2`, which
-   * starts this service without the wrapper) also needs the checkpoints +
-   * image present before `docker run`. Declaring the dependency on the service
-   * itself (rather than only in the justfile recipe) makes it self-sufficient
-   * for either start path; it is a no-op when the wrapper has already started
-   * the target.
-   */
-  systemd.services."docker-vllm-qwen38-dflash2".requires = [
-    "vllm-qwen38-dflash2-prep.target"
-  ];
-
-  systemd.services."docker-vllm-qwen38-dflash2".after = [
-    "vllm-qwen38-dflash2-prep.target"
-  ];
-
-  /*
-   * Cache directories are created/chowned immediately before docker run.
-   */
-  systemd.services."docker-vllm-qwen38-dflash2".serviceConfig.ExecStartPre =
-    lib.mkForce [
-      "${pkgs.coreutils}/bin/mkdir -p /var/lib/vllm/vllm-cache /var/lib/vllm/hf-cache"
-
-      "${pkgs.coreutils}/bin/chown 2000:0 /var/lib/vllm/vllm-cache /var/lib/vllm/hf-cache"
-
-      "${pkgs.coreutils}/bin/chmod 0755 /var/lib/vllm/vllm-cache /var/lib/vllm/hf-cache"
-    ];
-
-  /*
-   * Graceful idle unload.
    *
-   * The module's generated stop is `docker stop <name> || true` with docker's
-   * DEFAULT 10-second stop timeout. vLLM's SIGTERM shutdown (engine-core abort
-   * + CUDA graph/context teardown for a 27B model) exceeds 10s, so the default
-   * ceiling SIGKILLs the container instead of letting it exit cleanly — the
-   * "not graceful" idle unload. `preStop` is the NixOS option that renders into
-   * the unit's ExecStop, so overriding it (as the Restart/ExecStartPre overrides
-   * above do) gives the stop a 60s window. 60s stays under the module's
-   * TimeoutStopSec=120 and matches the wrapper's --shutdown-timeout.
+   * No wantedBy: the service is started by the socket unit on demand and
+   * exits (code 0) after the idle window, leaving nothing resident between
+   * requests. It must not be pulled in at boot.
    */
-  systemd.services."docker-vllm-qwen38-dflash2".preStop =
-    lib.mkForce "docker stop -t 60 vllm-qwen38-dflash2 || true";
-
-  /*
-   * ------------------------------------------------------------------------
-   * SOCKET / ON-DEMAND WRAPPER
-   * ------------------------------------------------------------------------
-   */
-
-  systemd.sockets.vllm-qwen38-dflash2 = {
-    description =
-      "vLLM Qwen3.8 DFlash2 socket";
-
-    wantedBy = [
-      "sockets.target"
-    ];
-
-    socketConfig = {
-      ListenStream = "127.0.0.1:18089";
-    };
-  };
-
   systemd.services.vllm-qwen38-dflash2 = {
     description =
-      "vLLM Qwen3.8 DFlash2 idle wrapper";
+      "vLLM Qwen3.8 DFlash2 native engine (socket-activated, unloads after ${toString idleSeconds}s idle)";
 
     /*
-     * IMPORTANT:
-     *
      * Starting the wrapper causes systemd to start the preparation target.
      * The wrapper does not run until the target's wanted services have
-     * completed successfully.
+     * completed successfully (checkpoints present).
      */
-    requires = [
-      "vllm-qwen38-dflash2-prep.target"
-    ];
-
+    requires = [ "vllm-qwen38-dflash2-prep.target" ];
     after = [
       "vllm-qwen38-dflash2-prep.target"
+      "vllm-qwen38-dflash2.socket"
     ];
 
     serviceConfig = {
       Type = "simple";
 
-      ExecStart = lib.concatStringsSep " " [
+      ExecStart = lib.concatStringsSep " " ([
         "${pkgs.python3}/bin/python3"
-        "${idleWrapper}/vllm_wrapper.py"
-
+        "${idleWrapper}/sglang_wrapper.py"
         "--child-port"
-        "18090"
-
-        "--container"
-        "vllm-qwen38-dflash2"
-
-        "--image"
-        dflash2Image
-
-        "--pull-timeout"
-        "7200"
-
+        (toString childPort)
         "--idle-seconds"
         (toString idleSeconds)
-
         "--ready-timeout"
         "3600"
-
         "--shutdown-timeout"
         "60"
-
         "--kill-timeout"
         "30"
-      ];
+        "--"
+      ]
+      ++ childCommand);
 
-      Environment = [
-        "PATH=/run/current-system/sw/bin:/usr/bin:/bin"
-      ];
-
+      # The wrapper exits 0 in every normal path (idle unload, SIGTERM, child
+      # failure); only a wrapper crash (signal/coredump) restarts.
       Restart = "on-abnormal";
       RestartSec = "3";
+
+      # The host NVIDIA driver (libcuda.so.1); the CUDA runtime libraries
+      # themselves ship inside the vllm venv (the nvidia-* wheels — the
+      # nvidia/cu13/lib dir is on the loader path so the JIT'd flashinfer
+      # modules' NEEDED libcudart.so.13 resolves to the same copy torch
+      # uses). The venv also bundles the C++ runtime at
+      # ${pkgs.vllmDflash2}/lib (libstdc++), which the dlopen'd C-extension
+      # wheels (torch, flashinfer, ...) need; it is prepended so the loader
+      # finds it.
+      Environment = [
+        "CUDA_VISIBLE_DEVICES=0"
+        "LD_LIBRARY_PATH=${pkgs.vllmDflash2}/lib:${pkgs.vllmDflash2}/venv/lib/python3.12/site-packages/nvidia/cu13/lib:/run/opengl-driver/lib"
+        "HF_HOME=/var/lib/vllm/hf-cache"
+        "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True"
+        "VLLM_USE_FLASHINFER_SAMPLER=0"
+        "VLLM_WSL2_ENABLE_PIN_MEMORY=1"
+        "VLLM_DFLASH_FORCE_EAGER=1"
+        "VLLM_XQA_DEDICATED_STREAM=1"
+        "TRITON_CACHE_DIR=/var/lib/vllm/vllm-cache/triton"
+        # FlashInfer writes its JIT build artifacts (the compiled XQA .so +
+        # ninja workdir) under $FLASHINFER_WORKSPACE_BASE/.cache/flashinfer/
+        # <version>/<arch>/cached_ops. Pin the base to /var/lib/vllm so the
+        # cache is persistent and in a known place (consistent with
+        # TRITON_CACHE_DIR / HF_HOME) instead of the service user's
+        # ~/.cache. The dir is created at runtime (flashinfer mkdir -p's it).
+        "FLASHINFER_WORKSPACE_BASE=/var/lib/vllm/flashinfer"
+        # Triton 3.7.1's nvidia backend locates libcuda.so.1 by shelling out
+        # to `/sbin/ldconfig -p`, which does not exist on NixOS (and nixpkgs'
+        # ldconfig has its cache path baked to a store path, so it could
+        # never work here). TRITON_LIBCUDA_PATH is triton's override knob: it
+        # short-circuits the ldconfig lookup and is used as the -L directory
+        # when triton compiles its driver.c shim.
+        "TRITON_LIBCUDA_PATH=/run/opengl-driver/lib"
+        # Triton compiles that driver.c shim (cuda_utils) on first CUDA driver
+        # init, using $CC or a gcc/clang found on PATH; the unit's default
+        # PATH has no compiler. Point CC at the stdenv cc-wrapper (it carries
+        # the -B/-L flags the raw gcc lacks; the result is cached under
+        # TRITON_CACHE_DIR, so this only matters on the first run after a
+        # triton version change).
+        "CC=${pkgs.stdenv.cc}/bin/cc"
+        # FlashInfer JIT-compiles the XQA decode kernel (nvcc + ninja) on the
+        # first decode. Its get_cuda_path() shells out to `which nvcc` unless
+        # CUDA_HOME is set (and `which` is not on the unit's PATH), so point
+        # it at the derivation's $out/cuda-home — a CUDA home assembled from
+        # the nixpkgs toolkit + the venv's libcudart (see dflash2-package.nix).
+        # The pip nvidia-cuda-nvcc wheel is only the nvcc driver (no
+        # cicc/nvvm), which is why the venv's own toolchain cannot do this.
+        "CUDA_HOME=${pkgs.vllmDflash2}/cuda-home"
+        # flashinfer's ninja build compiles the host C++ with $CXX and the
+        # CUDA side with nvcc -ccbin $CC.
+        "CXX=${pkgs.stdenv.cc}/bin/c++"
+        # flashinfer's run_ninja() invokes bare `ninja`; the venv's ninja
+        # wheel provides it. (Overrides the unit default PATH; the rest is
+        # the usual NixOS fallback set.)
+        "PATH=${pkgs.vllmDflash2}/venv/bin:/run/wrappers/bin:/run/current-system/sw/bin:/usr/bin:/bin"
+      ];
+
+      # HF_TOKEN is not needed at serve time (the model is a local dir), but is
+      # supplied optionally in case vLLM performs any HF lookup. The activation
+      # script writes it (see ./default.nix); the leading '-' makes the file
+      # optional so a missing file does not block startup.
+      EnvironmentFile = [ "-/run/vllm/hf-token.env" ];
+    };
+  };
+
+  systemd.sockets.vllm-qwen38-dflash2 = {
+    description =
+      "vLLM Qwen3.8 DFlash2 socket (socket activation, on-demand model residency)";
+    wantedBy = [ "sockets.target" ];
+
+    socketConfig = {
+      ListenStream = "127.0.0.1:${toString frontPort}";
     };
   };
 }

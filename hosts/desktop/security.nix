@@ -12,6 +12,19 @@ in
 
   users.groups.llm = { };
 
+  # Group-writable agent files for the interactive path: the `dshs`/`jcs`
+  # wrappers reach the agent via `sudo -u llm`. sudo would otherwise impose its
+  # default umask (0022), making the agent's created files group-readable but
+  # NOT group-writable, so b (in the llm group) could read /home/llm but not
+  # edit it. Force umask 0002 for any command run *as* llm so the agent creates
+  # group-writable files. `Defaults>llm` scopes this to the runas user, so it
+  # only affects the agent wrappers — not b's own sudo use. (The dsh-web
+  # service runs as llm under systemd, not sudo, and sets UMask=0002 in its
+  # unit; see hosts/desktop/dsh-web.nix.)
+  security.sudo.extraConfig = ''
+    Defaults>llm umask=0002
+  '';
+
   # TPM2 unseal: the age key is sealed in the TPM bound to PCRs 0,2,3; this
   # script unseals the key into tmpfs (/run/agenix-tpm) for agenix to use as
   # its identity. Runbook (sealing/rotation/recovery): docs/secrets.md.

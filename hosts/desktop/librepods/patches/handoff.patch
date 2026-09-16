@@ -1901,9 +1901,9 @@ index 5bd68b1..9b84b43 100644
 +}
 +
 +/// Continuously write inaudible silence to `sink` (spec 6.1). Runs on a dedicated
-+/// thread; the write is paced by the sink buffer so the thread mostly blocks. Returns
-+/// when `stop` or `suppressed` is set, or when the stream dies (PipeWire idle timeout,
-+/// codec renegotiation) — the caller is responsible for restarting.
++/// thread; each 100 ms chunk is enqueued then the thread sleeps ~100 ms, pacing the
++/// feed to real-time (write_copy is non-blocking, so an unslept loop would overfeed).
++/// Returns when `stop`/`suppressed` is set or the stream dies — the caller restarts.
 +fn write_silence_stream(
 +    sink: &str,
 +    stop: &std::sync::atomic::AtomicBool,
@@ -1989,14 +1989,14 @@ index 5bd68b1..9b84b43 100644
 +        if stop.load(Ordering::SeqCst) || suppressed.load(Ordering::SeqCst) {
 +            break;
 +        }
-+        // Append to the output buffer (spec 6.1: the write paces us to real-time).
++        // Enqueue one 100 ms chunk (spec 6.1). write_copy only buffers into the
++        // client write queue (non-blocking); the sleep below paces the feed to real-time.
 +        if stream.write_copy(&bytes, 0, SeekMode::Relative).is_err() {
 +            // Stream torn down; let the caller restart.
 +            break;
 +        }
-+        // Iterate the mainloop so the write is processed, and yield the CPU.
 +        mainloop.iterate(false);
-+        std::thread::sleep(Duration::from_millis(10));
++        std::thread::sleep(Duration::from_millis(100));
 +    }
  }
  

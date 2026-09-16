@@ -1,12 +1,13 @@
 # The shared socket-activated idle wrapper for the on-demand LLM model
-# servers (ninfer, vLLM).
+# servers (ninfer, vLLM, sglang).
 #
 # Builds a store directory holding the shared library (idle_wrapper.py) and
-# the two thin per-backend entry points (ninfer_wrapper.py, vllm_wrapper.py).
-# Each service runs `python3 <dir>/<backend>_wrapper.py`; Python puts the
-# script's own directory on sys.path, so the entry point imports the shared
-# library directly. The relay/health/idle machinery lives in idle_wrapper.py
-# once; the entry points carry only their lifecycle backend.
+# the thin per-backend entry points (ninfer_wrapper.py, vllm_wrapper.py,
+# sglang_wrapper.py). Each service runs `python3 <dir>/<backend>_wrapper.py`;
+# Python puts the script's own directory on sys.path, so the entry point
+# imports the shared library directly. The relay/health/idle machinery lives
+# in idle_wrapper.py once; the entry points carry only their lifecycle
+# backend.
 { stdenv, lib }:
 
 stdenv.mkDerivation {
@@ -21,7 +22,7 @@ stdenv.mkDerivation {
 
   installPhase = ''
     mkdir -p $out
-    cp $src/idle_wrapper.py $src/ninfer_wrapper.py $src/vllm_wrapper.py $out/
+    cp $src/idle_wrapper.py $src/ninfer_wrapper.py $src/vllm_wrapper.py $src/sglang_wrapper.py $out/
   '';
 
   meta = with lib; {

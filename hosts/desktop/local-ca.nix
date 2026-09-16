@@ -15,11 +15,14 @@ let
     "llm.local" = 8000; # llama.cpp router / vLLM (OpenAI-compatible API)
     "ninfer.local" = 8080; # NInfer engine (Qwen3.8-27B NVFP4, socket-activated)
     "ninfer-a3b.local" = 8082; # NInfer engine (Qwen3.6-35B-A3B, socket-activated)
+    "ninfer-gzenz.local" = 8084; # NInfer gzenz fork engine (Qwen3.8-27B NVFP4, socket-activated)
+    "sglang.local" = 8086; # SGLang engine (Qwen3.8-27B NVFP4, native, socket-activated)
     "headroom.local" = 8787; # Headroom compression proxy -> local llama.cpp
     "deepseek.local" = 8788; # Headroom compression proxy -> DeepSeek cloud
     "claude.local" = 8789; # Headroom compression proxy -> Claude Code
     "dsh.local" = 3080; # DeepSeek Harness web GUI
     "searxng.local" = 8888; # SearXNG metasearch (loopback; dsh web-search backend)
+    "archipelago.local" = 8090; # Archipelago WebHost (multiworld server + tracker + generator)
     # Deliberately NOT here: dsh.tail835824.ts.net is served by `tailscale
     # serve` with a Let's Encrypt cert (Tailscale control plane), not by
     # Caddy with this local CA.

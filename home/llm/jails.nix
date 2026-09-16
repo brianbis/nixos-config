@@ -1,7 +1,7 @@
 # Builds the (user, system) jail pair for each jailed agent (crush, opencode,
 # aider, claude, dsh). System jails run as the llm agent user (via `sudo -u llm`)
 # so they can edit /etc/nixos without being root.
-{ lib, pkgs, jail-nix, llm-agents, deepseekSecret, shared, userHome }:
+{ lib, pkgs, jail-nix, llm-agents, deepseekSecret, shared, userHome, dshSrc }:
 
 let
   inherit (shared)
@@ -302,11 +302,27 @@ let
   # CLI tarball's config/ dir. The preset is patched in place inside
   # node_modules so the discovery root picks up the patched composition.
   #
-  # dsh is built from home/llm/dsh-package.nix (local override to
-  # 0.1.2-alpha.5; see that file's header) rather than `agent "dsh"` from the
+  # dsh is built from source (the flakeless `dsh` input, pinned in flake.nix):
+  # dsh-source.nix replicates the upstream release pipeline to produce the
+  # @deepseek-ai/dsh npm tarball, and dsh-package.nix runs the usual
+  # buildNpmPackage recipe on it. This replaces `agent "dsh"` from the
   # llm-agents flake input, which pins the npm `latest` dist-tag (0.1.1-rc.2).
+  # The version follows the pinned tree's root package.json, so
+  # `nix flake update dsh` re-pins both commit and version together.
+  dshVersion =
+    (builtins.fromJSON (builtins.readFile (dshSrc + "/package.json"))).version;
+
+  dshTarball = (import ./dsh-source.nix) {
+    inherit pkgs;
+    src = dshSrc;
+    commit = dshSrc.rev;
+    version = dshVersion;
+  };
+
   dshPatched = (pkgs.callPackage ./dsh-package.nix {
     versionCheckHomeHook = agent "versionCheckHomeHook";
+    src = dshTarball;
+    version = dshVersion;
   }).overrideAttrs (old: {
     nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ pkgs.gnupatch ];
     postInstall = (old.postInstall or "") + ''

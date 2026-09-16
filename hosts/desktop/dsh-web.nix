@@ -1,7 +1,7 @@
 # DeepSeek Harness web GUI as a systemd service: `dsh --profile web` on
 # 127.0.0.1:3080, fronted locally by Caddy (dsh.local) and on the tailnet by
 # `tailscale serve` (dsh.tail835824.ts.net). Runs as the llm user.
-{ config, lib, pkgs, jail-nix, llm-agents, ... }:
+{ config, lib, pkgs, inputs, jail-nix, llm-agents, ... }:
 
 let
   users = import ../../home/users.nix;
@@ -18,6 +18,9 @@ let
     deepseekSecret = config.age.secrets.deepseek-api-key.path;
     inherit shared;
     userHome = users.b.homeDirectory;
+    # Same flakeless dsh input the home-manager modules use, so the service's
+    # dshPatched is the same store path as the interactive one.
+    dshSrc = inputs.dsh;
   };
 in
 {
@@ -33,6 +36,15 @@ in
     serviceConfig = {
       Type = "simple";
       User = users.llm.username;
+
+      # Group-writable agent files: the agent creates its state under
+      # /home/llm (group `llm` 0770). systemd's default umask is 0022, which
+      # would make created files/dirs group-readable but NOT group-writable,
+      # so b (in the llm group) could read but not edit them. Force 0002 so b
+      # can write the whole agent home without sudo. (The interactive `dshs`/
+      # `jcs` wrappers reach llm via sudo; their umask is set by the
+      # `Defaults>llm` sudoers rule in security.nix.)
+      UMask = "0002";
 
       # Delegate=yes: the jail's bwrap mounts cgroup2 inside it, which the
       # kernel allows only from a process that can write its own cgroup.procs;

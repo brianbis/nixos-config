@@ -1,4 +1,4 @@
-{ pkgs, lib }:
+{ pkgs, lib, src, version }:
 
 # Pinned resurrect.wezterm fork (YedPool/Wezurrect), deployed as a symlink
 # into wezterm's plugin home. The dev.wezterm helper the plugin used to fetch
@@ -9,14 +9,9 @@
 # is stable.
 pkgs.stdenvNoCC.mkDerivation {
   pname = "YedPool-Wezurrect";
-  version = "7e2d093e";
-
-  src = pkgs.fetchFromGitHub {
-    owner = "YedPool";
-    repo = "Wezurrect";
-    rev = "7e2d093e49d896cc7db19fa9e3e582ecbdfd7f06";
-    hash = "sha256-XDKe6whKaronWdnKcxnJK2fLJ8Ao8e3fg65rVBo5QGA=";
-  };
+  # Source + version from the flakeless `wezurrect` input (see flake.nix);
+  # `nix flake update wezurrect` re-pins it.
+  inherit version src;
 
   # stdenvNoCC does not add patch by default; the default patchPhase runs
   # `patch -p1` for each entry in patches.

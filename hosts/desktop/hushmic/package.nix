@@ -1,6 +1,5 @@
 { lib
 , rustPlatform
-, fetchFromGitHub
 , fetchurl
 , makeWrapper
 , patchelf
@@ -15,6 +14,8 @@
 , libxi
 , libxrandr
 , libxcb
+, src
+, version
 ,
 }:
 
@@ -40,16 +41,11 @@ let
 in
 rustPlatform.buildRustPackage rec {
   pname = "hushmic";
-  version = "0.7.0";
+  inherit version src;
 
-  src = fetchFromGitHub {
-    owner = "Fovty";
-    repo = "hushmic";
-    tag = "v${version}";
-    hash = "sha256-htj53k9+nu/59TJMsmhCg+kKouPP0A+E7/6V84gJEMU=";
+  cargoDeps = rustPlatform.importCargoLock {
+    lockFile = src + "/Cargo.lock";
   };
-
-  cargoHash = "sha256-SMuzrNFyg6T1OwY5Dzg1zk/QAmk0M1t3qH7Fiqshz1Y=";
 
   nativeBuildInputs = [ makeWrapper patchelf pkg-config ];
   buildInputs = [ onnxruntime ] ++ guiLibs;

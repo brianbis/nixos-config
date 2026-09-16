@@ -89,11 +89,12 @@ generations:
 rollback:
     sudo nixos-rebuild switch --rollback --flake . {{build-flags}}
 
-# vLLM docker containers
+# vLLM docker containers (the Gemma checkpoints only). The Qwen3.8 DFlash2
+# engine is now a NATIVE process (see vllm-dflash2-* below), not a container.
 #
 # Only ever run ONE at a time: they fight over VRAM.
 
-vllm-containers := "docker-vllm-gemma4-nvfp4-turbo docker-vllm-gemma4-awq docker-vllm-qwen38-dflash2"
+vllm-containers := "docker-vllm-gemma4-nvfp4-turbo docker-vllm-gemma4-awq"
 
 # Start commands
 
@@ -103,20 +104,23 @@ vllm-gemma4-nvfp4-turbo:
 vllm-gemma4-awq:
     sudo systemctl start docker-vllm-gemma4-awq.service
 
-# Start the Qwen3.8 DFlash2 container DIRECTLY (no socket-activated idle
-# wrapper), so it stays up with no auto-shutdown and no router in between.
-# The container service depends on the prep target, so the HF checkpoints +
-# pinned image are pulled in on first use. Reach it at
-# http://127.0.0.1:18090 (model name qwen3.8-27b-nvfp4-dflash2).
-# Stop it with `just vllm-stop` (it stops whichever vLLM container is up).
-vllm-qwen38-dflash2:
-    sudo systemctl start docker-vllm-qwen38-dflash2.service
+# Qwen3.8 DFlash2 NATIVE engine (socket-activated on :18089, no docker). Like
+# the SGLang engine it is on-demand: a request to http://127.0.0.1:18089 starts
+# it, and it unloads after the idle window. The child listens on :18090 while
+# resident. These recipes inspect / stop the socket-activated unit.
 
-# Re-pull the pinned DFlash2 runtime image (e.g. after re-pinning the digest
-# in hosts/desktop/llm/vllm/qwen38-dflash2.nix). Normally a no-op: `just switch`
-# pulls it (activation script) and docker skips present layers.
-vllm-pull-image:
-    sudo docker pull ghcr.io/seanyourhighness/vllm-sm12x-nvfp4-dflash2@sha256:48436de2f21d9eb77c9a4a7697e16227de12b0ea46638d95f09da0b27f436974
+vllm-dflash2-status:
+    sudo systemctl status vllm-qwen38-dflash2.service vllm-qwen38-dflash2.socket --no-pager
+
+vllm-dflash2-stop:
+    sudo systemctl stop vllm-qwen38-dflash2.service
+
+# Keep the old name as a no-op alias so muscle memory / docs don't break: the
+# DFlash2 engine is no longer a manually-started docker container.
+vllm-qwen38-dflash2:
+    @echo "The DFlash2 engine is now a native, socket-activated process (no docker)."
+    @echo "It starts on the first request to http://127.0.0.1:18089 and unloads when idle."
+    @echo "Use: just vllm-dflash2-status / just vllm-dflash2-stop"
 
 # Infer running container and stop it
 
@@ -143,6 +147,17 @@ vllm-status:
         fi
     done
     echo "No vLLM container running"
+
+# SGLang native engine (Qwen3.8-27B NVFP4, socket-activated on :8086, no
+# docker). Like the NInfer engines it is on-demand: a request to
+# http://127.0.0.1:8086 starts it, and it unloads after the idle window.
+# These recipes inspect / stop the socket-activated unit.
+
+sglang-status:
+    sudo systemctl status sglang-serve.service sglang-serve.socket --no-pager
+
+sglang-stop:
+    sudo systemctl stop sglang-serve.service
 
 # Shortcuts
 alias s := switch

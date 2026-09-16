@@ -1,11 +1,11 @@
-{ lib, pkgs, shared, jail-nix, llm-agents, userHome }:
+{ lib, pkgs, shared, jail-nix, llm-agents, userHome, dshSrc }:
 
 let
   # Import jail config with a dummy deepseek secret; we only need the pure
   # helpers for rendering the doc. The real jails use the same values, so the
   # doc stays in sync with the actual mounts / denied commands.
   jailCfg = import ./jails.nix {
-    inherit lib pkgs jail-nix llm-agents shared userHome;
+    inherit lib pkgs jail-nix llm-agents shared userHome dshSrc;
     deepseekSecret = "";
   };
 

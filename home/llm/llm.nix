@@ -4,13 +4,15 @@
 #
 # The shared model/LSP catalog lives in ./catalog.nix (single source of
 # truth, also used by the doc build).
-{ config, lib, pkgs, jail-nix, llm-agents, deepseekSecret, shared, ... }:
+{ config, lib, pkgs, inputs, jail-nix, llm-agents, deepseekSecret, shared, ... }:
 
 let
   userHome = config.home.homeDirectory;
 
   jail-config = import ./jails.nix {
     inherit lib pkgs jail-nix llm-agents deepseekSecret shared userHome;
+    # Upstream dsh source (flakeless flake input); dsh is built from it.
+    dshSrc = inputs.dsh;
   };
   services = import ./services.nix {
     inherit lib pkgs shared;

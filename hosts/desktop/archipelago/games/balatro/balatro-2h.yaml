@@ -1,0 +1,69 @@
+# Balatro — ~2h multiworld profile (3 deck wins, White+Red, lean item pools).
+# Paste into the WebHost options page (or use as a player file).
+#
+# Time model: a White-stake run is ~30-40min, Red-stake ~45-60min. Three
+# wins (mix of White/Red) lands ~1.5-2.5h with AP item pacing. The shipped
+# v0.1.9f template (4 wins, all 15 decks, 100 AP consumables, 15 shop
+# items, medium traps) runs 3h+ — this trims the item volume, not the
+# structure: jokers/tarot/planets/spectrals stay individual and locked,
+# which is the actual point of the world.
+name: Balatro
+game: Balatro
+requires:
+  version: 0.6.1
+Balatro:
+  goal:
+    beat_decks: 50
+  decks_win_goal:
+    3: 50
+  # All 15 decks playable, White+Red stakes: ~300 locations. The location
+  # count must cover the (fixed) item pool — 6 decks x 2 stakes leaves 53
+  # progression items unplaced. Deck count does not lengthen the run: you
+  # still only play your 3 wins, decks just give more flavor to pick from.
+  include_decksMode:
+    all: 50
+  include_stakesMode:
+    choose: 50
+  include_stakesList:
+    - White Stake
+    - Red Stake
+  stake_unlock_mode:
+    vanilla: 50
+  decks_unlocked_from_start:
+    1: 50
+  # Lean item volume: fewer consumables/shop/perma items to chase.
+  ap_consumable_items:
+    40: 50
+  shop_items:
+    10: 50
+  minimum_price:
+    1: 50
+  maximum_price:
+    10: 50
+  permanent_filler:
+    3: 50
+  # Casual session: light traps, no shared death.
+  trap_amount:
+    low_amount: 50
+  deathlink:
+    "false": 50
+  # Keep the structure vanilla-feeling.
+  joker_bundles:
+    "false": 50
+  remove_or_debuff_jokers:
+    "false": 50
+  remove_or_debuff_consumables:
+    "false": 50
+  tarot_bundle:
+    individual: 50
+  planet_bundle:
+    individual: 50
+  spectral_bundle:
+    individual: 50
+  forceyaml:
+    "false": 50
+  # Comfort: everything reachable, progression moved earlier when stuck.
+  accessibility:
+    full: 50
+  progression_balancing:
+    normal: 50

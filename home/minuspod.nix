@@ -1,11 +1,8 @@
-{ pkgs, lib, ... }:
+{ pkgs, lib, inputs, ... }:
 let
-  src = pkgs.fetchFromGitHub {
-    owner = "ttlequals0";
-    repo = "MinusPod";
-    rev = "a93b3c5bfffa62111f9947096611524a50591ec9";
-    hash = "sha256-ZVAe9GA1ROh0Ya9/vWVStVUI8vXASUM1QQuEsJJdmpw=";
-  };
+  # Source from the flakeless `minuspod` input (see flake.nix);
+  # `nix flake update minuspod` re-pins it.
+  src = inputs.minuspod;
 
   # Offline npm dependency cache for the frontend (tsc + vite run offline via
   # npmConfigHook); copying the cache into node_modules by hand fails because

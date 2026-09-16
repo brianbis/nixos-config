@@ -65,14 +65,14 @@ let
       costOutCached = 0.28;
     };
     # Qwen3.8-27B NVFP4 + DFlash2 K7 (RTX 5090 / SM120). Served by the
-    # on-demand vllm-qwen38-dflash2 container (socket-activated idle wrapper on
-    # :18089). Pinned to the community release's exact artifacts.
+    # on-demand vllm-qwen38-dflash2 NATIVE engine (socket-activated idle
+    # wrapper on :18089). Pinned to the community release's exact artifacts.
     qwen38_dflash2 = {
       providerName = "vllm_dflash2";
       id = "qwen3.8-27b-nvfp4-dflash2";
       name = "Qwen3.8-27B NVFP4 DFlash2";
       # Direct to the socket-activated front port (like the ninfer models), not
-      # via headroom. The wrapper starts the container on the first request.
+      # via headroom. The wrapper starts the engine on the first request.
       url = "http://127.0.0.1:18089";
       # Must match --max-model-len 262144 in hosts/desktop/llm/vllm/qwen38-dflash2.nix.
       context = 262144;
@@ -89,14 +89,14 @@ let
       costOutCached = 0;
     };
     # Same Qwen3.8-27B NVFP4 + DFlash2 K7 checkpoint, but routed DIRECTLY to
-    # the container's child port (:18090) instead of the socket-activated idle
-    # wrapper (:18089). Use this when the container is started manually with
-    # `just vllm-qwen38-dflash2` (no auto-shutdown, no router/wrapper in
-    # between). The two entries are mutually exclusive at the port level: the
-    # on-demand wrapper owns :18089, the direct container owns :18090.
+    # the engine's child port (:18090) instead of the socket-activated idle
+    # wrapper (:18089). Use this while the engine is resident (after any
+    # request via :18089) to bypass the router/wrapper. The two entries are
+    # mutually exclusive at the port level: the on-demand wrapper owns :18089,
+    # the direct engine owns :18090.
     qwen38_dflash2_direct = {
       providerName = "vllm_dflash2_direct";
-      # Must equal the container's --served-model-name (vLLM rejects any other
+      # Must equal the engine's --served-model-name (vLLM rejects any other
       # model id); the "(direct)" distinction lives in the display name only.
       id = "qwen3.8-27b-nvfp4-dflash2";
       name = "Qwen3.8-27B NVFP4 DFlash2 (direct)";
@@ -252,6 +252,36 @@ let
         xhigh = "xhigh";
       };
     };
+    # Same Qwen3.8-27B NVFP4 artifact as qwen38_nvfp4_ninfer, but served by the
+    # gzenz fork engine (ninfer-serve-gzenz, socket-activated front :8084). The
+    # fork's distinguishing feature here is COMPRESSED KV: --kv-dtype nvfp4
+    # (144 vs 264 bytes/token/KV-head) lets it run a HIGHER context than the
+    # stock int8 engine on the same card — ~420k effective vs the stock 240k
+    # (555k logical ceiling via YaRN 2.12, but the KV pool is auto-sized to
+    # fit the free VRAM at load time). The fork's serve binary has no
+    # --reasoning-effort flag: its Qwen3.8 template defaults to xhigh thinking,
+    # and a per-request reasoning_effort (the levels below) always wins.
+    qwen38_nvfp4_ninfer_gzenz = {
+      providerName = "ninfer_gzenz";
+      id = "qwen3.8-27b";
+      name = "Qwen3.8-27B NVFP4 NInfer (gzenz fork, ~420k ctx)";
+      url = "http://127.0.0.1:8084";
+      # Effective per-request ceiling: the engine's --kv-capacity auto pool
+      # resolves to ~420k tokens at the current ~9.75 GiB free-after-weights
+      # (see childCommandGzenz in hosts/desktop/llm/ninfer/default.nix; the
+      # 555000 --max-context is the logical ceiling, but a request cannot
+      # reserve more than the shared pool). Still ~1.75x the stock 240000.
+      context = 420000;
+      maxTok = 200000;
+      reason = false;
+      attachments = false;
+      # Thinking levels the Qwen3.8-27B chat template supports (low/medium/xhigh).
+      reasoningEfforts = {
+        low = "low";
+        medium = "medium";
+        xhigh = "xhigh";
+      };
+    };
     qwen36_a3b_ninfer = {
       providerName = "ninfer_a3b";
       id = "qwen3.6-35b-a3b";
@@ -264,6 +294,22 @@ let
       # No reasoningEfforts: the A3B chat template does not support a
       # reasoning-effort control (the engine rejects it), so the model is
       # materialized as a plain non-reasoning model.
+    };
+    # Same Qwen3.8-27B NVFP4 checkpoint as the vLLM DFlash2 / NInfer entries,
+    # but served by the native SGLang engine (sglang-serve, socket-activated
+    # front :8086, no docker). A third engine on the same weights for
+    # comparison; mutually exclusive with the others in practice (one 32 GB
+    # card, all socket-activated on demand).
+    qwen38_nvfp4_sglang = {
+      providerName = "sglang";
+      id = "qwen3.8-27b";
+      name = "Qwen3.8-27B NVFP4 SGLang";
+      url = "http://127.0.0.1:8086";
+      # Must match --context-length 32768 in hosts/desktop/llm/sglang/default.nix.
+      context = 32768;
+      maxTok = 32768;
+      reason = false;
+      attachments = false;
     };
     deepseekPro = {
       providerName = "deepseek";
@@ -309,6 +355,12 @@ let
     ninfer_a3b.name = "NInfer A3B (local)";
     ninfer_a3b.type = "openai-compat";
     ninfer_a3b.api_key = "sk-local";
+    ninfer_gzenz.name = "NInfer gzenz fork (local)";
+    ninfer_gzenz.type = "openai-compat";
+    ninfer_gzenz.api_key = "sk-local";
+    sglang.name = "SGLang (local)";
+    sglang.type = "openai-compat";
+    sglang.api_key = "sk-local";
     deepseek.name = "DeepSeek";
     deepseek.type = "openai-compat";
     deepseek.api_key = "sk-local";
@@ -497,6 +549,8 @@ let
       vllm_dflash2_direct = opencodeProvider "vllm_dflash2_direct";
       ninfer = opencodeProvider "ninfer";
       ninfer_a3b = opencodeProvider "ninfer_a3b";
+      ninfer_gzenz = opencodeProvider "ninfer_gzenz";
+      sglang = opencodeProvider "sglang";
       deepseek = opencodeProvider "deepseek";
     };
     model = "${models.gemma4awq.providerName}/${models.gemma4awq.id}";

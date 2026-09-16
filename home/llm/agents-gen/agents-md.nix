@@ -1,8 +1,8 @@
-{ pkgs, lib, jail-nix, llm-agents, shared, userHome }:
+{ pkgs, lib, jail-nix, llm-agents, shared, userHome, dshSrc }:
 
 let
   manifest = import ../agents-manifest.nix {
-    inherit lib pkgs shared jail-nix llm-agents userHome;
+    inherit lib pkgs shared jail-nix llm-agents userHome dshSrc;
   };
   template = builtins.readFile ./agents-md-template.md;
   replacements = {

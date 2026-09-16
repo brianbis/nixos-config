@@ -128,6 +128,20 @@ in
           Experimental = true;
           FastConnectable = true;
           JustWorksRepairing = "always";
+
+          # Present the controller as Apple hardware (Apple's Bluetooth vendor
+          # id, 004C). BlueZ then reports Adapter1.Modalias as
+          # bluetooth:v004Cp0000d0000, which tether's presents_as_apple() reads
+          # and publishes as apple_device_id in bt_status. Without it the AirPods
+          # offer no AAP ownership to this machine, so a call hands them to the
+          # iPhone by disconnecting them instead of using Apple's own handoff.
+          #
+          # This is a machine-wide controller setting, not a per-device one: once
+          # the firmware believes it is talking to Apple it applies Apple
+          # expectations (session watchdogs, ownership arbitration, intolerance
+          # of rapid profile changes). Both of this machine's headphone pairs are
+          # AirPods, so that is the intended peer here.
+          DeviceID = "bluetooth:004C:0000:0000";
         };
 
         Policy = {

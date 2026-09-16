@@ -97,7 +97,8 @@ class State:
     child: Optional[asyncio.subprocess.Process] = None
     child_ready: bool = False
 
-    # Authoritative request state from the request log (child backend).
+    # Authoritative in-flight request state (child backend): the request log
+    # (ninfer) or the child's own load metrics (vllm/sglang poller).
     instance_id: Optional[str] = None
     in_flight: set[tuple[str, str]] = field(default_factory=set)
 
@@ -425,6 +426,18 @@ async def relay(
 
     finally:
         state.connections.discard(pair)
+
+        # Record when this client interaction ENDED (the reply completed, or
+        # the client disconnected). last_activity is otherwise stamped only on
+        # client->child bytes (the request arrival), so a long generation would
+        # consume its entire duration from the idle window: the child would be
+        # unloaded almost as soon as the reply finished, and — if the client
+        # dropped mid-generation (child_to_client returns early when the
+        # client-side write fails) — the stale timer could expire while the
+        # model is still generating. Measuring the idle window from the last
+        # interaction's end keeps the model loaded for a full idle_seconds
+        # after the last request settles.
+        state.last_activity = time.monotonic()
 
         for writer in (client_writer, child_writer):
             writer.close()

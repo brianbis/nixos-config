@@ -10,13 +10,22 @@ let
       lib = pkgs.lib;
     }).ca;
 
-  # Tether's Firefox integration: the OTP-autofill add-on (.xpi) and the
-  # native-messaging host it talks to. Both are built by the tether flake.
-  tetherPkgs = inputs.tether.packages.${pkgs.system};
+  # Tether's Firefox integration: the OTP-autofill add-on and the
+  # native-messaging host it talks to. The add-on is the upstream bundle
+  # repacked into the NUR xpi layout (see flake.nix); the host manifest comes
+  # from the upstream package.
+  tetherPkg = inputs.tether.packages.${pkgs.system}.default;
+  tetherFirefoxXpi = inputs.self.packages.${pkgs.system}."tether-firefox-extension";
 in
 {
   programs.firefox = {
     enable = true;
+
+    # The extension reaches tetherd over native messaging. home-manager
+    # symlinks each host manifest into ~/.mozilla/native-messaging-hosts/
+    # individually, so the manually managed Bitwarden manifest in that
+    # directory is untouched.
+    nativeMessagingHosts = [ tetherPkg ];
 
     # Firefox ignores the OS system store and ImportEnterpriseRoots is
     # unreliable on NixOS (no p11-kit trust module), so install the CA directly
@@ -29,7 +38,7 @@ in
       extensions = {
         packages =
           (import ./addons.nix { inherit pkgs; })
-          ++ [ tetherPkgs."firefox-extension" ];
+          ++ [ tetherFirefoxXpi ];
 
         settings =
           import ./tree_style_tab.nix { inherit pkgs; };
@@ -52,16 +61,5 @@ in
         ];
       };
     };
-  };
-
-  # The extension reaches tetherd over native messaging. The host manifest is
-  # linked as a single file rather than via programs.firefox.nativeMessagingHosts
-  # (which symlinks the entire ~/.mozilla/native-messaging-hosts directory): that
-  # directory is managed manually here — it also holds the Bitwarden manifest —
-  # and a whole-directory symlink would abort the switch. Linking one file leaves
-  # the directory (and the other manifests) untouched.
-  home.file.".mozilla/native-messaging-hosts/com.tether.extension.json" = {
-    source =
-      "${tetherPkgs."native-host"}/lib/mozilla/native-messaging-hosts/com.tether.extension.json";
   };
 }

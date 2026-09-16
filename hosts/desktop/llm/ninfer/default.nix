@@ -1,4 +1,7 @@
-{ config, pkgs, lib, ... }:
+# `inputs` is a NixOS specialArg (see flake.nix specialArgs); it is
+# destructured here (not a free variable) so the flakeless `ninfer` /
+# `ninfer-gzenz` source inputs are in scope.
+{ config, pkgs, lib, inputs, ... }:
 
 let
   modelsDir = "/var/lib/ninfer/models";
@@ -7,70 +10,95 @@ let
   idleSeconds = 120;
   childPort = 8081;
   childPortA3B = 8083;
+  childPortGzenz = 8085;
+  requestLogGzenz = "${logDir}/requests-gzenz.jsonl";
 
-  ninfer = pkgs.stdenv.mkDerivation {
-    pname = "ninfer";
-    version = "master";
+  # Shared build for the NInfer engine. Two engines are built from two
+  # different sources: the pinned upstream rev (with the local
+  # reasoning-effort patch) and the gzenz fork (which has no serve-level
+  # --reasoning-effort flag, so no patch).
+  # NB: the patch-file parameter is named patchFile (not patch) so it does not
+  # shadow pkgs.patch inside the `with pkgs` build-inputs blocks below.
+  mkNinfer = { pname, src, patchFile ? null, homepage }:
+    pkgs.stdenv.mkDerivation {
+      inherit pname src;
+      version = "master";
 
-    # fetchFromGitHub in this nixpkgs pin downloads
-    # https://github.com/OWNER/REPO/archive/REV.tar.gz and hashes the
-    # *unpacked* tree (fetchzip, recursiveHash = true) — NOT the tarball
-    # sha256. Assemble the hash with (substitute OWNER/REPO/REV):
-    #   d=$(mktemp -d) && curl -sL "https://github.com/OWNER/REPO/archive/REV.tar.gz" | tar -xz -C "$d" --strip-components=1 && nix hash path "$d" && rm -rf "$d"
-    src = pkgs.fetchFromGitHub {
-      owner = "Neroued";
-      repo = "ninfer";
-      rev = "ad0f3d384b5cbcec4a48a3951c287b4e9831443e";
-      hash = "sha256-tJdT99C8TarRwHQW/aoH5wjNGUEk3X7d1230EzogLoc=";
+      # fetchFromGitHub in this nixpkgs pin downloads
+      # https://github.com/OWNER/REPO/archive/REV.tar.gz and hashes the
+      # *unpacked* tree (fetchzip, recursiveHash = true) — NOT the tarball
+      # sha256. Assemble the hash with (substitute OWNER/REPO/REV):
+      #   d=$(mktemp -d) && curl -sL "https://github.com/OWNER/REPO/archive/REV.tar.gz" | tar -xz -C "$d" --strip-components=1 && nix hash path "$d" && rm -rf "$d"
+
+      nativeBuildInputs = with pkgs; [
+        cmake
+        ninja
+        patch
+        pkg-config
+        cudaPackages_13_1.cudatoolkit
+      ];
+
+      buildInputs = with pkgs; [
+        ffmpeg
+        curl
+        cudaPackages_13_1.cudatoolkit
+      ];
+
+      postPatch =
+        if patchFile == null then "" else ''
+          patch -p1 -N < ${patchFile}
+        '';
+
+      configurePhase = ''
+        cmake -S . -B build \
+          -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_CUDA_ARCHITECTURES=120a \
+          -DNINFER_BUILD_APPS=ON \
+          -DBUILD_TESTING=OFF \
+          -DNINFER_BUILD_BENCHMARKS=OFF
+      '';
+
+      buildPhase = ''
+        cmake --build build --parallel
+      '';
+
+      installPhase = ''
+        mkdir -p $out/bin
+        cp -v build/apps/ninfer $out/bin/
+        cp -v build/apps/ninfer-serve $out/bin/
+      '';
+
+      meta = with lib; {
+        description = "High-performance C++/CUDA inference engine for Qwen checkpoints";
+        inherit homepage;
+        license = licenses.asl20;
+        platforms = [ "x86_64-linux" ];
+      };
     };
 
-    nativeBuildInputs = with pkgs; [
-      cmake
-      ninja
-      patch
-      pkg-config
-      cudaPackages_13_1.cudatoolkit
-    ];
-
-    buildInputs = with pkgs; [
-      ffmpeg
-      curl
-      cudaPackages_13_1.cudatoolkit
-    ];
-
+  ninfer = mkNinfer {
+    pname = "ninfer";
+    # Source from the flakeless `ninfer` input (see flake.nix);
+    # `nix flake update ninfer` re-pins it.
+    src = inputs.ninfer;
     # The pinned rev has no server-side reasoning-effort default; this patch
     # adds --reasoning-effort so the serve binary can default Qwen3.8 to brief
     # thinking (a per-request effort still wins over the flag).
-    postPatch = ''
-      patch -p1 -N < ${./reasoning-effort.patch}
-    '';
+    patchFile = ./reasoning-effort.patch;
+    homepage = "https://github.com/Neroued/ninfer";
+  };
 
-    configurePhase = ''
-      cmake -S . -B build \
-        -G Ninja \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_CUDA_ARCHITECTURES=120a \
-        -DNINFER_BUILD_APPS=ON \
-        -DBUILD_TESTING=OFF \
-        -DNINFER_BUILD_BENCHMARKS=OFF
-    '';
-
-    buildPhase = ''
-      cmake --build build --parallel
-    '';
-
-    installPhase = ''
-      mkdir -p $out/bin
-      cp -v build/apps/ninfer $out/bin/
-      cp -v build/apps/ninfer-serve $out/bin/
-    '';
-
-    meta = with lib; {
-      description = "High-performance C++/CUDA inference engine for Qwen checkpoints";
-      homepage = "https://github.com/Neroued/ninfer";
-      license = licenses.asl20;
-      platforms = [ "x86_64-linux" ];
-    };
+  # Parallel engine from the gzenz fork (checkpoint advancement, worker
+  # recovery, thinking-signature fixes, QUASAR support). Same build inputs and
+  # app layout (ninfer / ninfer-serve); the fork dropped the vendored spdlog,
+  # so the shared build inputs still cover it.
+  ninferGzenz = mkNinfer {
+    pname = "ninfer-gzenz";
+    # Source from the flakeless `ninfer-gzenz` input (see flake.nix);
+    # `nix flake update ninfer-gzenz` re-pins it.
+    src = inputs.ninfer-gzenz;
+    homepage = "https://github.com/gzenz/ninfer";
   };
 
   # Socket-activated idle wrapper (shared with the vLLM containers; the
@@ -81,7 +109,7 @@ let
   idleWrapper = pkgs.callPackage ../idle-wrapper { };
 
   # The wrapper's ExecStart for a serve pair: the shared idle wrapper (child
-  # backend) plus the per-model child command. Both serve pairs share this
+  # backend) plus the per-model child command. All serve pairs share this
   # exact shape.
   serveExecStart = childPort: requestLog: childCommand:
     lib.concatStringsSep " " ([
@@ -113,7 +141,7 @@ let
     "--port"
     (toString childPort)
     "--kv-dtype"
-    "int8"
+    "nvfp4"
     "--max-context"
     "240000"
     "--kv-capacity"
@@ -133,7 +161,7 @@ let
     "--host-state-slots"
     "8"
     "--host-kv-mib"
-    "32768"
+    "8192"
     "--temperature"
     "0.7"
     "--presence-penalty"
@@ -193,6 +221,101 @@ let
     "${logDir}/requests-a3b.jsonl"
   ];
 
+  # Third serving child: the gzenz fork engine on the SAME Qwen3.8-27B NVFP4
+  # artifact (reused weights — no new download), on its own loopback port.
+  #
+  # The point of running the fork in parallel to the stock engine is its
+  # COMPRESSED KV format: --kv-dtype nvfp4 stores the KV cache at 144
+  # bytes/token/KV-head vs 264 for int8 (45% less), which is what lets this
+  # engine run a HIGHER KV-cache limit than the stock int8 engine on the same
+  # 32 GB card. YaRN (--rope-scaling-factor) extends context past the 262k
+  # native limit. The launch options are therefore deliberately NOT generalized
+  # across the two engines:
+  #   - stock (ninfer-serve):        int8 KV,  240k context
+  #   - gzenz (ninfer-serve-gzenz):  nvfp4 KV, 555k logical ceiling (YaRN 2.12),
+  #                                  KV pool auto-sized to fit VRAM (~420k here)
+  # Concretely:
+  #   - --kv-dtype nvfp4: the compressed format (stock uses int8).
+  #   - --max-context 555000: the logical per-request ceiling (YaRN 2.12 extends
+  #     the native 262k limit). Stock is 240000.
+  #   - --kv-capacity auto: the shared KV pool is sized by the engine to fit the
+  #     free VRAM at load time (available minus a 1 GiB headroom), which is the
+  #     fork's own 555k pattern (docs/maintainer/kv-nvfp4-yarn.md). An explicit
+  #     555000 pool does NOT fit this card: the 555k reservation is ~11.0 GiB
+  #     (KV + MTP draft head + state slots) vs ~9.75 GiB free after the ~16 GiB
+  #     weights, so the child aborts at load with "requested Engine runtime
+  #     reservation requires ... but only ... available for runtime capacity".
+  #     Auto resolves to ~420k tokens at the current ~9.75 GiB (still 1.75x the
+  #     stock 240k) and grows toward 555k as more VRAM is free at load time.
+  #   - --rope-scaling-factor 2.12 / --rope-scaling-original-context 262144:
+  #     YaRN extension (262144 * 2.12 ~= 555k); required to exceed the native
+  #     262k limit.
+  #   - --host-kv-mib 36864: pinned host-RAM KV buffer scaled to the larger KV
+  #     (the doc's 555k value; stock uses 32768, the 240k model card 8192).
+  #   - --max-concurrency 2: matches stock (the doc's 600k figure is c=1).
+  #   - no --reasoning-effort: the fork's serve binary has no such flag (it was
+  #     upstream-local to our patch); its Qwen3.8 template defaults to xhigh
+  #     thinking, and a per-request reasoning_effort always wins.
+  # Two operational flags are kept because the fork's built-in defaults are too
+  # aggressive for a production server:
+  #   - --pending-timeout-ms 900000 (fork default is 30000 = 30s; long
+  #     generations would be cancelled mid-stream)
+  #   - --default-max-tokens 200000 (fork default is 8192; matches the catalog
+  #     maxTok so requests omitting max_tokens still get the long ceiling)
+  # --request-log-jsonl is required by the idle wrapper (it tails the log for
+  # in-flight tracking), so it is not a fork launch option.
+  # --weights-profile qwen38-nvfp4 is REQUIRED: the fork's auto-detection
+  # (targets/qwen3_6_27b/impl/package.cpp resolve_weights) routes the
+  # qwen3.8/nvfp4 identity to Qwen36Nvfp4 (W8G32_F16S endpoints) because the
+  # fork author's local artifact was an Ostfralla-derived Qwen3.6-layout build.
+  # Our artifact is the official neroued/Qwen3.8-27B-nvfp4-NInfer one, which is
+  # the FP8 profile (Qwen38Nvfp4, FP8_E4M3FN_ROW_BF16S endpoints). Without the
+  # override the token_embedding tensor format mismatches the Qwen36Nvfp4
+  # contract and the child aborts at load with
+  # "tensor descriptor does not match target contract: text/token_embedding".
+  childCommandGzenz = [
+    "${ninferGzenz}/bin/ninfer-serve"
+    "${modelsDir}/${ninferModelFile}"
+    "--weights-profile"
+    "qwen38-nvfp4"
+    "--host"
+    "127.0.0.1"
+    "--port"
+    (toString childPortGzenz)
+    "--kv-dtype"
+    "nvfp4"
+    "--max-context"
+    "555000"
+    "--kv-capacity"
+    "auto"
+    "--rope-scaling-factor"
+    "2.12"
+    "--rope-scaling-original-context"
+    "262144"
+    "--max-concurrency"
+    "2"
+    "--device-state-slots"
+    "2"
+    "--host-state-slots"
+    "8"
+    "--host-kv-mib"
+    "8192"
+    "--spec"
+    "mtp"
+    "--draft-tokens"
+    "3"
+    "--lm-head-draft"
+    "--preserve-thinking"
+    # Operational overrides (fork defaults too aggressive for production):
+    "--pending-timeout-ms"
+    "900000"
+    "--default-max-tokens"
+    "200000"
+    # Idle-wrapper contract (in-flight tracking via the request log).
+    "--request-log-jsonl"
+    requestLogGzenz
+  ];
+
   downloadNinferModel = name: repo: dir: file: ''
     mkdir -p ${dir}
     if [ ! -f "${dir}/${file}" ]; then
@@ -214,7 +337,7 @@ let
 
 in
 {
-  environment.systemPackages = [ ninfer ];
+  environment.systemPackages = [ ninfer ninferGzenz ];
 
   systemd.tmpfiles.rules = [
     "d ${modelsDir} 0755 root root -"
@@ -280,6 +403,38 @@ in
       Type = "simple";
 
       ExecStart = serveExecStart childPortA3B "${logDir}/requests-a3b.jsonl" childCommandA3B;
+
+      Restart = "on-abnormal";
+      RestartSec = "3";
+
+      Environment = [
+        "CUDA_VISIBLE_DEVICES=0"
+        "LD_LIBRARY_PATH=/run/opengl-driver/lib"
+      ];
+    };
+  };
+
+  # Third socket-activated service: the gzenz fork engine on port 8084 (front)
+  # / 8085 (child), serving the same Qwen3.8-27B NVFP4 artifact as the
+  # upstream engine (8080/8081). Same idle-unload pattern; the two are
+  # mutually exclusive in practice (one 32 GB card, both socket-activated).
+  systemd.sockets.ninfer-serve-gzenz = {
+    description = "NInfer (gzenz fork) engine socket (socket activation, on-demand model residency)";
+    wantedBy = [ "sockets.target" ];
+
+    socketConfig = {
+      ListenStream = "127.0.0.1:8084";
+    };
+  };
+
+  systemd.services.ninfer-serve-gzenz = {
+    description = "NInfer (gzenz fork) engine for Qwen3.8-27B NVFP4 (socket-activated, unloads after ${toString idleSeconds}s idle)";
+    after = [ "ninfer-serve-gzenz.socket" ];
+
+    serviceConfig = {
+      Type = "simple";
+
+      ExecStart = serveExecStart childPortGzenz requestLogGzenz childCommandGzenz;
 
       Restart = "on-abnormal";
       RestartSec = "3";

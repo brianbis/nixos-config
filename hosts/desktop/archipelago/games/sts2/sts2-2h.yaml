@@ -1,0 +1,51 @@
+# Slay the Spire II — ~2h multiworld profile (1 character, ascension 1).
+# Paste into the WebHost options page (or use as a player file).
+#
+# Time model: a vanilla 1-character run is ~1.5-2.5h; with AP rewards the
+# pacing is set by item flow, not by extra content. Every "sanity" option
+# (gold/potion/campfire/shop/neow) is deliberately OFF — each one adds
+# locations the run has to chew through. Floor checks stay ON (default):
+# they're filler locations, not extra floors, so they don't lengthen the
+# run, they just give the multiworld more to exchange.
+name: STS2
+game: "Slay the Spire II"
+requires:
+  version: 0.6.7
+"Slay the Spire II":
+  # One character = one run. Change to your char (Silent/Defect/Regent/Necrobinder).
+  characters:
+    - Ironclad
+  ascension:
+    - "1"
+  num_chars_goal:
+    1: 50
+  # Lean run: no extra sanity content.
+  include_floor_checks:
+    "true": 50
+  neow_sanity:
+    "false": 50
+  campfire_sanity:
+    "false": 50
+  gold_sanity:
+    "false": 50
+  potion_sanity:
+    "false": 50
+  shop_sanity:
+    "false": 50
+  # Half of card rewards shuffled (the default) — keeps the run feeling like
+  # the game while still making AP items matter.
+  shuffle_all_cards:
+    "false": 50
+  # Don't start the run without your starter card/relic.
+  progressive_starter_card:
+    "false": 50
+  progressive_starter_relic:
+    "false": 50
+  # No shared-death pressure for a casual 2h session.
+  death_link:
+    "false": 50
+  # Comfort: everything reachable, progression moved earlier when stuck.
+  accessibility:
+    full: 50
+  progression_balancing:
+    normal: 50

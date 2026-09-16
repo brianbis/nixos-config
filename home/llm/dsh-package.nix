@@ -1,39 +1,34 @@
-# Local override of the `dsh` package from the llm-agents.nix flake input.
+# Local build of the `dsh` package from upstream source (the flakeless `dsh`
+# flake input), replacing the llm-agents.nix flake input's `dsh`, which pins
+# the npm `latest` dist-tag (0.1.1-rc.2 via packages/dsh/hashes.json) and
+# does not track the `alpha` tag.
 #
-# Why this exists: llm-agents.nix pins dsh to the npm `latest` dist-tag
-# (0.1.1-rc.2 via packages/dsh/hashes.json) and its updater does not track the
-# `alpha` tag. This builds 0.1.2-alpha.5 (the current deepseek-harness master,
-# merged 2026-09-02) directly from the npm tarball, mirroring the upstream
-# recipe (numtide/llm-agents.nix packages/dsh/package.nix) so the two converge
-# when the alpha graduates. Delete this file (and repoint dshPatched in
-# jails.nix at `agent "dsh"`) once llm-agents.nix ships >= 0.1.2.
+# The tarball is built from source by ./dsh-source.nix (replicating the
+# upstream release pipeline); this file then runs the usual buildNpmPackage
+# recipe on it, mirroring the upstream recipe (numtide/llm-agents.nix
+# packages/dsh/package.nix) so the two converge when the alpha graduates.
+# `nix flake update dsh` re-pins the source; the version follows the pinned
+# tree's root package.json (see jails.nix).
 #
-# Differences from the upstream recipe:
-#   - version/lockfile pinned to 0.1.2-alpha.5 (see dsh-package-lock.json).
-#   - The tarball's package.json lists four devDependencies that were never
-#     published to npm (the dsh-experimental-* packages); the lockfile omits
-#     them, so srcWithLock strips them to keep package.json and the lockfile
-#     in sync for `npm ci`. None of the shipped compositions reference them.
-{ lib, bashInteractive, buildNpmPackage, fetchurl, jq, makeWrapper, nodejs, runCommand, versionCheckHook, versionCheckHomeHook }:
+# The packed tarball's package.json lists four devDependencies for
+# experimental features (the dsh-experimental-* packages). They are
+# dev-only — the CLI's runtime loads its `dependencies`, and none of the
+# shipped compositions reference the experimental ones — so srcWithLock
+# strips them to keep the installed tree minimal and in sync with the
+# lockfile for `npm ci`. (At 0.1.2-alpha.5 they were also unpublished;
+# by 0.1.6-alpha.1 they are published, but still stripped: dev-only.)
+{ lib, bashInteractive, buildNpmPackage, jq, makeWrapper, nodejs, runCommand, versionCheckHook, versionCheckHomeHook, src, version }:
 
 let
-  version = "0.1.2-alpha.5";
-
-  srcWithLock = runCommand "dsh-source" {
+  # src is the @deepseek-ai/dsh tarball built from source (dsh-source.nix).
+  srcWithLock = runCommand "dsh-tarball-with-lock" {
     nativeBuildInputs = [ jq ];
   } ''
     mkdir -p $out
-    tar -xzf ${
-      fetchurl {
-        url = "https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-${version}.tgz";
-        # SRI (base64) form: the npmDeps prefetcher parses fetchurl hashes as
-        # base64 SRI, where 64 hex chars would decode to 48 bytes (≠ 32).
-        hash = "sha256-xtRp4CJ8WbCu6AoZxKAy9EsmPi1OtdRHAXBO1a/BNxs=";
-      }
-    } -C $out --strip-components=1
-    # Strip the unpublished devDependencies (see file header).
+    tar -xzf ${src} -C $out --strip-components=1
+    # Strip the dev-only experimental devDependencies (see file header).
     jq 'del(.devDependencies["@deepseek-ai/dsh-experimental-tool-agent-team"],
-            .devDependencies["@deepseek-ai/dsh-experimental-code-runtime-python"],
+            .devDependencies["@deepseek-ai/dsh-experimental-ptc-runtime-python"],
             .devDependencies["@deepseek-ai/dsh-experimental-agent-team-profile"],
             .devDependencies["@deepseek-ai/dsh-experimental-agent-team"])' \
       $out/package.json > $out/package.json.tmp && mv $out/package.json.tmp $out/package.json
@@ -46,7 +41,10 @@ buildNpmPackage {
   src = srcWithLock;
 
   npmDepsFetcherVersion = 2;
-  npmDepsHash = "sha256-32pwWZJJqPsdeJ5DEFouYnb2hzJQBOc7AZxMsGzWf4U=";
+  # Sub-pin of the npm closure (registry resolution of the tarball's
+  # package.json against dsh-package-lock.json). Re-pin when the lockfile
+  # changes: set to "", build, copy the `got: sha256-…` value back.
+  npmDepsHash = "sha256-iFpn65sj3NKWY0HsH5f8mJhzxhV8quJYShb0jeeKGh8=";
 
   dontNpmBuild = true;
 
@@ -79,7 +77,6 @@ buildNpmPackage {
     downloadPage = "https://www.npmjs.com/package/@deepseek-ai/dsh";
     license = lib.licenses.mit;
     sourceProvenance = with lib.sourceTypes; [
-      binaryBytecode
       fromSource
     ];
     mainProgram = "dsh";

@@ -1,4 +1,4 @@
-{ lib, ... }:
+{ lib, pkgs, inputs, ... }:
 
 {
   imports = [
@@ -6,7 +6,7 @@
     ./audio.nix
     ./anker-event-capture.nix
     ./bluetooth.nix
-    ./librepods
+    #./librepods
     ./boot.nix
     ./monitor
     ./networking.nix
@@ -23,10 +23,23 @@
     ./dsh-open.nix
     ./searxng.nix
     #./zomboid
-    ./tether
+    # Tether (Linux + iPhone Continuity bridge): upstream programs.tether
+    # module — bluetooth class-of-device service, avahi/mDNS publishing,
+    # firewall port. The Firefox extension + native-messaging manifest are
+    # wired home-manager-side (home/firefox/firefox.nix): this module's
+    # extensions option targets nixpkgs' programs.firefox, which is not the
+    # browser in use here.
+    inputs.tether.nixosModules.default
   ];
 
-  services.tether.enable = true;
+  programs.tether = {
+    enable = true;
+    package = inputs.tether.packages.${pkgs.system}.default;
+    wifi.enable = true;
+    wifi.openFirewall = true;
+    bluetooth.enable = true;
+    # adapters defaults to [ "hci0" ].
+  };
   services.anker-event-capture.enable = true;
   # Temporary: capture everything (full firehose) for now. Flip back to
   # "events" (or delete this line) once the interesting window has passed.

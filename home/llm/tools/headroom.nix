@@ -8,7 +8,7 @@
 , cargo
 , rustc
 , python
-, fetchFromGitHub
+, src
 , ast-grep-cli
 }:
 
@@ -17,17 +17,14 @@ python.pkgs.buildPythonApplication (finalAttrs: {
   version = "0.34.0";
   pyproject = true;
 
-  src = fetchFromGitHub {
-    owner = "chopratejas";
-    repo = "headroom";
-    rev = "v${finalAttrs.version}";
-    hash = "sha256-Pz/3R3xogTyREJ1yz/Kxj6OrtJbT9kwmWt5CaFQhrRE=";
-  };
+  # Source from the flakeless `headroom` input (see flake.nix);
+  # `nix flake update headroom` re-pins it.
+  src = src;
 
-  cargoDeps = rustPlatform.fetchCargoVendor {
-    inherit (finalAttrs) src;
-    name = "${finalAttrs.pname}-${finalAttrs.version}";
-    hash = "sha256-NOflRqKu4fFYA06rZUoFlr8xPi750/AdD8vnFTtf6Tk=";
+  # Vendored cargo deps from the source's Cargo.lock; re-resolves
+  # automatically when the input is updated.
+  cargoDeps = rustPlatform.importCargoLock {
+    lockFile = src + "/Cargo.lock";
   };
 
   nativeBuildInputs = [

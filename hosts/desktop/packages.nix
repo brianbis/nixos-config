@@ -32,7 +32,8 @@ in
     gdb
     mangohud
     vulkan-tools
-    inputs.tether.packages.${pkgs.stdenv.hostPlatform.system}.default
+    # Tether is in environment.systemPackages via programs.tether.enable
+    # (hosts/desktop/default.nix).
     (python3.withPackages my-python-packages)
   ];
 }

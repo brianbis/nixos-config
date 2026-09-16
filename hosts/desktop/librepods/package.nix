@@ -1,6 +1,5 @@
 { lib
 , rustPlatform
-, fetchFromGitHub
 , pkg-config
 , makeWrapper
 , patchelf
@@ -16,6 +15,7 @@
 , wayland
 , libxkbcommon
 , vulkan-loader
+, src
 ,
 }:
 
@@ -92,12 +92,9 @@ rustPlatform.buildRustPackage rec {
   pname = "librepods";
   version = "0.1.0";
 
-  src = fetchFromGitHub {
-    owner = "librepods-org";
-    repo = "librepods";
-    rev = "672e65ad36eebf21ff1c1a508066f9197ee56d17";
-    hash = "sha256-EuIYvBqBtpgutVqPOLIO3E9OhVzQ5q5TDoz/F+9MHEE=";
-  };
+  # Source from the flakeless `librepods` input (see flake.nix);
+  # `nix flake update librepods` re-pins it.
+  inherit src;
 
   # Cargo workspace lives in a subdirectory.
   # cargoRoot: tells the setup hook where Cargo.lock / the vendor dir are.
@@ -106,8 +103,11 @@ rustPlatform.buildRustPackage rec {
   # source root and fails).
   cargoRoot = "linux-rust";
   buildAndTestSubdir = "linux-rust";
-  # Hash of the vendored cargo deps (computed via fetchCargoVendor).
-  cargoHash = "sha256-17dE+oYvECU4f1SL6LHS95sXEea/Z0VgTPQ4u6TZTic=";
+  # Vendored cargo deps from the source's Cargo.lock (in the linux-rust
+  # workspace subdir); re-resolves automatically when the input is updated.
+  cargoDeps = rustPlatform.importCargoLock {
+    lockFile = src + "/linux-rust/Cargo.lock";
+  };
 
   # handoff.patch first (base -> handoff HEAD), then persist-state.patch
   # (rebased onto the post-handoff tree). Order matters: persist-state's

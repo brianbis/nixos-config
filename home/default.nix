@@ -9,7 +9,8 @@ in
     ./packages.nix
     ./plasma.nix
     ./firefox
-    ./sts.nix
+    ../hosts/desktop/archipelago/games/sts2/sts.nix
+    ../hosts/desktop/archipelago/games/balatro/balatro.nix
     ./llm
     ./discord.nix
     ./sidra.nix

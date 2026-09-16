@@ -1,10 +1,15 @@
-{ pkgs, lib, ... }:
+{ pkgs, lib, inputs, ... }:
 
 let
   # Pinned resurrect.wezterm fork (YedPool/Wezurrect). The derivation stubs
   # out the dev.wezterm network fetch and creates no git metadata in the
-  # output, so the store path is stable across rebuilds.
-  resurrect = pkgs.callPackage ./wezterm/resurrect.nix { };
+  # output, so the store path is stable across rebuilds. Source from the
+  # flakeless `wezurrect` input (see flake.nix); `nix flake update wezurrect`
+  # re-pins it.
+  resurrect = pkgs.callPackage ./wezterm/resurrect.nix {
+    src = inputs.wezurrect;
+    version = inputs.wezurrect.shortRev;
+  };
 in
 {
   home.packages = [
