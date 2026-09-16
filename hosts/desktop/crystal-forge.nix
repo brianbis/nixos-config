@@ -1,4 +1,4 @@
-{ lib, inputs, ... }:
+{ inputs, ... }:
 
 # Crystal Forge: NixOS fleet monitoring / build coordination / compliance.
 #
@@ -36,9 +36,10 @@
     };
   };
 
-  # The module replaces nix.settings.allowed-users / trusted-users with
+  # The module sets nix.settings.allowed-users / trusted-users to
   # ["root" "crystal-forge"], which would drop @wheel (user b) from the nix
-  # daemon. Preserve b's access on top of the module's values.
-  nix.settings.allowed-users = lib.mkAppend [ "b" ];
-  nix.settings.trusted-users = lib.mkAppend [ "b" ];
+  # daemon. This file's own definitions take precedence over its imports, so
+  # restate the module's list plus b.
+  nix.settings.allowed-users = [ "root" "b" "crystal-forge" ];
+  nix.settings.trusted-users = [ "root" "b" "crystal-forge" ];
 }
