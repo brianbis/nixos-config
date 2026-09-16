@@ -56,6 +56,20 @@ buildNpmPackage {
       $out/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-terminal-bash/lib/index.js \
       --replace-fail '"/bin/bash"' '"${lib.getExe bashInteractive}"'
 
+    # The account login shell is not always a usable terminal shell: service
+    # and agent users commonly have nologin (and on NixOS its store path can
+    # be garbage-collected), which made terminalEnvironment() report a path
+    # that resolveExecutable() rejects with "is not an executable file",
+    # breaking every default-shell terminal spawn. Only report the candidate
+    # when it is an existing executable file; otherwise omit defaultShell so
+    # the consumer (dsh-api-terminal-controller) picks the platform fallback
+    # (/bin/sh on POSIX), per the documented terminalEnvironment contract.
+    substituteInPlace \
+      $out/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js \
+      --replace-fail \
+      'const defaultShell = platform === "windows" ? process.env.ComSpec || void 0 : process.env.SHELL || userInfo().shell || void 0;' \
+      'let defaultShell = platform === "windows" ? process.env.ComSpec || void 0 : process.env.SHELL || userInfo().shell || void 0; if (defaultShell !== void 0) try { if (!(await stat(defaultShell)).isFile()) defaultShell = void 0; else await access(defaultShell, constants.X_OK); } catch { defaultShell = void 0; }'
+
     rm $out/bin/dsh
     makeWrapper ${lib.getExe nodejs} $out/bin/dsh \
       --argv0 dsh \
