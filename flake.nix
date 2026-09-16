@@ -46,6 +46,16 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # Crystal Forge: NixOS fleet monitoring / build coordination / compliance.
+    # Upstream flake: Rust server (embedded web UI), API-mode builder, agent,
+    # cf-keygen, a `services.crystal-forge` NixOS module and a nixpkgs overlay
+    # exposing `pkgs.crystal-forge.*`. Pinned to the `dev` branch; `nix flake
+    # update crystal-forge` re-pins to the newest dev commit.
+    crystal-forge = {
+      url = "gitlab:crystal-forge/crystal-forge/dev";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # Upstream hushmic source (real-time mic noise suppression). Not a flake
     # (no flake.nix upstream), so this is a flakeless input: inputs.hushmic is
     # the source tree, and `nix flake update hushmic` re-pins it to the newest

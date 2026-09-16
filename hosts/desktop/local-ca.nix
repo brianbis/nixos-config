@@ -23,6 +23,7 @@ let
     "dsh.local" = 3080; # DeepSeek Harness web GUI
     "searxng.local" = 8888; # SearXNG metasearch (loopback; dsh web-search backend)
     "archipelago.local" = 8090; # Archipelago WebHost (multiworld server + tracker + generator)
+    "forge.local" = 3445; # Crystal Forge server (web UI + API; builder + Postgres run alongside)
     # Deliberately NOT here: dsh.tail835824.ts.net is served by `tailscale
     # serve` with a Let's Encrypt cert (Tailscale control plane), not by
     # Caddy with this local CA.
