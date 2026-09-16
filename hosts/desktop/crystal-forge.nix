@@ -119,6 +119,16 @@
   nix.settings.allowed-users = lib.mkForce [ "root" "b" "crystal-forge" ];
   nix.settings.trusted-users = lib.mkForce [ "root" "b" "crystal-forge" ];
 
+  # libgit2 (nix's built-in git fetcher) refuses to open a repository whose
+  # path is not owned by the calling user: "repository path '/etc/nixos' is
+  # not owned by current user". The server (user crystal-forge) evaluates the
+  # watched flake via builtins.getFlake "git+file:///etc/nixos?rev=...", and
+  # /etc/nixos is owned by llm, so every commit eval failed instantly.
+  # git-fetch-with-cli makes the daemon use the git CLI for fetches instead,
+  # which has no ownership check (commit polling already used CLI git, which
+  # is why commits synced fine while evals failed).
+  nix.settings.git-fetch-with-cli = true;
+
   # Upstream ordering gap: the module's server and postgres-jobs units only
   # order After=postgresql.service, but current nixpkgs moved the
   # ensureUsers/ensureDatabases work into postgresql-setup.service, which runs
