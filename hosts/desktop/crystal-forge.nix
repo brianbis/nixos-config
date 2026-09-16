@@ -11,6 +11,33 @@
 # /var/lib/crystal-forge/builder-api.key and its public key is printed to the
 # journal (journalctl -u crystal-forge-builder) for registration in the UI.
 # First registered user in the web UI becomes Admin (auth_mode = local).
+let
+  # Upstream module bug: the [deployment] TOML block is only written when a
+  # deployment option differs from its default (we set deployment.cache_url
+  # for the agent), and it writes deployment_poll_interval as the raw
+  # human-readable option string ("15m"), while all three binaries (server,
+  # builder, agent) parse it as integer seconds (serde duration_serde).
+  # Every CF service then crash-loops on startup with:
+  #   invalid type: string "15m", expected an integer for key
+  #   `deployment.deployment_poll_interval`
+  # Convert the value to seconds in the generated TOML, appended after the
+  # module's preStart (which copies the config). No-op once upstream writes
+  # seconds (the quoted-string extraction simply won't match).
+  fixCfDeploymentPollInterval = toml: ''
+    if [ -f "${toml}" ]; then
+      v=$(sed -n 's/^deployment_poll_interval = "\(.*\)"$/\1/p' "${toml}")
+      if [ -n "$v" ]; then
+        case "$v" in
+          *h) s=$(( ''${v%h} * 3600 ));;
+          *m) s=$(( ''${v%m} * 60 ));;
+          *d) s=$(( ''${v%d} * 86400 ));;
+          *)  s=$v;;
+        esac
+        sed -i "s/^deployment_poll_interval = .*/deployment_poll_interval = ''${s}/" "${toml}"
+      fi
+    fi
+  '';
+in
 {
   imports = [ inputs.crystal-forge.nixosModules.crystal-forge ];
 
@@ -165,4 +192,18 @@
   systemd.services."crystal-forge-server".environment = {
     AUTH_MODE = "local";
   };
+
+  # Fix the deployment_poll_interval value in the generated TOML after the
+  # module's preStart has written it (mkAfter appends after the module's
+  # preStart). Server and builder share /var/lib/crystal-forge/config.toml;
+  # the agent has its own copy.
+  systemd.services."crystal-forge-server".preStart = lib.mkAfter ''
+    ${fixCfDeploymentPollInterval "/var/lib/crystal-forge/config.toml"}
+  '';
+  systemd.services."crystal-forge-builder".preStart = lib.mkAfter ''
+    ${fixCfDeploymentPollInterval "/var/lib/crystal-forge/config.toml"}
+  '';
+  systemd.services."crystal-forge-agent".preStart = lib.mkAfter ''
+    ${fixCfDeploymentPollInterval "/var/lib/crystal-forge-agent/config.toml"}
+  '';
 }
