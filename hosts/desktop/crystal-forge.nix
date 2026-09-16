@@ -47,6 +47,23 @@
       server_url = "http://127.0.0.1:3445";
     };
 
+    # The builder and the agent share this host's /nix/store, so the binary
+    # "cache" is the local store itself: the builder's post-build push
+    # (nix copy --to file:///nix/store) and the agent's deploy pull
+    # (nix copy --from file:///nix/store) are local no-ops that satisfy the
+    # build -> cache -> deploy pipeline without any network cache. (Without
+    # push_to the UI warns "No cache destinations configured" and agents
+    # cannot pull deployments.) Swap for a real cache (S3/Attic/HTTP) if
+    # deployments ever target remote hosts.
+    cache = {
+      cache_type = "Nix";
+      push_to = "file:///nix/store";
+      push_after_build = true; # module default is false
+    };
+    deployment = {
+      cache_url = "file:///nix/store";
+    };
+
     # --- Declarative onboarding of this host's config into Crystal Forge ---
     # The server upserts everything below into its database at startup
     # (sync_systems_to_db), so no UI clicking is needed: the flake is polled
