@@ -46,6 +46,70 @@
       api_mode = true;
       server_url = "http://127.0.0.1:3445";
     };
+
+    # --- Declarative onboarding of this host's config into Crystal Forge ---
+    # The server upserts everything below into its database at startup
+    # (sync_systems_to_db), so no UI clicking is needed: the flake is polled
+    # and evaluated by the builder, and the agent (running on this same host,
+    # ordered after the server) registers the system by signing heartbeats
+    # with the Ed25519 keypair whose public key is declared here.
+    #
+    # The private key is NOT in this repo (it is public on GitHub). It lives
+    # at /var/lib/crystal-forge/host.key (base64 raw 32-byte Ed25519 seed,
+    # matching the public key in systems[0].public_key below). Create it once
+    # before the first switch that enables the client:
+    #   sudo bash -c 'echo "<seed-b64>" > /var/lib/crystal-forge/host.key && chmod 600 /var/lib/crystal-forge/host.key'
+    # The module types private_key as lib.types.path, so the file must exist
+    # before the first `just switch` that enables the client.
+    client = {
+      enable = true;
+      server_port = 3445; # module default is 3000; server_host defaults to 127.0.0.1 (same host)
+      private_key = "/var/lib/crystal-forge/host.key";
+    };
+
+    # Watch this repo as a flake. repo_url is used two ways: the builder
+    # mirrors it with `git clone --bare <repo_url>`, and the server evaluates
+    # it as a Nix flake reference (normalize_flake_git_url -> git+<url>, then
+    # builtins.getFlake "git+file:///etc/nixos?rev=<commit>"). A bare local
+    # path ("/etc/nixos") survives the git clone but nix misparses the
+    # resulting "git+/etc/nixos?rev=..." reference; file:// is a valid git
+    # URL for both. The builder (user crystal-forge) can read /etc/nixos.
+    flakes = {
+      watched = [
+        {
+          name = "desktop";
+          repo_url = "file:///etc/nixos";
+          branch = "main";
+          auto_poll = true;
+          initial_commit_depth = 10;
+        }
+      ];
+    };
+
+    # The environment the system belongs to (synced to the DB before systems).
+    environments = [
+      {
+        name = "production";
+        description = "Production desktop host (nixos)";
+        is_active = true;
+        risk_profile = "LOW";
+        compliance_level = "NONE";
+      }
+    ];
+
+    # This host as a managed system. public_key is the base64 raw 32-byte
+    # Ed25519 public key of the agent's keypair (private half in
+    # /var/lib/crystal-forge/host.key). deployment_policy = manual means
+    # activations are only triggered from the UI.
+    systems = [
+      {
+        hostname = "nixos";
+        public_key = "fdhAZ9dukrbkcGsHLXjuKZp4jzODrQ18QCgJjo7ng3Y=";
+        environment = "production";
+        flake_name = "desktop";
+        deployment_policy = "manual";
+      }
+    ];
   };
 
   # The module sets nix.settings.allowed-users / trusted-users to
