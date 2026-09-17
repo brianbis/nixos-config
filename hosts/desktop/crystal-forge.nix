@@ -72,6 +72,15 @@ in
       enable = true;
       api_mode = true;
       server_url = "http://127.0.0.1:3445";
+
+      # The builder's pre-build verification re-evaluates the flake with its
+      # own nix options. This flake needs import-from-derivation at eval time
+      # (home-manager's tree-style-tab firefox extension imports a
+      # derivation for generated CSS), so the verified re-evaluation fails
+      # with "cannot build '...-tree-style-tab-css-base64.drv^out' during
+      # evaluation" unless IFD is explicitly allowed here. The host's own
+      # nix (just switch) already has it enabled.
+      allow_import_from_derivation = true;
     };
 
     # The builder and the agent share this host's /nix/store, so the binary
