@@ -7,6 +7,7 @@
 # locations the run has to chew through. Floor checks stay ON (default):
 # they're filler locations, not extra floors, so they don't lengthen the
 # run, they just give the multiworld more to exchange.
+# Your slot name in the multiworld — must be unique per player.
 name: STS2
 game: "Slay the Spire II"
 requires:

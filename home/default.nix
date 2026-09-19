@@ -2,7 +2,7 @@
 
 let
   users = import ./users.nix;
-  tetherPkg = inputs.tether.packages.${pkgs.system}.default;
+  tetherPkg = inputs.tether.packages.${pkgs.stdenv.hostPlatform.system}.default;
 in
 {
   imports = [
@@ -11,11 +11,13 @@ in
     ./firefox
     ../hosts/desktop/archipelago/games/sts2/sts.nix
     ../hosts/desktop/archipelago/games/balatro/balatro.nix
+    ../hosts/desktop/archipelago/poptracker.nix
     ./llm
     ./discord.nix
     ./sidra.nix
     ./spectacle.nix
     ./hushmic.nix
+    ./gitbutler.nix
     ./wezterm.nix
     ./dotfiles.nix
     ./minuspod.nix
@@ -53,11 +55,18 @@ in
   };
 
   # Autostart the Tether GUI tray app.
+  #
+  # GTK_THEME=Adwaita:dark is load-bearing: Tether's inline stylesheet
+  # (ui_util.cpp STYLE constant) loads at GTK_STYLE_PROVIDER_PRIORITY_APPLICATION,
+  # which sits above the user gtk.css, so no ~/.config/gtk-3.0/gtk.css or
+  # gtk-application-prefer-dark-theme can override its hard-coded light
+  # widget colors. GTK_THEME makes follow_system_color_scheme() return early
+  # and GTK uses Adwaita-dark directly, skipping the portal and Breeze.
   xdg.desktopEntries.tether-gtk = {
     name = "Tether";
     genericName = "Device Synchronization";
     comment = "Pair devices and synchronize clipboard across the network";
-    exec = "${tetherPkg}/bin/tether-gtk";
+    exec = "env GTK_THEME=Adwaita:dark ${tetherPkg}/bin/tether-gtk";
     icon = "tether";
     terminal = false;
     type = "Application";

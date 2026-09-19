@@ -7,6 +7,7 @@
 # items, medium traps) runs 3h+ — this trims the item volume, not the
 # structure: jokers/tarot/planets/spectrals stay individual and locked,
 # which is the actual point of the world.
+# Your slot name in the multiworld — must be unique per player.
 name: Balatro
 game: Balatro
 requires:
