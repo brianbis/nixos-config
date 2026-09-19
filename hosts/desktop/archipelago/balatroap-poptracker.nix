@@ -18,7 +18,7 @@ in
       trap 'rm -rf "$tmp"' EXIT
 
       rm -rf "$packs_dir/balatroap"
-      ${pkgs.gnutar}/bin/tar -xzf "${balatroapPack}" -C "$tmp"
+      ${pkgs.xz}/bin/unxz -q -c "${balatroapPack}" | ${pkgs.gnutar}/bin/tar -x -C "$tmp"
       mv "$tmp/balatroap_poptracker-master" "$packs_dir/balatroap"
     '';
 }
