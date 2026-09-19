@@ -34,6 +34,10 @@ in
       # binary's NEEDED entries from LD_LIBRARY_PATH).
       # The app loads assets/ and packs/ relative to CWD.
       cd "$HOME/.local/share/poptracker"
+      # tinyfiledialogs (the AP seed-file dialog) probes PATH for a GUI
+      # dialog backend and falls back to console input without one;
+      # kdialog is the KDE-native choice.
+      export PATH="${pkgs.kdePackages.kdialog}/bin:$PATH"
       exec ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 --library-path "$LD_LIBRARY_PATH" ./poptracker "$@"
     '')
   ];
