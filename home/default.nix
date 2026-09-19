@@ -14,6 +14,7 @@ in
     ../hosts/desktop/archipelago/poptracker.nix
     ../hosts/desktop/archipelago/universal-tracker.nix
     ../hosts/desktop/archipelago/balatroap-poptracker.nix
+    ../hosts/desktop/archipelago/archipelago-launcher.nix
     ./llm
     ./discord.nix
     ./sidra.nix
