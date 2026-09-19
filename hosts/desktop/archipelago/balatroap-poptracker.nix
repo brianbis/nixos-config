@@ -18,7 +18,9 @@ in
       trap 'rm -rf "$tmp"' EXIT
 
       rm -rf "$packs_dir/balatroap"
-      ${pkgs.xz}/bin/unxz -q -c "${balatroapPack}" | ${pkgs.gnutar}/bin/tar -x -C "$tmp"
+      # GitHub archives are .tar.gz (unxz is for .tar.xz), and gzip/gunzip
+      # aren't on the activation PATH, so pipe through the explicit binary.
+      ${pkgs.gzip}/bin/gunzip -c "${balatroapPack}" | ${pkgs.gnutar}/bin/tar -x -C "$tmp"
       mv "$tmp/balatroap_poptracker-master" "$packs_dir/balatroap"
     '';
 }
