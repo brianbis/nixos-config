@@ -32,7 +32,9 @@ in
       # NixOS' /lib64/ld-linux-x86-64.so.2 is a stub that rejects non-store
       # binaries, so exec the real glibc loader directly (it resolves the
       # binary's NEEDED entries from LD_LIBRARY_PATH).
-      exec ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 --library-path "$LD_LIBRARY_PATH" "$HOME/.local/share/poptracker/poptracker" "$@"
+      # The app loads assets/ and packs/ relative to CWD.
+      cd "$HOME/.local/share/poptracker"
+      exec ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 --library-path "$LD_LIBRARY_PATH" ./poptracker "$@"
     '')
   ];
 
