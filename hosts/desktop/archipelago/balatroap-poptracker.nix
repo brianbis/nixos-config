@@ -10,8 +10,10 @@ let
   };
 in
 {
+  # After installPopTracker: it rm -rf's ~/.local/share/poptracker, which
+  # would wipe a pack installed before it.
   home.activation.installBalatroapPopTracker =
-    lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    lib.hm.dag.entryAfter [ "installPopTracker" ] ''
       packs_dir="$HOME/.local/share/poptracker/packs"
       mkdir -p "$packs_dir"
       tmp="$(${pkgs.coreutils}/bin/mktemp -d)"
