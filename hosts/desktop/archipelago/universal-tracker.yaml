@@ -1,0 +1,8 @@
+# Universal Tracker slot — add to the generation alongside your game slots
+# (e.g. sts2-2h.yaml). The UT world is an empty placeholder (no items or
+# locations); the tracker client (Archipelago Launcher -> "Universal
+# Tracker") connects as this slot and builds an internal multiworld from
+# the Players folder yamls to show what's in-logic.
+# Your slot name in the multiworld — must be unique per player.
+name: UT
+game: "Universal Tracker"
