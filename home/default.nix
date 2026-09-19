@@ -13,6 +13,7 @@ in
     ../hosts/desktop/archipelago/games/balatro/balatro.nix
     ../hosts/desktop/archipelago/poptracker.nix
     ../hosts/desktop/archipelago/universal-tracker.nix
+    ../hosts/desktop/archipelago/balatroap-poptracker.nix
     ./llm
     ./discord.nix
     ./sidra.nix
