@@ -46,7 +46,7 @@ in
       trap 'rm -rf "$tmp"' EXIT
 
       rm -rf "$dest"
-      ${pkgs.xz}/bin/unxz -q -c "${poptrackerRelease}" | ${pkgs.tar}/bin/tar -x -C "$tmp"
+      ${pkgs.xz}/bin/unxz -q -c "${poptrackerRelease}" | ${pkgs.gnutar}/bin/tar -x -C "$tmp"
       mv "$tmp/poptracker" "$dest"
     '';
 }
