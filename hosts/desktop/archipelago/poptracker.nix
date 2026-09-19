@@ -20,11 +20,15 @@ let
   # libstdc++.so.6 comes from the base compiler (standalone libstdcpp/
   # libstdcxx5 packages are gone in current nixpkgs).
   runtimeLibs = with pkgs; [ SDL2 SDL2_ttf SDL2_image openssl_3 zlib (stdenv.cc.cc.lib) ];
+
+  # The shell fragment ${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}, built by
+  # concatenation so Nix' ${ interpolation never sees the literal.
+  ldAppend = "$" + "{LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}";
 in
 {
   home.packages = [
     (pkgs.writeShellScriptBin "poptracker" ''
-      export LD_LIBRARY_PATH="${lib.makeLibraryPath runtimeLibs}$${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+      export LD_LIBRARY_PATH="${lib.makeLibraryPath runtimeLibs}${ldAppend}"
       # NixOS' /lib64/ld-linux-x86-64.so.2 is a stub that rejects non-store
       # binaries, so exec the real glibc loader directly (it resolves the
       # binary's NEEDED entries from LD_LIBRARY_PATH).
