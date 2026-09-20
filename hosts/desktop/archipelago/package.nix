@@ -357,6 +357,13 @@ stdenvNoCC.mkDerivation {
     # ~/.local/share/Archipelago/worlds/.
     cp -r . $out/lib/archipelago/
 
+    # kivy.core.audio was split into kivy.core.audio_input / kivy.core.audio_output
+    # in the Kivy rev nixpkgs ships (2.3.1-unstable-2026-07-11); SoundLoader now
+    # lives in audio_output. kvui.py still imports the old path, so the launcher
+    # crashes with ModuleNotFoundError. Patch the import to the new location.
+    sed -i 's/^from kivy\.core\.audio import SoundLoader$/from kivy.core.audio_output import SoundLoader/' \
+      $out/lib/archipelago/kvui.py
+
     # user_path() populates the home dir from the source tree by copytree'ing
     # Players/, data/sprites/ and data/lua/ — a code path that only runs from
     # a read-only install (i.e. the store). Players/ is absent from a git
