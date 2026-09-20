@@ -406,7 +406,15 @@ EOF
     mk_wrapper webhost WebHost.py
     mk_wrapper server MultiServer.py
     mk_wrapper generate Generate.py
-    mk_wrapper launcher Launcher.py
+    # The launcher is the only Kivy GUI. On a Wayland session the default
+    # sdl2 window provider can fail to create a window (EGL init), so the
+    # GUI never appears; force the gl provider (EGL/GLX) which works on both
+    # Wayland and X11.
+    cat > "$out/bin/archipelago-launcher" <<EOF
+#!/bin/sh
+exec env SKIP_REQUIREMENTS_UPDATE=1 KIVY_WINDOW=gl ${env}/bin/python $out/lib/archipelago/Launcher.py "\$@"
+EOF
+    chmod +x "$out/bin/archipelago-launcher"
   '';
 
   meta = with lib; {
