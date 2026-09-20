@@ -26,6 +26,10 @@
 , src
 , kivymdSrc
 , zilliandomizerSrc
+, sdl3
+, sdl3-image
+, sdl3-mixer
+, sdl3-ttf
 }:
 
 let
@@ -34,6 +38,35 @@ let
   # Source from the flakeless `archipelago` input (see flake.nix);
   # `nix flake update archipelago` re-pins it.
   repo = src;
+
+  # nixpkgs' kivy is built against SDL2 only, so its `window_sdl3` provider
+  # ships without the compiled `_window_sdl3` extension and Kivy aborts with
+  # "Unable to find any valuable Window provider". Rebuild kivy with SDL3 so
+  # setup.py's pkg-config autodetect compiles `_window_sdl3` (USE_SDL3=1 forces
+  # it). SDL3 is a build input (for the .pc files + link) and is propagated to
+  # the runtime RPATH so the extension resolves at load time.
+  kivy = py.kivy.overrideAttrs (old: {
+    # The .pc files (sdl3.pc, sdl3-image.pc, …) that setup.py's pkg-config
+    # autodetect needs live in the .dev outputs (which depend on .lib, so the
+    # shared libraries land on the runtime RPATH). sdl3-ttf has no .dev output
+    # — its single .out carries the .pc file directly.
+    buildInputs = (old.buildInputs or [ ])
+      ++ [ sdl3.dev sdl3-image.dev sdl3-mixer.dev sdl3-ttf ];
+    USE_SDL3 = 1;
+    # setup.py's determine_sdl3() sanity-checks that the SDL3 + sub-library
+    # headers exist by looking for SDL.h / SDL_mixer.h / … directly inside
+    # each include dir. The .pc Cflags point at <prefix>/include, but the
+    # headers live in subdirs (<prefix>/include/SDL3/SDL.h, …), so the check
+    # fails and use_sdl3 is reverted to False (no _window_sdl3 built). Point
+    # KIVY_SDL3_PATH at the subdirs so the headers are found; the link flags
+    # still come from pkg-config.
+    KIVY_SDL3_PATH = builtins.concatStringsSep ":" [
+      "${sdl3.dev}/include/SDL3"
+      "${sdl3-mixer.dev}/include/SDL3_mixer"
+      "${sdl3-ttf}/include/SDL3_ttf"
+      "${sdl3-image.dev}/include/SDL3_image"
+    ];
+  });
 
   # PyPI packages that are missing from nixpkgs or pinned to a version
   # incompatible with Archipelago. Hashes are the PyPI sdist sha256.
@@ -209,7 +242,7 @@ let
     # Source from the flakeless `kivymd` input (see flake.nix);
     # `nix flake update kivymd` re-pins it.
     src = kivymdSrc;
-    propagatedBuildInputs = [ py.kivy py.pillow py.materialyoucolor asynckivy ];
+    propagatedBuildInputs = [ kivy py.pillow py.materialyoucolor asynckivy ];
   };
 
   # worlds/zillion/__init__.py imports zilliandomizer at module level; pinned
@@ -240,7 +273,7 @@ let
       py.jellyfish # 1.2.1
       py.jinja2 # 3.1.6
       py.schema # 0.7.8
-      py.kivy # 2.3.1 (Launcher GUI; imported lazily inside run_gui)
+      kivy # 2.3.1 (Launcher GUI; imported lazily inside run_gui; SDL3 build, see above)
       py.bsdiff4 # 1.2.6 (also worlds/tloz)
       py.platformdirs
       py.certifi
