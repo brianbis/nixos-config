@@ -127,7 +127,37 @@ regardless of working directory.
 
 * Denied commands: `home-manager`, `nix-channel`, `nix-env`, `nixos-install`, `nixos-rebuild` are stubbed to deny.
 
-* Common packages available: `bashInteractive, curl, wget, jq, git, which, ripgrep, gnugrep, gnused, gawkInteractive, ps, findutils, gzip, unzip, systemd, gnutar, diffutils, gnupatch, strace, openssl, cfr, tcpdump, mitmproxy, jdk21, rtk, headroom, nix, nixGuard, sqlite, postgresql, mariadb.client, python3`
+* Common packages available: `bash, curl, wget, jq, git, which, rg, grep, sed, gawk, ps, find, gzip, unzip, systemd, tar, diffutils, patch, strace, util-linux, openssl, cfr, tcpdump, mitmproxy, java, rtk, headroom, graphify, graphlore, bend, difft, nix, nix-guard, sqlite3, postgresql, mariadb, duckdb, python3.14, blender, semgrep, node, cppcheck, bandit, nmap, masscan, nc, socat, iproute2, lsof, psmisc, procps, nethogs, iftop, ffuf, feroxbuster, gobuster, nikto, httpx, nuclei, subfinder, dnsx, naabu, whatweb, wafw00f, sqlmap, testssl.sh, sslscan, tcpkali, hydra, john, hashcat, nxc, responder, impacket, pypykatz, gdb, r2, pwntools, binutils-wrapper, file, hexedit, upx, ltrace, valgrind, exiftool, binwalk, foremost, scalpel, testdisk, volatility3, yara, wireshark, gitleaks, trufflehog, detect-secrets, shellcheck, codeql, clang, trivy, grype, syft, osv-scanner, cargo-audit, govulncheck, pip-audit, safety, aide, audit, osquery, lynis, maigret, snscrape, amass, assetfinder, subjack, waybackurls, gau, katana, unfurl, whois, bind, dnsenum, fierce, fping, mtr, rustscan, ettercap, bettercap, aircrack-ng, wpscan, arjun, wfuzz, dalfox, commix, z3, isympy, gmpy2, pycryptodome, sage, ropper, checksec, steghide, zsteg, stegsolve, stegseek, outguess, scapy, tcpflow, quarto, vega-lite, vega-cli, marp, pandoc, plotly, altair, hugo, duckdb, pandas, polars, sqlglot, arrow, echarts`
+
+## Code Knowledge Graphs (graphify / graphlore)
+
+`graphify`/`graphlore` build a queryable graph of a codebase (nodes = functions/
+classes/files/docstrings, edges = `calls`/`imports`/`contains`/`rationale_for`)
+for structural questions grep/read can't answer: "what connects to X?", "what
+breaks if I change X?", "what are the core abstractions?".
+
+**Build** into `$HOME/graphify-out/` (where both MCPs look):
+- `graphify extract <dir>` — AST + semantic LLM (NInfer by default; adds
+  `INFERRED`/`AMBIGUOUS` edges + docstring concept nodes; slower).
+- `graphify extract --code-only <dir>` — AST only, no LLM (fast).
+- `graphify cluster-only <dir>` — re-cluster + LLM-name communities
+  (regenerates `GRAPH_REPORT.md`).
+
+**Query** via two MCPs (both serve the built graph):
+- `mcp__graphify__*` — `query_graph` (BFS by question), `get_node`,
+  `get_neighbors`, `shortest_path`, `god_nodes`, `graph_stats`, `get_community`.
+- `mcp__graphlore__*` (richer) — start with `graphlore_overview` (size, god
+  nodes, suggested next steps), then `graphlore_query`, `graphlore_subgraph`
+  (token-cheap slice), `graphlore_impact` (blast radius: what depends on a node),
+  `graphlore_communities`, `graphlore_surprises` (cross-file leads),
+  `graphlore_validate` (health), `graphlore_freshness` (stale? needs git).
+
+**Workflow**: build the graph for the project you're in → `graphlore_overview`
+to orient → `graphlore_query`/`graphlore_subgraph`/`graphlore_impact` to explore.
+
+**Caveats**: `graphlore_locate` (semantic search) needs the optional `semble`
+extra; `graphlore_freshness` needs a git repo; the source-based tools
+(`locate`/`fetch`/`skeleton`) need the source under the project dir.
 
 ## KRunner Aliases
 

@@ -1,0 +1,27 @@
+--- a/tools/server/server-context.cpp
++++ b/tools/server/server-context.cpp
+@@ -18,6 +18,7 @@
+ #include "mtmd-helper.h"
+
+ #include <algorithm>
++#include <unistd.h>
+ #include <cstddef>
+ #include <cinttypes>
+ #include <exception>
+@@ -912,5 +913,16 @@
+             }
+             SRV_INF("%s", "server is entering sleeping state\n");
+             destroy();
++            // Release all device memory by exiting. CUDA's allocator caches
++            // freed blocks in a per-process pool, so destroy() alone does not
++            // return VRAM to the driver. The router detects the exit via
++            // stdout EOF and respawns this child on the next request.
++            // Standalone servers with --sleep-idle-seconds also exit; use
++            // --sleep-idle-seconds -1 to keep the process resident.
++            SRV_INF("%s", "server is exiting to release device memory\n");
++            // Logging is async (worker thread); flush so the line above is
++            // delivered to the router before the process dies.
++            common_log_flush(common_log_main());
++            _exit(0);
+         } else {
+             SRV_INF("%s", "server is exiting sleeping state\n");

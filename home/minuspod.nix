@@ -1,4 +1,4 @@
-{ pkgs, lib, inputs, ... }:
+{ pkgs, lib, inputs, nvidiaDriver ? null, ... }:
 let
   # Source from the flakeless `minuspod` input (see flake.nix);
   # `nix flake update minuspod` re-pins it.
@@ -9,7 +9,7 @@ let
   # store paths are read-only.
   npmDeps = pkgs.fetchNpmDeps {
     src = src + "/frontend";
-    hash = "sha256-ReA3NUVXNdHrxJ7aEmJmQbm4CK1ohbINblkXaIYAsck=";
+    hash = "sha256-hG86dI4GV8XaJBUBwvva+8Fo9AEbmZw8w5z+NzhLgTU=";
   };
 
   # faster-whisper needs a CUDA-enabled CTranslate2 for GPU: nixpkgs' core is
@@ -76,11 +76,14 @@ let
     ps.cryptography
     ps.pyjwt
     ps.defusedxml
+    # flask-limiter storage backend (RATE_LIMIT_STORAGE_URI=redis://…);
+    # declared direct dep upstream, lazy-imported only when configured.
+    ps.redis
   ]);
 
   minuspod = pkgs.stdenv.mkDerivation {
     pname = "minuspod";
-    version = "2.88.3";
+    version = "2.97.4";
 
     inherit src npmDeps;
 
@@ -96,21 +99,13 @@ let
     ];
 
     # The container hardcodes /app paths; resolve them relative to this
-    # derivation's output instead.
+    # derivation's output instead. (The data-dir default needed no patch as
+    # of 2.97.4: upstream Database() falls back to utils.paths.resolve_data_dir(),
+    # which reads MINUSPOD_DATA_DIR at call time.)
     postPatch = ''
       substituteInPlace gunicorn.conf.py \
         --replace-fail 'src_dir = "/app/src"' \
           'src_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")'
-      # Make Database respect MINUSPOD_DATA_DIR instead of hardcoded /app/data
-      substituteInPlace src/database/__init__.py \
-        --replace-fail 'def __new__(cls, data_dir: str = "/app/data"):' \
-          'def __new__(cls, data_dir: str = None):'
-      substituteInPlace src/database/__init__.py \
-        --replace-fail 'def __init__(self, data_dir: str = "/app/data"):' \
-          'def __init__(self, data_dir: str = None):'
-      substituteInPlace src/database/__init__.py \
-        --replace-fail '        self.data_dir = Path(data_dir)' \
-          '        self.data_dir = Path(data_dir or __import__("os").environ.get("MINUSPOD_DATA_DIR", "/app/data"))'
     '';
 
     buildPhase = ''
@@ -137,7 +132,7 @@ let
       cp -r static/ui $out/static/ui
       install -Dm644 gunicorn.conf.py $out/gunicorn.conf.py
       makeWrapper ${pythonEnv}/bin/gunicorn $out/bin/minuspod \
-        --run 'export MINUSPOD_DATA_DIR="''${MINUSPOD_DATA_DIR:-$HOME/.local/share/minuspod}"; export HF_HOME="''${MINUSPOD_DATA_DIR}/.cache/huggingface"; export TRANSFORMERS_CACHE="''${MINUSPOD_DATA_DIR}/.cache/huggingface/transformers"; export MINUSPOD_PORT="''${MINUSPOD_PORT:-8001}"; export MINUSPOD_VERSION="2.88.3"; export WHISPER_DEVICE="cuda"' \
+        --run 'export MINUSPOD_DATA_DIR="''${MINUSPOD_DATA_DIR:-$HOME/.local/share/minuspod}"; export HF_HOME="''${MINUSPOD_DATA_DIR}/.cache/huggingface"; export TRANSFORMERS_CACHE="''${MINUSPOD_DATA_DIR}/.cache/huggingface/transformers"; export MINUSPOD_PORT="''${MINUSPOD_PORT:-8001}"; export MINUSPOD_VERSION="2.97.4"; export WHISPER_DEVICE="cuda"' \
         --prefix PATH : ${lib.makeBinPath [ pkgs.ffmpeg ]} \
         --prefix LD_LIBRARY_PATH : ${cudaLibPath} \
         --prefix PYTHONPATH : $out/src \
@@ -151,17 +146,51 @@ let
       license = licenses.mit;
     };
   };
+
+  # LLM/transcription runtime config. Shared by the interactive session
+  # (home.sessionVariables) and the systemd user service so the two never
+  # drift.
+  minuspodEnv = {
+    MINUSPOD_LLM_PROVIDER = "openai";
+    MINUSPOD_LLM_BASE_URL = "http://127.0.0.1:8787/v1";
+    # Consolidated thinking mode; the router preset's default reasoning_effort
+    # is xhigh (MinusPod sends no per-request effort, so it uses the default).
+    MINUSPOD_LLM_MODEL = "qwen3-8-27b-q8_0-thinking";
+    MINUSPOD_TRANSCRIBE_PROVIDER = "local";
+    MINUSPOD_MASTER_PASSPHRASE = "change-me";
+  };
 in
 {
   home.packages = [ minuspod ];
 
   # Runtime configuration for the local LLM proxy (see home/llm).
-  home.sessionVariables = {
-    MINUSPOD_LLM_PROVIDER = "openai";
-    MINUSPOD_LLM_BASE_URL = "http://127.0.0.1:8787/v1";
-    MINUSPOD_LLM_MODEL = "qwen3-8-27b-q8_0-thinking-xhigh";
-    MINUSPOD_TRANSCRIBE_PROVIDER = "local";
-    MINUSPOD_MASTER_PASSPHRASE = "change-me";
+  home.sessionVariables = minuspodEnv;
+
+  # Always-on user service. MinusPod is a resident gunicorn web server (not a
+  # socket-activated idle service like whisper-service), so it stays up and
+  # restarts on failure. The binary wrapper (makeWrapper) already sets the data
+  # dir, MINUSPOD_PORT, WHISPER_DEVICE=cuda, the CUDA *runtime* lib path and
+  # PYTHONPATH; the service adds the LLM/transcription config above and, when an
+  # NVIDIA driver package is supplied, its lib dir so ctranslate2 can dlopen
+  # libcuda.so.1 (not in the ldconfig cache — see whisper-service).
+  systemd.user.services.minuspod = {
+    Unit = {
+      Description = "MinusPod ad-free podcast server";
+      After = [ "network.target" ];
+    };
+    Service = {
+      Type = "simple";
+      ExecStart = "${minuspod}/bin/minuspod";
+      WorkingDirectory = "%h";
+      Restart = "on-failure";
+      RestartSec = "5";
+      Environment =
+        lib.mapAttrsToList (name: value: "${name}=${value}") minuspodEnv
+        ++ lib.optionals (nvidiaDriver != null) [
+          "LD_LIBRARY_PATH=${nvidiaDriver}/lib"
+        ];
+    };
+    Install.WantedBy = [ "default.target" ];
   };
 
   xdg.desktopEntries.minuspod = {

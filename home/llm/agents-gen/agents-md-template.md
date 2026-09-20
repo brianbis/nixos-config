@@ -129,6 +129,36 @@ regardless of working directory.
 
 * Common packages available: `{{commonPackages}}`
 
+## Code Knowledge Graphs (graphify / graphlore)
+
+`graphify`/`graphlore` build a queryable graph of a codebase (nodes = functions/
+classes/files/docstrings, edges = `calls`/`imports`/`contains`/`rationale_for`)
+for structural questions grep/read can't answer: "what connects to X?", "what
+breaks if I change X?", "what are the core abstractions?".
+
+**Build** into `$HOME/graphify-out/` (where both MCPs look):
+- `graphify extract <dir>` — AST + semantic LLM (NInfer by default; adds
+  `INFERRED`/`AMBIGUOUS` edges + docstring concept nodes; slower).
+- `graphify extract --code-only <dir>` — AST only, no LLM (fast).
+- `graphify cluster-only <dir>` — re-cluster + LLM-name communities
+  (regenerates `GRAPH_REPORT.md`).
+
+**Query** via two MCPs (both serve the built graph):
+- `mcp__graphify__*` — `query_graph` (BFS by question), `get_node`,
+  `get_neighbors`, `shortest_path`, `god_nodes`, `graph_stats`, `get_community`.
+- `mcp__graphlore__*` (richer) — start with `graphlore_overview` (size, god
+  nodes, suggested next steps), then `graphlore_query`, `graphlore_subgraph`
+  (token-cheap slice), `graphlore_impact` (blast radius: what depends on a node),
+  `graphlore_communities`, `graphlore_surprises` (cross-file leads),
+  `graphlore_validate` (health), `graphlore_freshness` (stale? needs git).
+
+**Workflow**: build the graph for the project you're in → `graphlore_overview`
+to orient → `graphlore_query`/`graphlore_subgraph`/`graphlore_impact` to explore.
+
+**Caveats**: `graphlore_locate` (semantic search) needs the optional `semble`
+extra; `graphlore_freshness` needs a git repo; the source-based tools
+(`locate`/`fetch`/`skeleton`) need the source under the project dir.
+
 ## KRunner Aliases
 
 Use `xdg.desktopEntries.<name>.settings.Keywords` to add search aliases. Example Spectacle: `sn;screenshot;screen capture;spectacle`.

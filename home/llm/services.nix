@@ -4,7 +4,12 @@
 { lib, pkgs, shared, headroomDeepseekWrapper }:
 
 let
-  inherit (shared) headroomUpstreamUrl headroomPort headroomClaudePort;
+  inherit (shared)
+    headroomUpstreamUrl
+    headroomPort
+    headroomClaudePort
+    headroomNinferUpstreamUrl
+    headroomNinferPort;
 in
 {
   systemd.user.services.headroom-proxy = {
@@ -17,6 +22,30 @@ in
       ExecStart = "${pkgs.headroom}/bin/headroom proxy " +
         "--openai-api-url ${headroomUpstreamUrl} " +
         "--host 127.0.0.1 --port ${toString headroomPort}";
+      Restart = "on-failure";
+      RestartSec = "3";
+      WorkingDirectory = "%h/.local/share/headroom";
+      Environment = "HOME=%h";
+    };
+
+    Install.WantedBy = [ "default.target" ];
+  };
+
+  # DSH-default-model-facing headroom proxy: routes the default agent model
+  # (ninfer qwen3.8-27b on :8080) through the compression layer. --lossless
+  # (marker-free compaction): DSH has no headroom_retrieve MCP tool, so default
+  # CCR mode would inject markers it cannot redeem and corrupt its context.
+  systemd.user.services.headroom-proxy-ninfer = {
+    Unit = {
+      Description = "Headroom context-compression proxy (NInfer upstream, lossless)";
+      After = [ "network.target" ];
+    };
+
+    Service = {
+      ExecStart = "${pkgs.headroom}/bin/headroom proxy " +
+        "--openai-api-url ${headroomNinferUpstreamUrl} " +
+        "--lossless " +
+        "--host 127.0.0.1 --port ${toString headroomNinferPort}";
       Restart = "on-failure";
       RestartSec = "3";
       WorkingDirectory = "%h/.local/share/headroom";

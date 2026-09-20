@@ -77,7 +77,7 @@ in
   };
 
   home.packages = with pkgs; [
-    inputs.sidra.packages.${pkgs.system}.default
+    inputs.sidra.packages.${pkgs.stdenv.hostPlatform.system}.default
     # Archipelago entry points (archipelago-webhost/-server/-generate/-launcher).
     # The web UI + tracker + hosted rooms run as the archipelago system service;
     # these wrappers are for ad-hoc CLI use (seed generation, "Build APWorlds",
@@ -92,6 +92,8 @@ in
     discord
     bitwarden-desktop
     obsidian
+    # GitButler — GUI git client (virtual branches / stacked PRs), from nixpkgs.
+    gitbutler
 
     htop
     # btop dlopens libnvidia-ml.so (NVML) at runtime to detect NVIDIA GPUs.
@@ -115,6 +117,9 @@ in
     ripgrep
     fd
     bat
+    # difftastic: syntax-aware structural diff (the `difft` binary); built from
+    # the flakeless `difftastic` input (home/llm/tools/difftastic.nix).
+    difftastic
     jq
     yq
     unzip
@@ -123,8 +128,18 @@ in
     git
     gh
     just
-    python3
-    python3Packages.huggingface-hub
+    # One python environment carrying huggingface-hub plus the data-analysis
+    # stack (Jupyter notebooks, polars dataframes, seaborn plotting, duckdb
+    # bindings). A bare python3 plus separate python3Packages entries are not
+    # importable from each other, so the stack must live in one withPackages
+    # env for `import seaborn` etc. to work from the `python3` on PATH.
+    (python3.withPackages (ps: with ps; [
+      huggingface-hub
+      seaborn
+      polars
+      duckdb
+      jupyter
+    ]))
     bolt-launcher
     lutris
     heroic
@@ -145,6 +160,7 @@ in
 
     sqlite
     postgresql
+    duckdb
     mariadb.client
   ];
   xdg.dataFile."konsole/OLED.colorscheme".source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/konsole/OLED.colorscheme";

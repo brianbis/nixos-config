@@ -78,6 +78,60 @@
       url = "github:chopratejas/headroom";
       flake = false;
     };
+    # knife: a reverse engineer's binary Swiss-army knife (PE/ELF/Mach-O triage,
+    # disassembly, function/CFG recovery, crypto-constant + YARA scanning) that
+    # ships a built-in `knife mcp` stdio server. Not a flake upstream, so this is
+    # a flakeless input: inputs.knife is the source tree, and `nix flake update
+    # knife` re-pins it to the newest commit of the default branch. The local
+    # package (home/llm/tools/knife.nix) builds it.
+    knife = {
+      url = "github:bl4ckr0ss3/knife";
+      flake = false;
+    };
+    # graphify: codebase -> queryable knowledge graph (Graphify-Labs/graphify).
+    # A Claude Code skill + CLI (pip `graphifyy`) that ships a built-in
+    # `graphify-mcp` stdio MCP server. Not in nixpkgs; built from the flakeless
+    # input (home/llm/tools/graphify.nix). `nix flake update graphify` re-pins it.
+    graphify = {
+      url = "github:Graphify-Labs/graphify";
+      flake = false;
+    };
+    # graphlore: richer third-party MCP server (28 tools) that wraps graphify's
+    # knowledge graph (span engine, semantic locate, impact/blast-radius). Not on
+    # PyPI; built from the flakeless input (home/llm/tools/graphlore.nix).
+    graphlore = {
+      url = "github:yasinyaman/graphlore";
+      flake = false;
+    };
+    # echarts: rich interactive chart library (Apache-2.0). npm-only, so this is
+    # a flakeless input: inputs.echarts is the source tree, and `nix flake update
+    # echarts` re-pins it to the newest commit of the default branch (master).
+    # The local package (home/llm/tools/echarts.nix) reads the version from the
+    # source's package.json and fetches the matching pre-built npm dist.
+    echarts = {
+      url = "github:apache/echarts";
+      flake = false;
+    };
+    # bend: a dependently typed, affine language that blocks AI mistakes via
+    # proof (bendlang/bend). TypeScript compiler/interpreter/checker run by
+    # bun; `bend <f> -o` emits C compiled by clang. Not a flake upstream, so
+    # this is a flakeless input: inputs.bend is the source tree, and `nix flake
+    # update bend` re-pins it to the newest commit of the default branch. The
+    # local package (home/llm/tools/bend.nix) builds it.
+    bend = {
+      url = "github:bendlang/bend";
+      flake = false;
+    };
+    # difftastic: a structural diff that understands syntax
+    # (Wilfred/difftastic). Pure Rust (tree-sitter + four vendored C parsers).
+    # Not a flake upstream, so this is a flakeless input: inputs.difftastic is
+    # the source tree, and `nix flake update difftastic` re-pins it to the
+    # newest commit of the default branch (master). The local package
+    # (home/llm/tools/difftastic.nix) builds it.
+    difftastic = {
+      url = "github:Wilfred/difftastic";
+      flake = false;
+    };
     minuspod = {
       url = "github:ttlequals0/MinusPod";
       flake = false;
@@ -118,6 +172,31 @@
       url = "github:beauxq/zilliandomizer";
       flake = false;
     };
+    # llama.cpp: the router server for the local LLM fleet (Muse-Glimmer-30B,
+    # Qwen3.8-27B, Heretic-RVN). Not a flake upstream, so this is a flakeless
+    # input: inputs.llama-cpp is the source tree, and `nix flake update
+    # llama-cpp` re-pins it to the newest commit of the default branch
+    # (master). The local package (hosts/desktop/llm/llamacpp/package.nix)
+    # builds it (CUDA + sleep-exit patch) and the flake exposes it as
+    # pkgs.llama-cpp for the NixOS module. Re-pinning may require updating
+    # npmDepsHash in that package.nix — see the "got: sha256-…" re-pin note
+    # there.
+    llama-cpp = {
+      url = "github:ggml-org/llama.cpp";
+      flake = false;
+    };
+
+    # llama.cpp Bonsai fork: the PrismML-Eng fork carrying the custom ternary
+    # hybrid-attention kernels (PTQ1_0 / PQ2_0) that stock llama.cpp rejects
+    # (it loads PQ2_0 as Q2_0 and produces garbage). Only the Ternary-Bonsai-2-27B
+    # model needs it; the stock llama-cpp input above keeps serving the Muse /
+    # Qwen / Heretic fleet. Pinned the same way: `nix flake update
+    # llama-cpp-bonsai` re-pins to the newest commit of the fork's default
+    # branch (prism).
+    llama-cpp-bonsai = {
+      url = "github:PrismML-Eng/llama.cpp";
+      flake = false;
+    };
 
     # Upstream dsh (deepseek-harness) source. Not a flake (no flake.nix
     # upstream), so this is a flakeless input: inputs.dsh is the source tree
@@ -154,13 +233,15 @@
     let
       system = "x86_64-linux";
 
-      # headroom-ai: context compression layer for the jailed LLM agents.
-      # Defined once in home/llm/tools/overlay.nix; applied both to the base
-      # `pkgs` below (so pkgs.headroom exists for every consumer of this
-      # flake's pkgs, including the agents-md build) and to the NixOS
-      # system's nixpkgs.overlays. The overlay takes the flakeless `headroom`
-      # input as its source, so `nix flake update headroom` re-pins it.
-      headroomOverlay = (import ./home/llm/tools/overlay.nix) inputs.headroom;
+      # Local agent tooling (headroom-ai context compression + knife RE
+      # Swiss-army knife + graphify knowledge graph + graphlore MCP). Defined
+      # once in home/llm/tools/overlay.nix; applied both to the base `pkgs`
+      # below (so pkgs.headroom / pkgs.knife / pkgs.graphify / pkgs.graphlore
+      # exist for every consumer of this flake's pkgs, including the agents-md
+      # build) and to the NixOS system's nixpkgs.overlays. The overlay takes the
+      # flakeless `headroom`, `knife`, `graphify` and `graphlore` inputs as its
+      # sources, so `nix flake update <name>` re-pins each.
+      headroomOverlay = (import ./home/llm/tools/overlay.nix) inputs.headroom inputs.knife inputs.graphify inputs.graphlore inputs.echarts inputs.bend inputs.difftastic;
 
       # Base package set for the NixOS configuration.
       pkgs = import nixpkgs {
@@ -234,36 +315,64 @@
           cudaToolkit = cudaToolkitPkgs.cudaPackages_13.cudatoolkit;
         };
 
+      # llama.cpp router server (pinned flakeless source + CUDA + sleep-exit
+      # patch). Built against the unfree-enabled pkgs (the CUDA toolchain is
+      # unfree, exactly as the vLLM DFlash2 runtime), exposed both as a flake
+      # package (testable in isolation) and via a nixpkgs overlay so the NixOS
+      # module can consume pkgs.llama-cpp. `nix flake update llama-cpp`
+      # re-pins the source to the newest master commit.
+      llama-cppPkg = cudaToolkitPkgs.callPackage ./hosts/desktop/llm/llamacpp/package.nix {
+        src = inputs.llama-cpp;
+      };
+
+      # Bonsai fork build: the same recipe (CUDA + sleep-exit patch) pointed at
+      # the PrismML-Eng fork source, with the fork's npmDepsHash and the
+      # fork-specific sleep-exit patch (the fork's server-context.cpp shifted
+      # the patch context, so the stock patch no longer applies). Re-pinning
+      # the fork may require updating npmDepsHash here — see the "got:
+      # sha256-..." note in package.nix.
+      llama-cpp-bonsaiPkg = cudaToolkitPkgs.callPackage ./hosts/desktop/llm/llamacpp/package.nix {
+        src = inputs.llama-cpp-bonsai;
+        npmDepsHash = "sha256-2Q7XhaLAArmviOLdQsNbYTfdyDE5pW9lR26cRHEVl9k=";
+        sleepExitPatch = ./hosts/desktop/llm/llamacpp/llama-cpp-bonsai-sleep-exit.patch;
+      };
+
 
     in
     {
       formatter.${system} =
-        nixpkgs.legacyPackages.${system}.nixfmt-rfc-style;
+        nixpkgs.legacyPackages.${system}.nixfmt;
 
       apps.${system} = {
         nixpkgs-fmt = {
           type = "app";
           program = "${pkgs.nixpkgs-fmt}/bin/nixpkgs-fmt";
+          meta.description = "Format Nix code (nixpkgs-fmt)";
         };
         black = {
           type = "app";
           program = "${pkgs.black}/bin/black";
+          meta.description = "Python code formatter (black)";
         };
         prettier = {
           type = "app";
           program = "${pkgs.prettier}/bin/prettier";
+          meta.description = "Opinionated code formatter (prettier)";
         };
         shfmt = {
           type = "app";
           program = "${pkgs.shfmt}/bin/shfmt";
+          meta.description = "Shell script formatter (shfmt)";
         };
         yamllint = {
           type = "app";
           program = "${pkgs.yamllint}/bin/yamllint";
+          meta.description = "YAML linter (yamllint)";
         };
         markdownlint-cli2 = {
           type = "app";
           program = "${pkgs.markdownlint-cli2}/bin/markdownlint-cli2";
+          meta.description = "Markdown linter (markdownlint-cli2)";
         };
       };
 
@@ -316,12 +425,70 @@
           # nix build .#packages.x86_64-linux.vllm-dflash2
           vllm-dflash2 = vllmDflash2Pkg;
 
+          # llama.cpp router server (pinned flakeless source + CUDA +
+          # sleep-exit patch). Testable in isolation:
+          # nix build .#packages.x86_64-linux.llama-cpp
+          llama-cpp = llama-cppPkg;
+
+          # llama.cpp Bonsai fork (PrismML-Eng) for the Ternary-Bonsai-2-27B
+          # ternary models. Testable in isolation:
+          # nix build .#packages.x86_64-linux.llama-cpp-bonsai
+          llama-cpp-bonsai = llama-cpp-bonsaiPkg;
+
           # Archipelago Multi-Game Randomizer and Server (see let-block).
           # Testable in isolation: nix build --no-link --print-out-paths
           # .#packages.x86_64-linux.archipelago (--no-link is required: on
           # nix 2.34 --print-out-paths does NOT imply it, and without it the
           # build drops a result symlink in the repo root).
           archipelago = archipelagoPkg;
+
+          # knife: reverse engineer's binary Swiss-army knife (see
+          # home/llm/tools/knife.nix). Testable in isolation:
+          # nix build --no-link --print-out-paths .#packages.x86_64-linux.knife
+          knife = pkgs.knife;
+
+          # graphify: codebase -> knowledge graph + `graphify-mcp` stdio MCP
+          # server (see home/llm/tools/graphify.nix). Testable in isolation:
+          # nix build --no-link --print-out-paths .#packages.x86_64-linux.graphify
+          graphify = pkgs.graphify;
+
+          # graphlore: richer third-party MCP server that wraps graphify's graph
+          # (see home/llm/tools/graphlore.nix). Testable in isolation:
+          # nix build --no-link --print-out-paths .#packages.x86_64-linux.graphlore
+          graphlore = pkgs.graphlore;
+
+          # echarts: interactive chart library; renders an option (JSON) to a
+          # self-contained HTML file (see home/llm/tools/echarts.nix). Built from
+          # the flakeless `echarts` input; `nix flake update echarts` re-pins it.
+          # Testable in isolation:
+          # nix build --no-link --print-out-paths .#packages.x86_64-linux.echarts
+          echarts = pkgs.echarts;
+
+          # bend: dependently typed affine language that blocks AI mistakes via
+          # proof (see home/llm/tools/bend.nix). Testable in isolation:
+          # nix build --no-link --print-out-paths .#packages.x86_64-linux.bend
+          bend = pkgs.bend;
+
+          # difftastic: structural diff that understands syntax (see
+          # home/llm/tools/difftastic.nix). Testable in isolation:
+          # nix build --no-link --print-out-paths
+          # .#packages.x86_64-linux.difftastic
+          difftastic = pkgs.difftastic;
+
+          # TEMPORARY (minuspod 2.97.4 re-pin verification): removed once the
+          # isolated build passes. Uses allowUnfree pkgs because the CUDA
+          # ctranslate2 core is unfree (the system pkgs sets allowUnfree).
+          minuspod = let
+            pkgsU = import inputs.nixpkgs {
+              inherit system;
+              config.allowUnfree = true;
+            };
+            m = import ./home/minuspod.nix {
+              pkgs = pkgsU;
+              lib = nixpkgs.lib;
+              inherit inputs;
+            };
+          in builtins.elemAt m.home.packages 0;
 
           # Tether — Linux + iPhone Continuity bridge (upstream package).
           tether = inputs.tether.packages.${system}.default;
@@ -409,6 +576,20 @@
                 vllmDflash2 = vllmDflash2Pkg;
               })
 
+              # Provide the locally built llama.cpp router under the attribute
+              # name consumed by hosts/desktop/llm/llamacpp/default.nix
+              # (pkgs.llama-cpp).
+              (final: prev: {
+                llama-cpp = llama-cppPkg;
+              })
+
+              # Provide the locally built llama.cpp Bonsai fork under the
+              # attribute name consumed by the Bonsai router in
+              # hosts/desktop/llm/llamacpp/default.nix (pkgs.llama-cpp-bonsai).
+              (final: prev: {
+                llama-cpp-bonsai = llama-cpp-bonsaiPkg;
+              })
+
               # Tether — Linux + iPhone Continuity bridge (upstream overlay).
               tether.overlays.default
 
@@ -452,6 +633,11 @@
               };
 
               deepseekSecret = config.age.secrets.deepseek-api-key.path;
+
+              # NVIDIA driver package (libcuda.so.1). Passed to home/minuspod.nix
+              # so the minuspod user service can dlopen the driver stub for CUDA
+              # whisper (not in the ldconfig cache — see whisper-service).
+              nvidiaDriver = config.boot.kernelPackages.nvidiaPackages.latest;
             };
 
             home-manager.users.b = import ./home;

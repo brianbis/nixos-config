@@ -11,7 +11,9 @@ let
   childPort = 8081;
   childPortA3B = 8083;
   childPortGzenz = 8085;
+  childPortSwift = 8089;
   requestLogGzenz = "${logDir}/requests-gzenz.jsonl";
+  requestLogSwift = "${logDir}/requests-swift.jsonl";
 
   # Shared build for the NInfer engine. Two engines are built from two
   # different sources: the pinned upstream rev (with the local
@@ -185,6 +187,13 @@ let
   ninferModelRepoA3B = "neroued/Qwen3.6-35B-A3B-NInfer";
   ninferModelFileA3B = "qwen3_6_35b_a3b.ninfer";
 
+  # Swift (abliterated) Qwen3.8-27B NVFP4 — a community "abliterated" (safety
+  # training removed) NVFP4 checkpoint in the same NInfer layout as the stock
+  # qwen38-nvfp4 model. Public HF repo (no token required), downloaded
+  # declaratively like the others.
+  ninferModelRepoSwift = "Dragoy/Swift-Qwen3.8-27B-abliterated-NVFP4-NInfer";
+  ninferModelFileSwift = "qwen3_8_27b_swift_abliterated_nvfp4.ninfer";
+
   # Second serving child: Qwen3.6-35B-A3B on its own loopback port.
   # No --reasoning-effort: the A3B chat template does not support a
   # reasoning-effort control. The flag stays off for this child so the server
@@ -317,6 +326,62 @@ let
     requestLogGzenz
   ];
 
+  # Fourth serving child: the Swift (abliterated) Qwen3.8-27B NVFP4 checkpoint
+  # on its own loopback port, served by the stock engine. Same Qwen3.8-27B NVFP4
+  # layout as the stock qwen38-nvfp4 model, so it reuses that child's launch
+  # options (nvfp4 KV, 240k context, low reasoning effort), with speculative
+  # decoding switched to DFlash2: the artifact (2026-09-18 re-conversion) bakes
+  # in a 5-layer DFlash2 drafter and the README calls --spec dflash2 the fastest
+  # path (1-15 token draft window). The pinned ninfer rev (f76e19c0) is >= the
+  # DFlash2 minimum (98dada0e), so the engine supports it. No --weights-profile
+  # override: like the stock model it relies on the engine's auto-detection
+  # (the abliterated checkpoint keeps the official Qwen3.8 NVFP4 tensor layout).
+  # If a load test shows a tensor-format mismatch, add --weights-profile
+  # qwen38-nvfp4 here.
+  childCommandSwift = [
+    "${ninfer}/bin/ninfer-serve"
+    "${modelsDir}/${ninferModelFileSwift}"
+    "--host"
+    "127.0.0.1"
+    "--port"
+    (toString childPortSwift)
+    "--kv-dtype"
+    "nvfp4"
+    "--max-context"
+    "240000"
+    "--kv-capacity"
+    "250000"
+    "--default-max-tokens"
+    "200000"
+    "--pending-timeout-ms"
+    "900000"
+    "--prefill-chunk"
+    "1024"
+    "--max-concurrency"
+    "2"
+    "--max-pending-requests"
+    "128"
+    "--device-state-slots"
+    "2"
+    "--host-state-slots"
+    "8"
+    "--host-kv-mib"
+    "8192"
+    "--temperature"
+    "0.7"
+    "--presence-penalty"
+    "0.0"
+    "--spec"
+    "dflash2"
+    "--draft-tokens"
+    "7"
+    "--lm-head-draft"
+    "--reasoning-effort"
+    "low"
+    "--request-log-jsonl"
+    requestLogSwift
+  ];
+
   downloadNinferModel = name: repo: dir: file: ''
     mkdir -p ${dir}
     if [ ! -f "${dir}/${file}" ]; then
@@ -348,6 +413,8 @@ in
   system.activationScripts.ninferModel.text = downloadNinferModel "ninfer-qwen38-nvfp4" ninferModelRepo modelsDir ninferModelFile;
 
   system.activationScripts.ninferModelA3B.text = downloadNinferModel "ninfer-qwen36-a3b" ninferModelRepoA3B modelsDir ninferModelFileA3B;
+
+  system.activationScripts.ninferModelSwift.text = downloadNinferModel "ninfer-qwen38-swift-abliterated" ninferModelRepoSwift modelsDir ninferModelFileSwift;
 
   # No After=network.target: sockets.target orders before basic.target, but
   # network.target on this host does not (via wpa_supplicant); ordering the
@@ -436,6 +503,38 @@ in
       Type = "simple";
 
       ExecStart = serveExecStart childPortGzenz requestLogGzenz childCommandGzenz;
+
+      Restart = "on-abnormal";
+      RestartSec = "3";
+
+      Environment = [
+        "CUDA_VISIBLE_DEVICES=0"
+        "LD_LIBRARY_PATH=/run/opengl-driver/lib"
+      ];
+    };
+  };
+
+  # Fourth socket-activated service: the Swift (abliterated) Qwen3.8-27B NVFP4
+  # checkpoint on port 8088 (front) / 8089 (child), served by the stock engine.
+  # Same idle-unload pattern as the other three; mutually exclusive in practice
+  # (one 32 GB card, all socket-activated on demand).
+  systemd.sockets.ninfer-serve-swift = {
+    description = "NInfer (Swift abliterated) engine socket (socket activation, on-demand model residency)";
+    wantedBy = [ "sockets.target" ];
+
+    socketConfig = {
+      ListenStream = "127.0.0.1:8088";
+    };
+  };
+
+  systemd.services.ninfer-serve-swift = {
+    description = "NInfer (Swift abliterated) engine for Qwen3.8-27B NVFP4 (socket-activated, unloads after ${toString idleSeconds}s idle)";
+    after = [ "ninfer-serve-swift.socket" ];
+
+    serviceConfig = {
+      Type = "simple";
+
+      ExecStart = serveExecStart childPortSwift requestLogSwift childCommandSwift;
 
       Restart = "on-abnormal";
       RestartSec = "3";

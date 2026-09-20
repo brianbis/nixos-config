@@ -24,6 +24,24 @@ let
   # The shell fragment ${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}, built by
   # concatenation so Nix' ${ interpolation never sees the literal.
   ldAppend = "$" + "{LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}";
+
+  # tinyfiledialogs spawns `kdialog` as a child (via popen), so it inherits
+  # the LD_LIBRARY_PATH exported above. That path contains poptracker's own
+  # openssl (3.0.x); kdialog's libcurl (built against openssl 3.4+) picks it
+  # up and dies on a missing symbol version (OPENSSL_3.2.0 / OPENSSL_3.5.0)
+  # at load. On KDE the window manager then closes the transient-for main
+  # window and the app quits. kdialog is a store binary that resolves its own
+  # libraries via RPATH, so unsetting LD_LIBRARY_PATH before exec is safe.
+  #
+  # kdialog's .desktop file lives in the store, outside the XDG data dirs, so
+  # the desktop portal can't resolve its app id (org.kde.kdialog) and logs a
+  # "Failed to register with host portal" warning. Pointing DESKTOP_FILE at
+  # the store copy lets the portal find the app info.
+  kdialogClean = pkgs.writeShellScriptBin "kdialog" ''
+    unset LD_LIBRARY_PATH
+    export DESKTOP_FILE="${pkgs.kdePackages.kdialog}/share/applications/org.kde.kdialog.desktop"
+    exec ${pkgs.kdePackages.kdialog}/bin/kdialog "$@"
+  '';
 in
 {
   home.packages = [
@@ -34,10 +52,12 @@ in
       # binary's NEEDED entries from LD_LIBRARY_PATH).
       # The app loads assets/ and packs/ relative to CWD.
       cd "$HOME/.local/share/poptracker"
-      # tinyfiledialogs (the AP seed-file dialog) probes PATH for a GUI
+      # tinyfiledialogs (the AP settings dialog) probes PATH for a GUI
       # dialog backend and falls back to console input without one;
-      # kdialog is the KDE-native choice.
-      export PATH="${pkgs.kdePackages.kdialog}/bin:$PATH"
+      # kdialog is the KDE-native choice. The wrapper unsets the
+      # LD_LIBRARY_PATH exported above before exec'ing the real kdialog,
+      # so the dialog doesn't load poptracker's openssl and crash.
+      export PATH="${kdialogClean}/bin:$PATH"
       exec ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 --library-path "$LD_LIBRARY_PATH" ./poptracker "$@"
     '')
   ];
@@ -63,5 +83,17 @@ in
       rm -rf "$dest"
       ${pkgs.xz}/bin/unxz -q -c "${poptrackerRelease}" | ${pkgs.gnutar}/bin/tar -x -C "$tmp"
       mv "$tmp/poptracker" "$dest"
+    '';
+
+  # The desktop portal builds its app registry from .desktop files in the XDG
+  # data dirs, which the store is not part of. kdialog registers as
+  # org.kde.kdialog, so without a discoverable .desktop file the portal logs
+  # "Failed to register with host portal ... App info not found". Symlink the
+  # store copy into the user's applications dir so the portal can resolve it.
+  home.activation.linkKdialogDesktop =
+    lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      mkdir -p "$HOME/.local/share/applications"
+      ln -sf "${pkgs.kdePackages.kdialog}/share/applications/org.kde.kdialog.desktop" \
+        "$HOME/.local/share/applications/org.kde.kdialog.desktop"
     '';
 }

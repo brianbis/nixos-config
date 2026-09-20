@@ -6,7 +6,7 @@ in
 {
   networking.hostName = "nixos";
   time.timeZone = "America/Phoenix";
-  system.stateVersion = "26.05";
+  system.stateVersion = "26.11";
 
   nix.settings.experimental-features = [
     "nix-command"
@@ -153,6 +153,9 @@ in
       "wheel"
       "dialout"
       "llm"
+      # Owns /dev/nvidia*; needed so minuspod's CUDA whisper (WHISPER_DEVICE=cuda)
+      # can open the GPU device nodes (cf. whisper-service's gpuGroups).
+      "video"
     ];
     # Headless user session: keeps b's user manager (hushmic user service +
     # PipeWire) running without a graphical login; without it pw-dump cannot
@@ -194,11 +197,4 @@ in
     chmod -R g+rwX /etc/nixos
   '';
 
-  # Home-directory modes are owned by the users module's `homeMode`, which
-  # update-users-groups.pl re-asserts on every activation (every switch AND at
-  # boot, after systemd-tmpfiles-setup) — so a tmpfiles `z` rule here would be
-  # redundant (and the old 0750 one was actively clobbered on each switch).
-  # b's home keeps the homeMode default 0700 so the llm agent cannot read b's
-  # unencrypted session state; the agent home is 0770
-  # (users.users.llm.homeMode) so b (in the llm group) can read and write it.
 }

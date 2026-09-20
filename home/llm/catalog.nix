@@ -25,6 +25,14 @@ let
   headroomClaudePort = 8789;
   headroomClaudeProxyUrl = "http://127.0.0.1:${toString headroomClaudePort}";
 
+  # DSH-default-model-facing headroom proxy (port 8791): the default agent model
+  # (ninfer qwen3.8-27b, upstream :8080) routes through the compression layer.
+  # --lossless (marker-free): DSH has no headroom_retrieve MCP tool, so default
+  # CCR mode would inject markers it cannot redeem and corrupt its context.
+  headroomNinferPort = 8791;
+  headroomNinferProxyUrl = "http://127.0.0.1:${toString headroomNinferPort}";
+  headroomNinferUpstreamUrl = "http://127.0.0.1:8080";
+
   # Single source of truth for every LLM exposed to the jailed agents. Each
   # tool (crush / opencode / aider) derives its provider + model lists from
   # here, so a model edit hits all tools at once and every tool sees the same set.
@@ -123,10 +131,16 @@ let
       reason = true;
       attachments = true;
     };
-    qwen38_thinking_xhigh = {
+    # Qwen3.8-27B Q8_0 (llama.cpp, :8000 via headroom). Two modes — thinking
+    # (temp 1.0 / top-p 0.95 / presence 0.0) and instruct (temp 0.7 / top-p 0.8 /
+    # presence 1.5) — each a single catalog entry whose effort is a per-request
+    # parameter (reasoning_effort), exposed in the web UI as a dropdown like the
+    # ninfer models. The router preset's chat-template-kwargs sets the default
+    # effort for requests that omit one; a selected level always wins.
+    qwen38_thinking = {
       providerName = "llamacpp";
-      id = "qwen3-8-27b-q8_0-thinking-xhigh";
-      name = "Qwen3.8-27B Q8_0 Thinking Xhigh";
+      id = "qwen3-8-27b-q8_0-thinking";
+      name = "Qwen3.8-27B Q8_0 Thinking";
       url = headroomProxyUrl;
       # Repo advertises 262144-token context; matches the llama.cpp router's
       # --ctx-size. The KV cache lives in system RAM (--no-kv-offload), so the
@@ -136,90 +150,31 @@ let
       reason = true;
       attachments = true;
       thinkingBudget = -1;
+      # Thinking levels the Qwen3.8-27B chat template supports (low/medium/xhigh;
+      # "none" maps to the template's off state). Declaring them makes dsh
+      # materialize the model as a reasoning model (web UI effort selector).
+      reasoningEfforts = {
+        low = "low";
+        medium = "medium";
+        xhigh = "xhigh";
+      };
     };
 
-    qwen38_thinking_medium = {
+    qwen38_instruct = {
       providerName = "llamacpp";
-      id = "qwen3-8-27b-q8_0-thinking-medium";
-      name = "Qwen3.8-27B Q8_0 Thinking Medium";
+      id = "qwen3-8-27b-q8_0-instruct";
+      name = "Qwen3.8-27B Q8_0 Instruct";
       url = headroomProxyUrl;
       context = 262144;
       maxTok = 8192;
       reason = true;
       attachments = true;
       thinkingBudget = -1;
-    };
-
-    qwen38_thinking_low = {
-      providerName = "llamacpp";
-      id = "qwen3-8-27b-q8_0-thinking-low";
-      name = "Qwen3.8-27B Q8_0 Thinking Low";
-      url = headroomProxyUrl;
-      context = 262144;
-      maxTok = 8192;
-      reason = true;
-      attachments = true;
-      thinkingBudget = -1;
-    };
-
-    qwen38_thinking_none = {
-      providerName = "llamacpp";
-      id = "qwen3-8-27b-q8_0-thinking-none";
-      name = "Qwen3.8-27B Q8_0 Thinking None";
-      url = headroomProxyUrl;
-      context = 262144;
-      maxTok = 8192;
-      reason = true;
-      attachments = true;
-      thinkingBudget = -1;
-    };
-
-    qwen38_instruct_xhigh = {
-      providerName = "llamacpp";
-      id = "qwen3-8-27b-q8_0-instruct-xhigh";
-      name = "Qwen3.8-27B Q8_0 Instruct Xhigh";
-      url = headroomProxyUrl;
-      context = 262144;
-      maxTok = 8192;
-      reason = true;
-      attachments = true;
-      thinkingBudget = -1;
-    };
-
-    qwen38_instruct_medium = {
-      providerName = "llamacpp";
-      id = "qwen3-8-27b-q8_0-instruct-medium";
-      name = "Qwen3.8-27B Q8_0 Instruct Medium";
-      url = headroomProxyUrl;
-      context = 262144;
-      maxTok = 8192;
-      reason = true;
-      attachments = true;
-      thinkingBudget = -1;
-    };
-
-    qwen38_instruct_low = {
-      providerName = "llamacpp";
-      id = "qwen3-8-27b-q8_0-instruct-low";
-      name = "Qwen3.8-27B Q8_0 Instruct Low";
-      url = headroomProxyUrl;
-      context = 262144;
-      maxTok = 8192;
-      reason = true;
-      attachments = true;
-      thinkingBudget = -1;
-    };
-
-    qwen38_instruct_none = {
-      providerName = "llamacpp";
-      id = "qwen3-8-27b-q8_0-instruct-none";
-      name = "Qwen3.8-27B Q8_0 Instruct None";
-      url = headroomProxyUrl;
-      context = 262144;
-      maxTok = 8192;
-      reason = true;
-      attachments = true;
-      thinkingBudget = -1;
+      reasoningEfforts = {
+        low = "low";
+        medium = "medium";
+        xhigh = "xhigh";
+      };
     };
 
     qwen38heretic_q6k = {
@@ -234,11 +189,49 @@ let
       reason = true;
       attachments = true;
     };
+    # Ternary-Bonsai-2-27B (PQ2_0): the PrismML-Eng ternary 27B, served by the
+    # Bonsai fork router on :8010 (NOT via headroom, which upstreams the stock
+    # :8000 router). Direct URL, like the ninfer/vllm engines. Two modes —
+    # thinking and instruct — each a single catalog entry whose effort is a
+    # per-request parameter (reasoning_effort), exposed in the web UI as a
+    # dropdown like the ninfer models. The template supports xhigh/medium (low
+    # behaves like xhigh, so no low entry). The 7.2 GB weights leave ample VRAM
+    # headroom, so the 262K context fits on the 32 GB card.
+    bonsai2_27b_pq2_thinking = {
+      providerName = "llamacpp_bonsai";
+      id = "bonsai2-27b-pq2_0-thinking";
+      name = "Ternary-Bonsai-2-27B PQ2_0 Thinking";
+      url = "http://127.0.0.1:8010";
+      context = 262144;
+      maxTok = 8192;
+      reason = true;
+      attachments = true;
+      thinkingBudget = -1;
+      reasoningEfforts = {
+        medium = "medium";
+        xhigh = "xhigh";
+      };
+    };
+    bonsai2_27b_pq2_instruct = {
+      providerName = "llamacpp_bonsai";
+      id = "bonsai2-27b-pq2_0-instruct";
+      name = "Ternary-Bonsai-2-27B PQ2_0 Instruct";
+      url = "http://127.0.0.1:8010";
+      context = 262144;
+      maxTok = 8192;
+      reason = true;
+      attachments = true;
+      thinkingBudget = -1;
+      reasoningEfforts = {
+        medium = "medium";
+        xhigh = "xhigh";
+      };
+    };
     qwen38_nvfp4_ninfer = {
       providerName = "ninfer";
       id = "qwen3.8-27b";
       name = "Qwen3.8-27B NVFP4 NInfer";
-      url = "http://127.0.0.1:8080";
+      url = headroomNinferProxyUrl;
       context = 240000;
       maxTok = 200000;
       reason = false;
@@ -276,6 +269,26 @@ let
       reason = false;
       attachments = false;
       # Thinking levels the Qwen3.8-27B chat template supports (low/medium/xhigh).
+      reasoningEfforts = {
+        low = "low";
+        medium = "medium";
+        xhigh = "xhigh";
+      };
+    };
+    # Swift (abliterated) Qwen3.8-27B NVFP4 — community "abliterated" (safety
+    # training removed) NVFP4 checkpoint, served by the stock engine
+    # (ninfer-serve-swift, socket-activated front :8088). Same Qwen3.8-27B
+    # template as qwen38_nvfp4_ninfer, so the same 240k context / reasoning
+    # levels apply.
+    qwen38_swift_abliterated_nvfp4_ninfer = {
+      providerName = "ninfer_swift";
+      id = "qwen3.8-27b";
+      name = "Qwen3.8-27B NVFP4 NInfer (Swift abliterated)";
+      url = "http://127.0.0.1:8088";
+      context = 240000;
+      maxTok = 200000;
+      reason = false;
+      attachments = false;
       reasoningEfforts = {
         low = "low";
         medium = "medium";
@@ -337,6 +350,9 @@ let
     llamacpp.name = "llama.cpp (local)";
     llamacpp.type = "openai-compat";
     llamacpp.api_key = "sk-local";
+    llamacpp_bonsai.name = "llama.cpp Bonsai fork (local)";
+    llamacpp_bonsai.type = "openai-compat";
+    llamacpp_bonsai.api_key = "sk-local";
     vllm_awq.name = "vLLM AWQ (local)";
     vllm_awq.type = "openai-compat";
     vllm_awq.api_key = "sk-local";
@@ -358,6 +374,9 @@ let
     ninfer_gzenz.name = "NInfer gzenz fork (local)";
     ninfer_gzenz.type = "openai-compat";
     ninfer_gzenz.api_key = "sk-local";
+    ninfer_swift.name = "NInfer Swift abliterated (local)";
+    ninfer_swift.type = "openai-compat";
+    ninfer_swift.api_key = "sk-local";
     sglang.name = "SGLang (local)";
     sglang.type = "openai-compat";
     sglang.api_key = "sk-local";
@@ -543,6 +562,7 @@ let
   opencodeProviders = {
     provider = {
       llamacpp = opencodeProvider "llamacpp";
+      llamacpp_bonsai = opencodeProvider "llamacpp_bonsai";
       vllm_awq = opencodeProvider "vllm_awq";
       vllm_nvfp4 = opencodeProvider "vllm_nvfp4";
       vllm_dflash2 = opencodeProvider "vllm_dflash2";
@@ -550,6 +570,7 @@ let
       ninfer = opencodeProvider "ninfer";
       ninfer_a3b = opencodeProvider "ninfer_a3b";
       ninfer_gzenz = opencodeProvider "ninfer_gzenz";
+      ninfer_swift = opencodeProvider "ninfer_swift";
       sglang = opencodeProvider "sglang";
       deepseek = opencodeProvider "deepseek";
     };
@@ -726,6 +747,9 @@ in
     headroomCloudUpstreamUrl
     headroomClaudePort
     headroomClaudeProxyUrl
+    headroomNinferPort
+    headroomNinferProxyUrl
+    headroomNinferUpstreamUrl
     models
     providerLabel
     lsps

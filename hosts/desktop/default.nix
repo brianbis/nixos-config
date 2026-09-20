@@ -35,7 +35,7 @@
 
   programs.tether = {
     enable = true;
-    package = inputs.tether.packages.${pkgs.system}.default;
+    package = inputs.tether.packages.${pkgs.stdenv.hostPlatform.system}.default;
     wifi.enable = true;
     wifi.openFirewall = true;
     bluetooth.enable = true;

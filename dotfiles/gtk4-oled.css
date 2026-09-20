@@ -1,0 +1,128 @@
+/* ---------------------------------------------------------------------------
+ * GTK4 OLED dark theme — pure black backgrounds, high-contrast foreground.
+ *
+ * Managed by home-manager at ~/.config/gtk-4.0/gtk.css. GTK4 loads this file
+ * AFTER the active theme (Adwaita), so these overrides replace the palette.
+ * Tether and other GTK4 apps read THIS file — NOT gtk-3.0/gtk.css — which is
+ * why Tether went white when only the GTK3 palette was themed.
+ *
+ * Mirrors the GTK3 OLED palette (dotfiles/gtk-oled.css): pure black #000000,
+ * #e6e6e6 foreground, #0a84ff accent, #2e2e2e borders, #1a1a1a raised
+ * surfaces.
+ *
+ * Two layers: (1) @define-color overrides of the Adwaita palette tokens, and
+ * (2) explicit widget rules as fallbacks for widgets that hard-code light
+ * colors instead of resolving through the tokens.
+ * ------------------------------------------------------------------------- */
+
+/* 1. Adwaita palette tokens */
+@define-color window_bg_color #000000;
+@define-color window_fg_color #e6e6e6;
+@define-color view_bg_color #000000;
+@define-color view_fg_color #e6e6e6;
+@define-color headerbar_bg_color #000000;
+@define-color headerbar_fg_color #e6e6e6;
+@define-color headerbar_backdrop_bg_color #000000;
+@define-color headerbar_backdrop_fg_color #b3b3b3;
+@define-color card_bg_color #0a0a0a;
+@define-color card_fg_color #e6e6e6;
+@define-color osd_bg_color #1a1a1a;
+@define-color osd_fg_color #e6e6e6;
+@define-color accent_bg_color #0a84ff;
+@define-color accent_fg_color #ffffff;
+@define-color success_color #30d158;
+@define-color warning_color #ffd60a;
+@define-color error_color #ff453a;
+@define-color window_outline_color #2e2e2e;
+@define-color borders #2e2e2e;
+@define-color dark_borders #2e2e2e;
+
+/* Tether's inline CSS (src/gtk/ui_util.cpp) references these GTK3-era tokens
+ * for bubbles, badges, and the dropzone. Define them so those resolve dark. */
+@define-color theme_fg_color #e6e6e6;
+@define-color theme_bg_color #000000;
+@define-color theme_selected_bg_color #0a84ff;
+@define-color theme_selected_fg_color #ffffff;
+
+/* 2. Explicit widget rules (robust across theme versions) */
+window,
+window.background,
+window.csd {
+    background-color: #000000;
+    color: #e6e6e6;
+}
+
+headerbar,
+titlebar,
+windowhandle {
+    background-color: #000000;
+    color: #e6e6e6;
+    border-bottom: 1px solid #2e2e2e;
+}
+
+box,
+grid,
+frame,
+label {
+    color: #e6e6e6;
+}
+
+button {
+    background-color: #1a1a1a;
+    color: #e6e6e6;
+    border: 1px solid #2e2e2e;
+}
+button:hover {
+    background-color: #2a2a2a;
+}
+button:active,
+button:checked {
+    background-color: #0a84ff;
+    color: #ffffff;
+}
+
+entry,
+text,
+textview {
+    background-color: #0a0a0a;
+    color: #e6e6e6;
+    border: 1px solid #2e2e2e;
+}
+
+popover,
+menu,
+menubar,
+menus {
+    background-color: #0a0a0a;
+    color: #e6e6e6;
+    border: 1px solid #2e2e2e;
+}
+
+list,
+row {
+    background-color: #000000;
+    color: #e6e6e6;
+}
+row:selected {
+    background-color: #0a84ff;
+    color: #ffffff;
+}
+
+card {
+    background-color: #0a0a0a;
+    color: #e6e6e6;
+}
+
+scrollbar {
+    background-color: #000000;
+}
+scrollbar slider {
+    background-color: #2e2e2e;
+}
+
+tooltip,
+tooltip window {
+    background-color: #1a1a1a;
+    color: #e6e6e6;
+    border: 1px solid #2e2e2e;
+}

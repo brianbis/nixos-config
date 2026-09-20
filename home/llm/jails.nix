@@ -7,6 +7,8 @@ let
   inherit (shared)
     headroomCloudUpstreamUrl
     headroomCloudPort
+    headroomNinferUpstreamUrl
+    models
     lspAdds
     agentHome
     agentUsername
@@ -78,6 +80,59 @@ let
       forbiddenNixCmds;
   };
 
+  # Blender with a headless software-GL environment. EEVEE rendering needs a
+  # GL context; in the headless jail that comes from EGL + the mesa llvmpipe
+  # software renderer. The wrapper points libglvnd at mesa's EGL ICD (vendor
+  # json) and forces the swrast (llvmpipe) DRI driver, so `blender -b` renders
+  # without a display or GPU.
+  blenderHeadless = pkgs.writeShellApplication {
+    name = "blender";
+    runtimeInputs = [ pkgs.mesa pkgs.blender ];
+    # The ${"$"} in the LD_LIBRARY_PATH line below emits a literal `$` (Nix has
+    # no dollar-doubled escape in indented strings), yielding the shell
+    # ${LD_LIBRARY_PATH-} default so `set -u` is safe.
+    text = ''
+      export LD_LIBRARY_PATH="${pkgs.mesa}/lib:${pkgs.mesa}/lib/dri:${"$"}{LD_LIBRARY_PATH-}"
+      export __EGL_VENDOR_LIBRARY_FILENAMES="${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json"
+      export MESA_LOADER_DRIVER_OVERRIDE=swrast
+      export EGL_PLATFORM=surfaceless
+      export BLENDER_GL_BACKEND=egl
+      exec ${pkgs.blender}/bin/blender "$@"
+    '';
+  };
+
+  # graphify: point its default LLM backend at the local NInfer endpoint.
+  # graphify auto-detects the backend from API keys (precedence: gemini -> kimi
+  # -> claude -> openai -> deepseek -> ...). The dsh jail already exports a dummy
+  # OPENAI_API_KEY (withDummyKey) and no gemini/kimi/claude key, so the openai
+  # backend wins; setting OPENAI_BASE_URL + OPENAI_MODEL routes it to the
+  # socket-activated NInfer serve (the DSH default model) instead of
+  # api.openai.com. Wrapped (not a global jail env var) so the OPENAI_* vars do
+  # not leak into the other jailed tools (aider/crush/opencode/dsh) that read
+  # them. `graphify-mcp` is a passthrough: it only serves a built graph and
+  # never calls the LLM, so it needs no env.
+  #
+  # OPENAI_BASE_URL carries the /v1 suffix: the openai Python client (which
+  # graphify's openai backend uses) appends /chat/completions to the base URL,
+  # and NInfer serves its OpenAI-compatible API under /v1/ (the catalog's
+  # headroomNinferUpstreamUrl is the bare server root the DSH tools handle
+  # themselves).
+  graphifyNinfer = pkgs.symlinkJoin {
+    name = "graphify";
+    paths = [
+      (pkgs.writeShellScriptBin "graphify" ''
+        export OPENAI_BASE_URL="${headroomNinferUpstreamUrl}/v1"
+        export OPENAI_MODEL="${models.qwen38_nvfp4_ninfer.id}"
+        export OPENAI_API_KEY="sk-local"
+        exec ${pkgs.graphify}/bin/graphify "$@"
+      '')
+      (pkgs.runCommand "graphify-mcp" { } ''
+        mkdir -p $out/bin
+        ln -s ${pkgs.graphify}/bin/graphify-mcp $out/bin/graphify-mcp
+      '')
+    ];
+  };
+
   # Single source of truth for packages injected into every jail. Each spec
   # carries a stable doc name and a resolver so the doc generator can list
   # names without evaluating any package (no overlay at doc-build time).
@@ -106,6 +161,10 @@ let
     # the dsh standard-preset delta against a fresh dsh).
     { name = "gnupatch"; pkg = pkgs.gnupatch; }
     { name = "strace"; pkg = pkgs.strace; }
+    # unshare (from util-linux): create isolated namespaces — e.g. `unshare -n`
+    # for a network-less netns — so untrusted binaries can be dynamic-analyzed
+    # in-jail without real network egress.
+    { name = "unshare"; pkg = pkgs.util-linux; }
     { name = "openssl"; pkg = pkgs.openssl; }
     { name = "cfr"; pkg = pkgs.cfr; }
     { name = "tcpdump"; pkg = pkgs.tcpdump; }
@@ -120,6 +179,28 @@ let
     # ./home/llm/tools/headroom.nix.
     { name = "headroom"; pkg = pkgs.headroom; }
 
+    # graphify: codebase -> knowledge graph (Graphify-Labs/graphify). A Claude
+    # Code skill + CLI (pip `graphifyy`) that ships a built-in `graphify-mcp`
+    # stdio MCP server. Not in nixpkgs; built from ./home/llm/tools/graphify.nix.
+    # graphifyNinfer wraps the `graphify` CLI so its default LLM backend is the
+    # local NInfer endpoint (see the wrapper above); `graphify-mcp` passes
+    # through unchanged.
+    { name = "graphify"; pkg = graphifyNinfer; }
+    # graphlore: richer third-party MCP server (28 tools) that wraps graphify's
+    # knowledge graph (span engine, semantic locate, impact/blast-radius). Not on
+    # PyPI; built from ./home/llm/tools/graphlore.nix.
+    { name = "graphlore"; pkg = pkgs.graphlore; }
+    # bend: dependently typed affine language that blocks AI mistakes via proof
+    # (bendlang/bend). The `bend` CLI checks, runs and compiles .bend programs;
+    # `bend <f> -o` emits C (clang) and JS (bun) backends. Built from
+    # ./home/llm/tools/bend.nix (the flakeless `bend` input).
+    { name = "bend"; pkg = pkgs.bend; }
+    # difftastic: structural diff that understands syntax (Wilfred/difftastic).
+    # The `difft` binary (built from ./home/llm/tools/difftastic.nix, the
+    # flakeless `difftastic` input) renders syntax-aware diffs; a drop-in for
+    # `diff`/`git diff` output.
+    { name = "difftastic"; pkg = pkgs.difftastic; }
+
     # Nix CLI so jailed agents can search nixpkgs (`nix search nixpkgs <term>`)
     # and eval packages against the source mounted read-only below.
     { name = "nix"; pkg = pkgs.nix; }
@@ -129,15 +210,228 @@ let
     { name = "sqlite"; pkg = pkgs.sqlite; }
     { name = "postgresql"; pkg = pkgs.postgresql; }
     { name = "mariadb.client"; pkg = pkgs.mariadb.client; }
+    { name = "duckdb"; pkg = pkgs.duckdb; }
 
     {
       name = "python3";
+      # Data-analysis stack on top of the agent essentials: the jupyter
+      # metapackage (lab + classic notebook, kernels, nbconvert), polars
+      # dataframes, seaborn plotting, and the duckdb python bindings (polars
+      # reads/writes duckdb through it). One env so the notebook kernel sees
+      # the same modules as the `python3` on PATH.
       pkg = pkgs.python3.withPackages (ps: [
         ps.cryptography
         ps.dnslib
+        ps.numpy
+        ps.pillow
         ps.requests
+        ps.seaborn
+        ps.polars
+        ps.duckdb
+        ps.jupyter
       ]);
     }
+
+    # Blender: headless 3D rendering for the code-tree generator
+    # (projects/code-tree/). Binary distribution (large download). The
+    # blenderHeadless wrapper supplies the software GL (EGL + mesa llvmpipe)
+    # that EEVEE needs in a headless jail — see its definition above.
+    { name = "blender"; pkg = blenderHeadless; }
+
+    # Security audit tooling: multi-language static analysis for bug bounty
+    # work (Discord audit, etc.). semgrep covers C++/JS/TS/Python with
+    # security-focused rulesets; nodejs runs JS/TS linters; cppcheck is an
+    # additional C++ analyzer alongside clang-tidy; bandit is the Python
+    # security linter.
+    { name = "semgrep"; pkg = pkgs.semgrep; }
+    { name = "nodejs"; pkg = pkgs.nodejs; }
+    { name = "cppcheck"; pkg = pkgs.cppcheck; }
+    { name = "bandit"; pkg = pkgs.bandit; }
+
+    # ---------------------------------------------------------------------------
+    # Red/blue team software-security toolkit (added for the jail red-team
+    # assessment). Every package is a nixpkgs attr verified present at the
+    # pinned nixpkgs rev. Grouped by phase so the doc list stays readable.
+    # The jail's real boundary is bwrap (mount/uid/activation), so these are
+    # convenience coverage: an agent can always `nix run` more, but having the
+    # standard toolkit on PATH makes red/blue work first-class.
+    # ---------------------------------------------------------------------------
+
+    # --- Network / recon (red team): port & service discovery, socket state. ---
+    { name = "nmap"; pkg = pkgs.nmap; }
+    { name = "masscan"; pkg = pkgs.masscan; }
+    { name = "netcat"; pkg = pkgs.netcat; }
+    { name = "socat"; pkg = pkgs.socat; }
+    { name = "iproute2"; pkg = pkgs.iproute2; }
+    { name = "lsof"; pkg = pkgs.lsof; }
+    { name = "psmisc"; pkg = pkgs.psmisc; }
+    { name = "procps"; pkg = pkgs.procps; }
+    { name = "nethogs"; pkg = pkgs.nethogs; }
+    { name = "iftop"; pkg = pkgs.iftop; }
+
+    # --- Web / HTTP (red team): fuzzing, vuln scanning, TLS & fingerprinting. ---
+    { name = "ffuf"; pkg = pkgs.ffuf; }
+    { name = "feroxbuster"; pkg = pkgs.feroxbuster; }
+    { name = "gobuster"; pkg = pkgs.gobuster; }
+    { name = "nikto"; pkg = pkgs.nikto; }
+    { name = "httpx"; pkg = pkgs.httpx; }
+    { name = "nuclei"; pkg = pkgs.nuclei; }
+    { name = "subfinder"; pkg = pkgs.subfinder; }
+    { name = "dnsx"; pkg = pkgs.dnsx; }
+    { name = "naabu"; pkg = pkgs.naabu; }
+    { name = "whatweb"; pkg = pkgs.whatweb; }
+    { name = "wafw00f"; pkg = pkgs.wafw00f; }
+    { name = "sqlmap"; pkg = pkgs.sqlmap; }
+    { name = "testssl"; pkg = pkgs.testssl; }
+    { name = "sslscan"; pkg = pkgs.sslscan; }
+    { name = "tcpkali"; pkg = pkgs.tcpkali; }
+
+    # --- Credentials / AD (red team): spraying, cracking, Windows protocols. ---
+    { name = "hydra"; pkg = pkgs.hydra; }
+    { name = "john"; pkg = pkgs.john; }
+    { name = "hashcat"; pkg = pkgs.hashcat; }
+    { name = "netexec"; pkg = pkgs.netexec; }
+    { name = "responder"; pkg = pkgs.responder; }
+    { name = "impacket"; pkg = pkgs.python3Packages.impacket; }
+    { name = "pypykatz"; pkg = pkgs.python3Packages.pypykatz; }
+
+    # --- Binary / reverse engineering (red team): debug, disasm, exploit dev. ---
+    { name = "gdb"; pkg = pkgs.gdb; }
+    { name = "radare2"; pkg = pkgs.radare2; }
+    # angr is dropped: its nixpkgs recipe fails on python 3.14 (needs
+    # setuptools-rust, undeclared). radare2 + gdb + pwntools cover RE/exploit dev.
+    { name = "pwntools"; pkg = pkgs.python3Packages.pwntools; }
+    { name = "binutils"; pkg = pkgs.binutils; }
+    { name = "file"; pkg = pkgs.file; }
+    { name = "hexedit"; pkg = pkgs.hexedit; }
+    { name = "upx"; pkg = pkgs.upx; }
+    { name = "ltrace"; pkg = pkgs.ltrace; }
+    { name = "valgrind"; pkg = pkgs.valgrind; }
+
+    # --- Forensics (red/blue): metadata, carving, memory, patterns, packets. ---
+    { name = "exiftool"; pkg = pkgs.exiftool; }
+    { name = "binwalk"; pkg = pkgs.binwalk; }
+    { name = "foremost"; pkg = pkgs.foremost; }
+    { name = "scalpel"; pkg = pkgs.scalpel; }
+    { name = "testdisk"; pkg = pkgs.testdisk; }
+    { name = "volatility3"; pkg = pkgs.volatility3; }
+    { name = "yara"; pkg = pkgs.yara; }
+    { name = "wireshark"; pkg = pkgs.wireshark; }
+
+    # --- Secrets / dependency audit (blue team): leak + vuln + SBOM scanning. ---
+    { name = "gitleaks"; pkg = pkgs.gitleaks; }
+    { name = "trufflehog"; pkg = pkgs.trufflehog; }
+    { name = "detect-secrets"; pkg = pkgs."detect-secrets"; }
+    { name = "shellcheck"; pkg = pkgs.shellcheck; }
+    { name = "codeql"; pkg = pkgs.codeql; }
+    { name = "clang"; pkg = pkgs.clang; }
+    { name = "trivy"; pkg = pkgs.trivy; }
+    { name = "grype"; pkg = pkgs.grype; }
+    { name = "syft"; pkg = pkgs.syft; }
+    { name = "osv-scanner"; pkg = pkgs."osv-scanner"; }
+    { name = "cargo-audit"; pkg = pkgs."cargo-audit"; }
+    { name = "govulncheck"; pkg = pkgs.govulncheck; }
+    { name = "pip-audit"; pkg = pkgs."pip-audit"; }
+    { name = "safety"; pkg = pkgs.python3Packages.safety; }
+
+    # --- Integrity / system audit (blue team): FIM, audit, observability. ---
+    # (chkrootkit is removed in the pinned nixpkgs and rkhunter is absent, so
+    # rootkit detection is covered by aide FIM + osquery + lynis.)
+    { name = "aide"; pkg = pkgs.aide; }
+    { name = "audit"; pkg = pkgs.audit; }
+    { name = "osquery"; pkg = pkgs.osquery; }
+    { name = "lynis"; pkg = pkgs.lynis; }
+
+    # --- OSINT / recon (red team): social/email, subdomains, web history, DNS. ---
+    # (theharvester is dropped: it bundles playwright, whose pinned source hash
+    # is stale in this nixpkgs rev and fails the fixed-output build.)
+    { name = "maigret"; pkg = pkgs.maigret; }
+    { name = "snscrape"; pkg = pkgs.snscrape; }
+    { name = "amass"; pkg = pkgs.amass; }
+    { name = "assetfinder"; pkg = pkgs.assetfinder; }
+    { name = "subjack"; pkg = pkgs.subjack; }
+    { name = "waybackurls"; pkg = pkgs.waybackurls; }
+    { name = "gau"; pkg = pkgs.gau; }
+    { name = "katana"; pkg = pkgs.katana; }
+    { name = "unfurl"; pkg = pkgs.unfurl; }
+    { name = "whois"; pkg = pkgs.whois; }
+    { name = "dnsutils"; pkg = pkgs.dnsutils; }
+    { name = "dnsenum"; pkg = pkgs.dnsenum; }
+    { name = "fierce"; pkg = pkgs.fierce; }
+    { name = "fping"; pkg = pkgs.fping; }
+    { name = "mtr"; pkg = pkgs.mtr; }
+    { name = "rustscan"; pkg = pkgs.rustscan; }
+    { name = "ettercap"; pkg = pkgs.ettercap; }
+    { name = "bettercap"; pkg = pkgs.bettercap; }
+    { name = "aircrack-ng"; pkg = pkgs.aircrack-ng; }
+    { name = "wpscan"; pkg = pkgs.wpscan; }
+    { name = "arjun"; pkg = pkgs.arjun; }
+    { name = "wfuzz"; pkg = pkgs.wfuzz; }
+    { name = "dalfox"; pkg = pkgs.dalfox; }
+    { name = "commix"; pkg = pkgs.commix; }
+
+    # --- CTF: pwn / crypto / stego / packets. ---
+    # Math & crypto: z3 (SMT), sympy (symbolic), gmpy2 (bignum), pycryptodome,
+    # and sage (SageMath — heavy, the flagship crypto-CTF tool).
+    { name = "z3"; pkg = pkgs.z3; }
+    { name = "sympy"; pkg = pkgs.python3Packages.sympy; }
+    { name = "gmpy2"; pkg = pkgs.python3Packages.gmpy2; }
+    { name = "pycryptodome"; pkg = pkgs.python3Packages.pycryptodome; }
+    { name = "sage"; pkg = pkgs.sage; }
+    # Pwn / ROP: ropper (gadget finder) + checksec (binary hardening flags).
+    { name = "ropper"; pkg = pkgs.python3Packages.ropper; }
+    { name = "checksec"; pkg = pkgs.checksec; }
+    # Stego: image/metadata hiding & extraction.
+    { name = "steghide"; pkg = pkgs.steghide; }
+    { name = "zsteg"; pkg = pkgs.zsteg; }
+    { name = "stegsolve"; pkg = pkgs.stegsolve; }
+    { name = "stegseek"; pkg = pkgs.stegseek; }
+    { name = "outguess"; pkg = pkgs.outguess; }
+    # Packets: scapy (crafting) + tcpflow (per-connection extraction).
+    { name = "scapy"; pkg = pkgs.python3Packages.scapy; }
+    { name = "tcpflow"; pkg = pkgs.tcpflow; }
+
+    # ---------------------------------------------------------------------------
+    # Storytelling / data-viz (storyboarding setups). Chosen after surveying the
+    # 2025-26 slides-as-code + data-viz space: Quarto is the only single
+    # nixpkgs-native system covering all four requirements (static HTML,
+    # declarative dataset fetching, native slides, expressive data storytelling).
+    #   - Quarto: Markdown + Python/R + reveal.js native slides + data execution
+    #     + Plotly/Vega/ggplot charts -> static HTML.
+    #   - Vega-Lite + vega-cli: declarative grammar-of-graphics; specs use
+    #     data:{url} so charts fetch datasets at runtime (refreshable), and
+    #     vega-cli compiles specs to standalone static HTML. Quarto embeds
+    #     Vega-Lite natively.
+    #   - Marp (marp-cli): minimal Markdown -> HTML/PDF/PPTX decks (low-ceremony,
+    #     CI-friendly, near-zero LLM error rate) as a lightweight alternative.
+    #   - pandoc: universal conversion (Quarto's backend + standalone).
+    #   - Plotly + Altair (python): interactive (Plotly) and declarative
+    #     Vega-Lite (Altair) charts inside Quarto.
+    #   - Hugo: static-site generator for multi-page storyboards.
+    # (Slidev is Vue/Vite-standalone and Reveal.js is manual HTML; both lose to
+    # Quarto's authoring layer for this spec. d3/echarts/observable are npm-only.)
+    # ---------------------------------------------------------------------------
+    { name = "quarto"; pkg = pkgs.quarto; }
+    { name = "vega-lite"; pkg = pkgs.vega-lite; }
+    { name = "vega-cli"; pkg = pkgs.vega-cli; }
+    { name = "marp"; pkg = pkgs.marp-cli; }
+    { name = "pandoc"; pkg = pkgs.pandoc; }
+    { name = "plotly"; pkg = pkgs.python3Packages.plotly; }
+    { name = "altair"; pkg = pkgs.python3Packages.altair; }
+    { name = "hugo"; pkg = pkgs.hugo; }
+
+    # --- Data analytics / self-contained "Tableau-feel" (FOSS). ---
+    # In-process analytics (no server) + declarative/interactive rendering, so a
+    # deck stays a self-contained, refreshable file: DuckDB queries CSV/Parquet/
+    # SQL directly; pandas/polars/manipulate frames; sqlglot parses/transpiles
+    # SQL; arrow is the interchange format; echarts renders an option (JSON) to
+    # standalone HTML (the FOSS interactive-chart counterpart to vega-cli).
+    { name = "duckdb"; pkg = pkgs.duckdb; }
+    { name = "pandas"; pkg = pkgs.python3Packages.pandas; }
+    { name = "polars"; pkg = pkgs.python3Packages.polars; }
+    { name = "sqlglot"; pkg = pkgs.python3Packages.sqlglot; }
+    { name = "arrow"; pkg = pkgs.python3Packages.arrow; }
+    { name = "echarts"; pkg = pkgs.echarts; }
   ];
 
   commonPkgs = map (spec: spec.pkg) commonPkgSpecs;
@@ -378,7 +672,7 @@ let
       # openssh client: the dsh agent reaches LAN hosts (e.g. the user's Home
       # Assistant server) to explore device cloud Api / MQTT from the owner
       # account. The jail already allows network; this only adds the binaries.
-      systemExtraPkgs = [ dshOpenXdgOpen emptySecretFile pkgs.openssh ];
+      systemExtraPkgs = [ dshOpenXdgOpen emptySecretFile pkgs.openssh pkgs.discord ];
       systemExtraMounts = with jail.combinators; [
         (readwrite "/run/dsh-open")
         # Shadow the agenix secret that baseJailOptions ro-binds into every jail:

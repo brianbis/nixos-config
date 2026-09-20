@@ -44,9 +44,11 @@ in
     # a static path and so stays a literal in the template.
     writablePathsSystem = lib.concatStringsSep ", " (map (p: "`${p}`") jailCfg.writablePathsSystem);
 
-    # Common packages, unversioned (doc names from jails.nix commonPkgSpecs)
-    # for stable diffs. Single source of truth: edit jails.nix only.
-    commonPackages = lib.concatStringsSep ", " jailCfg.commonPkgNames;
+    # Common packages, unversioned (doc names derived from each package's
+    # mainProgram/pname) for stable diffs. Single source of truth: the
+    # commonPkgs list in jails.nix.
+    commonPackages = lib.concatStringsSep ", "
+      (map (p: p.meta.mainProgram or (p.pname or (lib.getName p))) jailCfg.commonPkgs);
 
     # Denied commands from the single source of truth in jails.nix
     deniedCommands = lib.concatStringsSep ", " (map (c: "`${c}`") (builtins.attrNames forbiddenNixCmds));

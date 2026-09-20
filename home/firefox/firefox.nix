@@ -14,8 +14,8 @@ let
   # native-messaging host it talks to. The add-on is the upstream bundle
   # repacked into the NUR xpi layout (see flake.nix); the host manifest comes
   # from the upstream package.
-  tetherPkg = inputs.tether.packages.${pkgs.system}.default;
-  tetherFirefoxXpi = inputs.self.packages.${pkgs.system}."tether-firefox-extension";
+  tetherPkg = inputs.tether.packages.${pkgs.stdenv.hostPlatform.system}.default;
+  tetherFirefoxXpi = inputs.self.packages.${pkgs.stdenv.hostPlatform.system}."tether-firefox-extension";
 in
 {
   programs.firefox = {

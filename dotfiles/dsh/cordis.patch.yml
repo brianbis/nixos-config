@@ -36,3 +36,68 @@
 # the DeepSeek search API (api.deepseek.com) regardless of the chat model.
 - id: web-search-deepseek
   disabled: true
+
+# knife: a reverse engineer's binary Swiss-army knife (PE/ELF/Mach-O). Its
+# built-in `knife mcp` stdio server exposes the analysis engine as MCP tools
+# (open/info/triage/audit/decompile/...). Static analysis only — it never runs
+# the target, which is what makes it safe to point at malware. `knife` is on the
+# jail PATH (home/llm/jails.nix commonPkgSpecs), so the bare command resolves.
+# The agent binds a target with the `open` tool, so no --file is needed here.
+- insert:
+    - id: mcp-knife
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: knife
+        transport: stdio
+        command: knife
+        args: [mcp]
+        cwd: !!js process.cwd()
+
+# graphify: codebase -> knowledge graph (Graphify-Labs/graphify). Its built-in
+# `graphify-mcp` stdio server exposes the graph query tools (query / path /
+# explain / god nodes / communities). It serves a BUILT graph, so the agent
+# builds the graph first (`graphify <project>`) and the dsh-mcp-client's
+# auto-reconnect brings the tools up once the graph exists. `graphify-mcp` is
+# on the jail PATH (home/llm/jails.nix commonPkgSpecs), so the bare command
+# resolves.
+#
+# The graph path is passed ABSOLUTELY (not the default `graphify-out/graph.json`
+# relative to cwd) because the MCP server's process cwd is `/`: the dsh-web
+# service (hosts/desktop/dsh-web.nix) sets no WorkingDirectory, so systemd
+# defaults it to `/` and `!!js process.cwd()` below evaluates to `/`. The agent
+# builds the graph into the agent home ($HOME/graphify-out/), a stable location
+# this static profile can point at.
+- insert:
+    - id: mcp-graphify
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: graphify
+        transport: stdio
+        command: graphify-mcp
+        args: ["/home/llm/graphify-out/graph.json"]
+        cwd: !!js process.cwd()
+
+# graphlore: richer third-party MCP server (28 tools) that wraps graphify's
+# knowledge graph (span engine, semantic locate, impact/blast-radius, freshness).
+# It starts without a pre-built graph (tools load it lazily; `graphlore_build`
+# shells out to the `graphify` CLI on the jail PATH) and serves the project at
+# GRAPHLORE_PROJECT_DIR.
+#
+# GRAPHLORE_PROJECT_DIR is the AGENT HOME (not the session CWD): the dsh-web
+# service sets no WorkingDirectory, so the MCP's process cwd is `/` and
+# `!!js process.cwd()` would evaluate to `/` (no graph there). The agent builds
+# the graph into $HOME/graphify-out/, so pointing the project dir at the agent
+# home makes graphlore find it. (The source-based tools — locate/fetch/skeleton —
+# additionally need the source under the project dir; for those, build the graph
+# inside the project being analyzed.)
+- insert:
+    - id: mcp-graphlore
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: graphlore
+        transport: stdio
+        command: graphlore
+        args: []
+        cwd: /home/llm
+        env:
+          GRAPHLORE_PROJECT_DIR: /home/llm

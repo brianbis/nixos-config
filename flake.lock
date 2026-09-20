@@ -39,6 +39,22 @@
         "type": "github"
       }
     },
+    "bend": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1789783561,
+        "narHash": "sha256-I9xM19PevLz0ZMGqB3voSCTns2GT931u2j3N/Qg83X8=",
+        "owner": "bendlang",
+        "repo": "bend",
+        "rev": "de20dcd392e55aa2db1384b24712f84b84c6c47b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "bendlang",
+        "repo": "bend",
+        "type": "github"
+      }
+    },
     "bun2nix": {
       "inputs": {
         "flake-parts": [
@@ -139,6 +155,22 @@
         "type": "github"
       }
     },
+    "difftastic": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1789768639,
+        "narHash": "sha256-yzQF6a98RhNMhP0AKswvJzaKpIDnciZAUvoNYPHBjDQ=",
+        "owner": "Wilfred",
+        "repo": "difftastic",
+        "rev": "867fd946f2e2d74679214b6006b44475a5a9b979",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Wilfred",
+        "repo": "difftastic",
+        "type": "github"
+      }
+    },
     "dsh": {
       "flake": false,
       "locked": {
@@ -152,6 +184,22 @@
       "original": {
         "owner": "deepseek-ai",
         "repo": "deepseek-harness",
+        "type": "github"
+      }
+    },
+    "echarts": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1789172396,
+        "narHash": "sha256-GXz/jwRgnWHjSZEhUTiVe6V7Ng8eK2DTm/BCSNwHHiU=",
+        "owner": "apache",
+        "repo": "echarts",
+        "rev": "984bf46b2f905dd0ad909a2d5e6e9d66a1b6568c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "apache",
+        "repo": "echarts",
         "type": "github"
       }
     },
@@ -320,14 +368,46 @@
         "type": "github"
       }
     },
+    "graphify": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1789587698,
+        "narHash": "sha256-zfgADdOXuQLIOBIFh37WQZH7zUcDBnfFH2eCNeJ1XPw=",
+        "owner": "Graphify-Labs",
+        "repo": "graphify",
+        "rev": "26b02b5e3430e4ab85dd7e72c7b98836d8e65c48",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Graphify-Labs",
+        "repo": "graphify",
+        "type": "github"
+      }
+    },
+    "graphlore": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1788095629,
+        "narHash": "sha256-Cg9uXuUyZUwqTd8lRAK8vKFvIqM0ASLhg6u4FFsq1hk=",
+        "owner": "yasinyaman",
+        "repo": "graphlore",
+        "rev": "7b18882845d678167aa47e24aa034fef80fdb41b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "yasinyaman",
+        "repo": "graphlore",
+        "type": "github"
+      }
+    },
     "headroom": {
       "flake": false,
       "locked": {
-        "lastModified": 1789525206,
-        "narHash": "sha256-5Eyfdg1fYmUpnUePLuNJluKmWx1E7twhW5M8IPtzY5M=",
+        "lastModified": 1789621231,
+        "narHash": "sha256-mXGDKi9eQrSxm1hvbZ45YXYaqb6qOjx+fs0CtHittBM=",
         "owner": "chopratejas",
         "repo": "headroom",
-        "rev": "35b11564c6217c358094732618d21eb74503aa47",
+        "rev": "2c56a1b3a7b991a42858543f6086e0a4936dbf2b",
         "type": "github"
       },
       "original": {
@@ -364,11 +444,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1789614380,
-        "narHash": "sha256-ICTfpiJGmdTqIak5YEmRwdATy1JqzpWhagmifpkUlgg=",
+        "lastModified": 1789618856,
+        "narHash": "sha256-OSqj7eOijvCZfN7owFWRxLWRhej5lZI+Kt82q3INLvc=",
         "owner": "nix-community",
         "repo": "home-manager",
-        "rev": "ac84366d68d5d79ea1bb8c2cec30917527f92fbd",
+        "rev": "afa6821c70560bb19d1a8c577bff398f7f239869",
         "type": "github"
       },
       "original": {
@@ -401,11 +481,11 @@
     "hushmic": {
       "flake": false,
       "locked": {
-        "lastModified": 1789590892,
-        "narHash": "sha256-nW3HRYtpEbE+FXf6WAiuRESle9S2orlc0giA3aYMoz8=",
+        "lastModified": 1789760848,
+        "narHash": "sha256-fnB0uRXbgCVnFQPODq84bCuJggdXe7ixJ0cryjsmgj4=",
         "owner": "Fovty",
         "repo": "hushmic",
-        "rev": "ede5673734f4bd8f3676c1195464bb0b146ddb8a",
+        "rev": "da3996544781e26c6776ff0ee1df8d04fe5f072a",
         "type": "github"
       },
       "original": {
@@ -469,6 +549,22 @@
         "type": "github"
       }
     },
+    "knife": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1789473738,
+        "narHash": "sha256-wnfPFNJDM86VzBhD1EtxR8jJD93MpNzx28Ma/9DcX/c=",
+        "owner": "bl4ckr0ss3",
+        "repo": "knife",
+        "rev": "690100ea83fea08adcd9cb1012fff136a70cd973",
+        "type": "github"
+      },
+      "original": {
+        "owner": "bl4ckr0ss3",
+        "repo": "knife",
+        "type": "github"
+      }
+    },
     "librepods": {
       "flake": false,
       "locked": {
@@ -485,6 +581,38 @@
         "type": "github"
       }
     },
+    "llama-cpp": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1789628163,
+        "narHash": "sha256-+3KSknDeEsBcESKj/jPqfm4K8rQ8v12+iw0c7T7rWug=",
+        "owner": "ggml-org",
+        "repo": "llama.cpp",
+        "rev": "c9a5eeeb34ab8f794ea7510ca52d25da13728a5b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ggml-org",
+        "repo": "llama.cpp",
+        "type": "github"
+      }
+    },
+    "llama-cpp-bonsai": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1789714725,
+        "narHash": "sha256-8VBHuoAamAu4yOPjpVzzczOpct8g/4GoEdlcJv5j2pQ=",
+        "owner": "PrismML-Eng",
+        "repo": "llama.cpp",
+        "rev": "1a07bfa5f4144274c8f1c9963821dd9d9a51854b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "PrismML-Eng",
+        "repo": "llama.cpp",
+        "type": "github"
+      }
+    },
     "llm-agents": {
       "inputs": {
         "bun2nix": "bun2nix",
@@ -494,11 +622,11 @@
         "treefmt-nix": "treefmt-nix"
       },
       "locked": {
-        "lastModified": 1789605010,
-        "narHash": "sha256-7ukNhrPHGXJV2jJ+DLjNtc34Ewax5klVleMEsLFHMUk=",
+        "lastModified": 1789628234,
+        "narHash": "sha256-4Ne0CNXLoX4bxq9dvJ74UVaAcvWPArknVRq87hOe7j0=",
         "owner": "numtide",
         "repo": "llm-agents.nix",
-        "rev": "6e376b6b0e28673048f6855932440883ab573717",
+        "rev": "e810781ed181b981082c2f88d4672177d5f406af",
         "type": "github"
       },
       "original": {
@@ -526,11 +654,11 @@
     "ninfer": {
       "flake": false,
       "locked": {
-        "lastModified": 1789573702,
-        "narHash": "sha256-ly0FR9GWwD+67RZphIXNQ8+HxbH9nZMdXp2CMC2UrdQ=",
+        "lastModified": 1789734326,
+        "narHash": "sha256-RvcHyR6ErYQXoBmqCPqSzP4q5yXOX91+X6TPXp5HAk4=",
         "owner": "Neroued",
         "repo": "ninfer",
-        "rev": "5b4303c0ea0e8ab2be3efa54a677829f3edab6e5",
+        "rev": "9e163eee4b8acec21ab0ac765107b6a3f287b217",
         "type": "github"
       },
       "original": {
@@ -695,11 +823,11 @@
         "nixpkgs": "nixpkgs_4"
       },
       "locked": {
-        "lastModified": 1789614713,
-        "narHash": "sha256-CLE1IDvVCQQ8CHPnYCgz3yJyt7HnU0dv7J759VCokxI=",
+        "lastModified": 1789626963,
+        "narHash": "sha256-DdJVfon+vshRERWyZA/uxpncVqWI8/q+xuLYXU1qRJk=",
         "owner": "nix-community",
         "repo": "NUR",
-        "rev": "48590a5b1ef4a02235c18127811b13a17a8f433a",
+        "rev": "bcf87be72df8ac62c81cda54cf0958d3b9d80e63",
         "type": "github"
       },
       "original": {
@@ -748,15 +876,23 @@
       "inputs": {
         "agenix": "agenix",
         "archipelago": "archipelago",
+        "bend": "bend",
         "crystal-forge": "crystal-forge",
+        "difftastic": "difftastic",
         "dsh": "dsh",
+        "echarts": "echarts",
         "fluent-oled": "fluent-oled",
+        "graphify": "graphify",
+        "graphlore": "graphlore",
         "headroom": "headroom",
         "home-manager": "home-manager_2",
         "hushmic": "hushmic",
         "jail-nix": "jail-nix",
         "kivymd": "kivymd",
+        "knife": "knife",
         "librepods": "librepods",
+        "llama-cpp": "llama-cpp",
+        "llama-cpp-bonsai": "llama-cpp-bonsai",
         "llm-agents": "llm-agents",
         "minuspod": "minuspod",
         "ninfer": "ninfer",

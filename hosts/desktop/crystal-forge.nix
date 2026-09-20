@@ -166,11 +166,16 @@ in
   };
 
   # The module sets nix.settings.allowed-users / trusted-users to
-  # ["root" "crystal-forge"], which would drop @wheel (user b) from the nix
-  # daemon. List-type options merge by concatenation, so mkForce replaces the
-  # module's value with the module's list plus b.
-  nix.settings.allowed-users = lib.mkForce [ "root" "b" "crystal-forge" ];
-  nix.settings.trusted-users = lib.mkForce [ "root" "b" "crystal-forge" ];
+  # ["root" "crystal-forge"], which would drop @wheel (user b) and the llm
+  # agent user from the nix daemon. mkForce has the highest priority, so it
+  # replaces the module's value with the module's list plus b and llm: b is
+  # @wheel, and llm (the system-jail agent user) needs daemon access — both
+  # home-manager-llm.service and the jailed dsh system service run as llm and
+  # connect to the daemon. Dropping llm makes every llm daemon connection
+  # fail with "cannot open connection to remote store 'daemon': ... Connection
+  # reset by peer" on the next switch.
+  nix.settings.allowed-users = lib.mkForce [ "root" "b" "llm" "crystal-forge" ];
+  nix.settings.trusted-users = lib.mkForce [ "root" "b" "llm" "crystal-forge" ];
 
   # libgit2 (nix's built-in git fetcher) refuses to open a repository whose
   # path is not owned by the calling user: "repository path '/etc/nixos' is
