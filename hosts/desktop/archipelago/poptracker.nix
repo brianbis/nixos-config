@@ -1,8 +1,8 @@
 { pkgs, lib, ... }:
 
-# PopTracker v0.35.4 (2026-08-12) — universal, scriptable randomizer tracker
-# ("Powerful Open Progress Tracker"). Connects to the Archipelago multiworld
-# and the local game and auto-updates the map.
+# PopTracker — universal, scriptable randomizer tracker ("Powerful Open
+# Progress Tracker"). Connects to the Archipelago multiworld and the local
+# game and auto-updates the map.
 #
 # The ubuntu-22.04 x86_64 release is a PyInstaller ELF. It bundles libc/ssl/
 # zlib, but the SDL2 stack (libSDL2-2.0, libSDL2_ttf, libSDL2_image) remains
@@ -10,6 +10,10 @@
 # (assets, api, schema, packs, key) is installed to
 # ~/.local/share/poptracker; the `poptracker` wrapper lands on the home
 # profile PATH.
+#
+# The release asset (poptracker_*_ubuntu-22-04-x86_64.tar.xz) is a compiled
+# C++ binary, so it's pinned as a fixed-output fetchurl of the release asset.
+# Re-pin on a new release: update the tag in the URL + the sha256.
 let
   poptrackerRelease = pkgs.fetchurl {
     url = "https://github.com/black-sliver/PopTracker/releases/download/v0.35.4/poptracker_0-35-4_ubuntu-22-04-x86_64.tar.xz";
@@ -80,7 +84,13 @@ in
       tmp="$(${pkgs.coreutils}/bin/mktemp -d)"
       trap 'rm -rf "$tmp"' EXIT
 
-      rm -rf "$dest"
+      # The release tarball carries read-only mode bits, so a previous
+      # activation leaves read-only subdirs under $dest that a plain `rm -rf`
+      # cannot unlink ("Permission denied"). Make the tree owner-writable
+      # first. `|| true` keeps a missing dir (first run) from tripping `set -e`.
+      rm_rw() { chmod -R u+w "$1" 2>/dev/null || true; rm -rf "$1"; }
+
+      rm_rw "$dest"
       ${pkgs.xz}/bin/unxz -q -c "${poptrackerRelease}" | ${pkgs.gnutar}/bin/tar -x -C "$tmp"
       mv "$tmp/poptracker" "$dest"
     '';

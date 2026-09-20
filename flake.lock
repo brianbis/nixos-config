@@ -24,18 +24,53 @@
       }
     },
     "archipelago": {
+      "inputs": {
+        "balatroap": "balatroap",
+        "balatroap-poptracker": "balatroap-poptracker",
+        "poptracker": "poptracker",
+        "src": "src",
+        "sts2": "sts2",
+        "universal-tracker": "universal-tracker"
+      },
+      "locked": {
+        "path": "hosts/desktop/archipelago",
+        "type": "path"
+      },
+      "original": {
+        "path": "hosts/desktop/archipelago",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "balatroap": {
       "flake": false,
       "locked": {
-        "lastModified": 1789201240,
-        "narHash": "sha256-8pZUPWBCtXCURypGk+FZdT5SYuzFJUhJCO4nink/New=",
-        "owner": "ArchipelagoMW",
-        "repo": "Archipelago",
-        "rev": "e0b6083384cd37019f4c41da0970dff1d99f1325",
+        "lastModified": 1776763913,
+        "narHash": "sha256-TIJ2VKNoD+Z0Qxgbo/DJD+JPdZEaKeqA0rnTiiTepv4=",
+        "owner": "BurndiL",
+        "repo": "BalatroAP",
+        "rev": "8909c173dbb0ce8e75571bdb4afcbcfe597fbb04",
         "type": "github"
       },
       "original": {
-        "owner": "ArchipelagoMW",
-        "repo": "Archipelago",
+        "owner": "BurndiL",
+        "repo": "BalatroAP",
+        "type": "github"
+      }
+    },
+    "balatroap-poptracker": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1740595577,
+        "narHash": "sha256-kMl41zhoOb5Iq3lQNiDSklvMMKiurnRsi+5IqM18EQc=",
+        "owner": "graygooglitch",
+        "repo": "balatroap_poptracker",
+        "rev": "578e50aa12733f93dc78194c19248afbd847463b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "graygooglitch",
+        "repo": "balatroap_poptracker",
         "type": "github"
       }
     },
@@ -857,6 +892,22 @@
         "type": "github"
       }
     },
+    "poptracker": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1789862685,
+        "narHash": "sha256-0vp5qV37rHLR2XM2Rf8AmGWADLkHrapCucka2Gyh520=",
+        "owner": "black-sliver",
+        "repo": "PopTracker",
+        "rev": "79d61dca371804a0ff286578f5d2d9ce35dd471e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "black-sliver",
+        "repo": "PopTracker",
+        "type": "github"
+      }
+    },
     "process-compose-flake": {
       "locked": {
         "lastModified": 1782060835,
@@ -869,6 +920,52 @@
       "original": {
         "owner": "Platonic-Systems",
         "repo": "process-compose-flake",
+        "type": "github"
+      }
+    },
+    "pyproject-build-systems": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "pyproject-nix": [
+          "pyproject-nix"
+        ],
+        "uv2nix": [
+          "uv2nix"
+        ]
+      },
+      "locked": {
+        "lastModified": 1789356010,
+        "narHash": "sha256-Oj0KSZSEaGeYMXFFc2u7eb9Pqw0zcpU8/wJFLRRuD5c=",
+        "owner": "pyproject-nix",
+        "repo": "build-system-pkgs",
+        "rev": "e97f24221b3e1b9a6b492a7137b499031be6f078",
+        "type": "github"
+      },
+      "original": {
+        "owner": "pyproject-nix",
+        "repo": "build-system-pkgs",
+        "type": "github"
+      }
+    },
+    "pyproject-nix": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1788394333,
+        "narHash": "sha256-xYOP0Xym1eVGUaHFx+eJEaycFGoiCbst3fZf0xFHP78=",
+        "owner": "pyproject-nix",
+        "repo": "pyproject.nix",
+        "rev": "6a8a7881d75b6f98967e7b8069f4ead331384301",
+        "type": "github"
+      },
+      "original": {
+        "owner": "pyproject-nix",
+        "repo": "pyproject.nix",
         "type": "github"
       }
     },
@@ -901,8 +998,11 @@
         "nixpkgs": "nixpkgs_3",
         "nur": "nur",
         "plasma-manager": "plasma-manager",
+        "pyproject-build-systems": "pyproject-build-systems",
+        "pyproject-nix": "pyproject-nix",
         "sidra": "sidra",
         "tether": "tether",
+        "uv2nix": "uv2nix",
         "wezurrect": "wezurrect",
         "whisper-service": "whisper-service",
         "zilliandomizer": "zilliandomizer"
@@ -963,6 +1063,38 @@
       "original": {
         "owner": "snowfallorg",
         "repo": "lib",
+        "type": "github"
+      }
+    },
+    "src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1789201240,
+        "narHash": "sha256-8pZUPWBCtXCURypGk+FZdT5SYuzFJUhJCO4nink/New=",
+        "owner": "ArchipelagoMW",
+        "repo": "Archipelago",
+        "rev": "e0b6083384cd37019f4c41da0970dff1d99f1325",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ArchipelagoMW",
+        "repo": "Archipelago",
+        "type": "github"
+      }
+    },
+    "sts2": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1789879342,
+        "narHash": "sha256-YJ/unJwQ4aZKfjTK8ZUnSTPMFJxO3sJp4PetqHrGLu4=",
+        "owner": "dlueben1",
+        "repo": "Slay-the-Spire-2-Archipelago",
+        "rev": "9e5d2905c6a3c484354fabfc015cb439e4f78d26",
+        "type": "github"
+      },
+      "original": {
+        "owner": "dlueben1",
+        "repo": "Slay-the-Spire-2-Archipelago",
         "type": "github"
       }
     },
@@ -1098,6 +1230,22 @@
         "type": "github"
       }
     },
+    "universal-tracker": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1785392883,
+        "narHash": "sha256-YnbJMDa57nbbjgY98ME/Pt97aDj+BT9qwm2H5kHzL0Q=",
+        "owner": "FarisTheAncient",
+        "repo": "Archipelago",
+        "rev": "4c1d65412fa0964ce22184577832fc2518dc7b3f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "FarisTheAncient",
+        "repo": "Archipelago",
+        "type": "github"
+      }
+    },
     "unstable": {
       "locked": {
         "lastModified": 1778869304,
@@ -1111,6 +1259,29 @@
         "owner": "nixos",
         "ref": "nixos-unstable",
         "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "uv2nix": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "pyproject-nix": [
+          "pyproject-nix"
+        ]
+      },
+      "locked": {
+        "lastModified": 1789383061,
+        "narHash": "sha256-+DkygIVr/+RtXnsjd07BzFFB0ihwmjjLuYh1fyc/bCg=",
+        "owner": "pyproject-nix",
+        "repo": "uv2nix",
+        "rev": "079be4e68c529c4cbc44dbf1afc692e4b30695b3",
+        "type": "github"
+      },
+      "original": {
+        "owner": "pyproject-nix",
+        "repo": "uv2nix",
         "type": "github"
       }
     },

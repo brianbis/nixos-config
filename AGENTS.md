@@ -71,6 +71,50 @@ d=$(mktemp -d) && curl -sL "https://github.com/OWNER/REPO/archive/REV.tar.gz" | 
 
 `--strip-components=1` mirrors `fetchzip`'s `stripRoot`, and `nix hash path` (NAR) ignores mtimes and permissions, so any fresh extraction reproduces the derivation's hash bit-for-bit. Paste the printed value into `hash =` and confirm it matches (e.g. `grep -oP 'hash = "\K[^"]+' <file>`).
 
+## Packaging Python packages on Nix (uv + uv2nix)
+
+For an app with a large/complex Python dependency tree, do **not** hand-maintain
+nixpkgs python packages. Build the runtime environment from a `uv.lock` via the
+`uv2nix` / `pyproject-nix` toolchain: it tracks exactly what upstream pins, and
+keeps the Nix side declarative and reproducible. (Working example in this repo:
+`archipelagoUvEnv` in `flake.nix` + `hosts/desktop/archipelago/uv/`.)
+
+* **Source of truth.** Commit a `pyproject.toml` (deps mirroring upstream
+  `requirements*.txt`) + a `uv.lock` (the resolved, pinned lock) into the repo.
+  The lock is the pin; the `pyproject.toml` is how you update it.
+
+* **Toolchain flake inputs** (all should follow your `nixpkgs` pin):
+  `pyproject-nix` (turns PEP 508 / lock data into derivations), `uv2nix`
+  (ingests a uv workspace), `pyproject-build-systems` (wheel / build-system
+  overlays).
+
+* **Building the venv**:
+  `inputs.uv2nix.lib.workspace.loadWorkspace { workspaceRoot = <dir>; }`
+  → `workspace.mkPyprojectOverlay { sourcePreference = "wheel"; }` →
+  `pkgs.callPackage inputs.pyproject-nix.build.packages { python = pkgs.pythonXY; }`
+  overridden with `pyproject-build-systems.overlays.wheel` + the pyproject overlay
+  → `pythonSet.mkVirtualEnv "<name>" (workspace.deps.default)`.
+  `workspace.deps.default` is the base `dependencies` only (no extras/groups).
+
+* **Wheel vs source.** `sourcePreference = "wheel"` prefers prebuilt wheels
+  (faster, and picks self-contained wheels — e.g. kivy 2.3.1 bundles SDL2).
+  Deps with no usable wheel build from source; if they declare no
+  `[build-system]`, add `setuptools` under `[tool.uv.extra-build-dependencies]`
+  in the `pyproject.toml` so uv's isolated build env can build them.
+
+* **Consuming the venv.** Pass the venv into your package derivation and run its
+  `bin/python` on the app's entry-point scripts (wrap each in a small launcher).
+  Bypass any runtime pip auto-install — everything is pre-installed in the venv.
+
+* **Updating deps.** Sync `pyproject.toml` `dependencies` from upstream,
+  regenerate the lock with `uv lock` (in the workspace dir), commit both.
+  `nix flake update pyproject-nix uv2nix pyproject-build-systems` re-pins the
+  toolchain if needed.
+
+* **Test in isolation** (narrowest check — do not rebuild the whole system):
+  expose the venv as a flake package and
+  `nix build --impure --no-link --print-out-paths .#packages.<system>.<venv-pkg>`.
+
 ## Working Directory
 
 `/etc/nixos`. Repo is git on `main`. Do not activate or switch NixOS. Build and check configurations to test changes before finishing whenever practical. The jail permits the `nix` CLI; use `nix build`, `nix flake check`, and related read-only/build operations rather than `nixos-rebuild`, which is intentionally shimmed. **Prefer the narrowest relevant check or derivation for the files/code being changed; do not rebuild the entire NixOS system unless the change actually affects the system toplevel. When a build is needed, use the existing Nix store/cache and do not deliberately force a rebuild (for example, do not use `--rebuild` or otherwise invalidate/recompute an already-built derivation).** For example, a flake system can be tested with `nix build --impure --no-link --print-out-paths .#nixosConfigurations.<host>.config.system.build.toplevel` **only when the system toplevel is the relevant target**. Keep `--no-link` on every `nix build` from the repo root: on nix 2.34, `--print-out-paths` alone still drops a `result` symlink in the repo root.

@@ -1,19 +1,22 @@
-{ pkgs, lib, ... }:
+{ pkgs, lib, archipelagoSources, ... }:
 
-# Universal Tracker v0.3.3 (2026-07-30) — "just works" logic tracker for
-# nearly any apworld: it simulates the server's logic from the generation
-# yaml + apworlds and shows which locations are in-logic.
+# Universal Tracker — "just works" logic tracker for nearly any apworld: it
+# simulates the server's logic from the generation yaml + apworlds and shows
+# which locations are in-logic.
 #
-# Distributed as an .apworld from the legacy FarisTheAncient/Archipelago
-# repo's Tracker_* releases (the wiki/guide link to the ArchipelagoMW
-# releases page, which does not carry the Tracker releases). Extracted into
-# the WebHost's custom-worlds dir, where it registers as the
-# "Universal Tracker" game (minimum_ap_version 0.6.2; the WebHost runs
-# 0.6.8).
+# Built from the pinned source (the FarisTheAncient/Archipelago fork's
+# worlds/tracker/): zip it under the `tracker/` prefix. `nix flake update
+# archipelago` re-pins the source; the zip follows (no manual re-pin).
+# Extracted into the WebHost's custom-worlds dir, where it registers as the
+# "Universal Tracker" game (minimum_ap_version 0.6.2; the WebHost runs 0.6.8).
 let
-  trackerWorld = pkgs.fetchurl {
-    url = "https://github.com/FarisTheAncient/Archipelago/releases/download/Tracker_v0.3.3/tracker.apworld";
-    hash = "sha256-qQn5ZASwAJhl05uHzsi7dJRGeDV313vU+hRDHO8MIUA=";
+  zipFromSource = import ./zip-from-source.nix;
+  trackerWorld = zipFromSource {
+    inherit pkgs;
+    src = archipelagoSources."universal-tracker".outPath;
+    subdir = "worlds/tracker";
+    prefix = "tracker";
+    name = "tracker-apworld";
   };
 in
 {
@@ -21,7 +24,14 @@ in
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       worlds_dir="$HOME/.local/share/Archipelago/worlds"
       mkdir -p "$worlds_dir"
-      rm -rf "$worlds_dir/tracker"
+
+      # The zip carries the source's read-only mode bits, so a previous
+      # activation leaves read-only subdirs that a plain `rm -rf` cannot
+      # unlink ("Permission denied"). Make the tree owner-writable first.
+      # `|| true` keeps a missing dir (first run) from tripping `set -e`.
+      rm_rw() { chmod -R u+w "$1" 2>/dev/null || true; rm -rf "$1"; }
+
+      rm_rw "$worlds_dir/tracker"
       ${pkgs.unzip}/bin/unzip -q -o "${trackerWorld}" -d "$worlds_dir"
     '';
 }

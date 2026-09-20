@@ -160,9 +160,16 @@
       url = "github:gzenz/ninfer";
       flake = false;
     };
+    # Archipelago meta-flake (hosts/desktop/archipelago/flake.nix). Bundles the
+    # main Archipelago source + the PopTracker / apworld repos as nested
+    # inputs, so `nix flake update archipelago` re-pins them all in one shot.
+    # Each nested input tracks its upstream default branch (no hardcoded ref);
+    # the flake.lock records the locked rev for each. The top-level flake and
+    # the home-manager modules read the nested inputs via
+    # `inputs.archipelago.outputs.archipelagoInputs.<name>` (src / poptracker /
+    # balatroap / sts2 / universal-tracker / balatroap-poptracker).
     archipelago = {
-      url = "github:ArchipelagoMW/Archipelago";
-      flake = false;
+      url = "path:hosts/desktop/archipelago";
     };
     kivymd = {
       url = "github:kivymd/KivyMD";
@@ -172,6 +179,29 @@
       url = "github:beauxq/zilliandomizer";
       flake = false;
     };
+
+    # uv2nix: build Archipelago's Python environment from a uv.lock (see
+    # hosts/desktop/archipelago/uv/). pyproject-nix is the core library that
+    # turns PEP 508 / lock data into Nix derivations; uv2nix ingests uv
+    # workspaces (pyproject.toml + uv.lock); pyproject-build-systems provides
+    # the wheel/build-system overlays. All follow our nixpkgs so the whole
+    # graph pins to one nixpkgs revision.
+    pyproject-nix = {
+      url = "github:pyproject-nix/pyproject.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    uv2nix = {
+      url = "github:pyproject-nix/uv2nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.pyproject-nix.follows = "pyproject-nix";
+    };
+    pyproject-build-systems = {
+      url = "github:pyproject-nix/build-system-pkgs";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.pyproject-nix.follows = "pyproject-nix";
+      inputs.uv2nix.follows = "uv2nix";
+    };
+
     # llama.cpp: the router server for the local LLM fleet (Muse-Glimmer-30B,
     # Qwen3.8-27B, Heretic-RVN). Not a flake upstream, so this is a flakeless
     # input: inputs.llama-cpp is the source tree, and `nix flake update
@@ -288,12 +318,37 @@
       # Archipelago Multi-Game Randomizer and Server: pinned upstream source +
       # python3.13 environment with all runtime deps, entry-point wrappers
       # (archipelago-webhost/server/generate/launcher) and a custom-world
-      # skeleton under share/archipelago/worlds/.
+      # skeleton under share/archipelago/worlds/. The source comes from the
+      # archipelago meta-flake's `src` nested input (ArchipelagoMW/Archipelago);
+      # `nix flake update archipelago` re-pins it to the newest main commit.
       archipelagoPkg = pkgs.callPackage ./hosts/desktop/archipelago/package.nix {
-        src = inputs.archipelago;
-        kivymdSrc = inputs.kivymd;
-        zilliandomizerSrc = inputs.zilliandomizer;
+        src = inputs.archipelago.outputs.archipelagoInputs.src;
+        env = archipelagoUvEnv;
       };
+
+      # Archipelago Python environment built from a uv.lock via uv2nix — the
+      # single source of truth for the runtime deps. The lock + pyproject.toml
+      # live in hosts/desktop/archipelago/uv/ (regenerated from the upstream
+      # requirements*.txt via `uv lock`; see the agent workflow template).
+      # sourcePreference = "wheel" prefers prebuilt wheels (e.g. kivy 2.3.1's
+      # self-contained SDL2 wheel) and builds the git deps (kivymd, pony fork,
+      # zilliandomizer) from source. deps.default = the base `dependencies`
+      # (no extras/groups, which this virtual project does not declare).
+      archipelagoUvEnv =
+        let
+          workspace = inputs.uv2nix.lib.workspace.loadWorkspace {
+            workspaceRoot = ./hosts/desktop/archipelago/uv;
+          };
+          overlay = workspace.mkPyprojectOverlay { sourcePreference = "wheel"; };
+          pythonSet =
+            (pkgs.callPackage inputs.pyproject-nix.build.packages {
+              python = pkgs.python313;
+            }).overrideScope (pkgs.lib.composeManyExtensions [
+              inputs.pyproject-build-systems.overlays.wheel
+              overlay
+            ]);
+        in
+        pythonSet.mkVirtualEnv "archipelago-uv-env" (workspace.deps.default);
 
       # Native (non-docker) vLLM v0.27.1 + DFlash2 K7 all-NVFP4 overlays: the
       # pinned vLLM wheel with the community Python overlays applied, on
@@ -441,6 +496,12 @@
           # nix 2.34 --print-out-paths does NOT imply it, and without it the
           # build drops a result symlink in the repo root).
           archipelago = archipelagoPkg;
+
+          # Archipelago Python env built from the uv.lock via uv2nix (see
+          # let-block). Testable in isolation:
+          # nix build --no-link --print-out-paths
+          # .#packages.x86_64-linux.archipelago-uv-env
+          archipelago-uv-env = archipelagoUvEnv;
 
           # knife: reverse engineer's binary Swiss-army knife (see
           # home/llm/tools/knife.nix). Testable in isolation:
@@ -638,6 +699,17 @@
               # so the minuspod user service can dlopen the driver stub for CUDA
               # whisper (not in the ldconfig cache — see whisper-service).
               nvidiaDriver = config.boot.kernelPackages.nvidiaPackages.latest;
+
+              # Pinned Archipelago source inputs (the archipelago meta-flake's
+              # nested inputs), passed to the archipelago home-manager modules
+              # so they can build the apworld/mod zips from source (see
+              # zip-from-source.nix). `nix flake update archipelago` re-pins
+              # these; the zips follow (no manual re-pin, no build-time network).
+              archipelagoSources = {
+                balatroap = inputs.archipelago.outputs.archipelagoInputs.balatroap;
+                sts2 = inputs.archipelago.outputs.archipelagoInputs.sts2;
+                universal-tracker = inputs.archipelago.outputs.archipelagoInputs."universal-tracker";
+              };
             };
 
             home-manager.users.b = import ./home;

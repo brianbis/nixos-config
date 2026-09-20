@@ -1,4 +1,4 @@
-{ pkgs, lib, ... }:
+{ pkgs, lib, archipelagoSources, ... }:
 
 # Balatro (Steam, app 2379780) Archipelago setup, mirroring sts.nix:
 #   * client side — Balatro runs via Proton, so the mod loader chain lives in
@@ -16,16 +16,27 @@
 # holds config.xml in memory and rewrites it on exit, which would clobber
 # the edit (close Steam, then re-apply home-manager to land it).
 let
-  # Server-side world (v0.1.9f, 2026-01-11; game "Balatro").
+  zipFromSource = import ../../zip-from-source.nix;
+
+  # Server-side world (game "Balatro"). The Python apworld source is NOT
+  # published — the BalatroAP repo's single main branch carries only the Lua
+  # client mod — so this is pinned as a fixed-output fetchurl of the release
+  # asset. Re-pin on a new release: update the tag in the URL + the sha256.
   balatroWorld = pkgs.fetchurl {
     url = "https://github.com/BurndiL/BalatroAP/releases/download/v0.1.9f/balatro.apworld";
     hash = "sha256-WnZ7qjpbWSt2skK5QIBWGpwJc8L8I1HXiseBd5SYXuA=";
   };
 
-  # Client mod (smods mod folder "BalatroAP").
-  balatroAPMod = pkgs.fetchurl {
-    url = "https://github.com/BurndiL/BalatroAP/releases/download/v0.1.9f/BalatroAP.zip";
-    hash = "sha256-4ho/t4KvYu7dMmgiNp0lTB9yoqsCZDwrdqRPsKpdCjw=";
+  # Client mod (smods mod folder "BalatroAP"). Built from the pinned BalatroAP
+  # source (the main branch IS the mod): zip the tree under a `BalatroAP/`
+  # prefix (the release wraps it that way). `nix flake update archipelago`
+  # re-pins the source; the zip follows (no manual re-pin).
+  balatroAPMod = zipFromSource {
+    inherit pkgs;
+    src = archipelagoSources.balatroap.outPath;
+    subdir = ".";
+    prefix = "BalatroAP";
+    name = "balatro-mod";
   };
 
   # Lovely injector: the Windows version.dll that hooks the game and loads
@@ -50,6 +61,13 @@ in
       tmp="$(${pkgs.coreutils}/bin/mktemp -d)"
       trap 'rm -rf "$tmp"' EXIT
 
+      # The zips store the source's read-only mode bits and unzip/cp preserve
+      # them, so a previous activation can leave these dirs with read-only
+      # subdirs that a plain `rm -rf` cannot unlink ("Permission denied").
+      # Make the tree owner-writable before removing it. `|| true` keeps a
+      # missing dir (first run) from tripping `set -e`.
+      rm_rw() { chmod -R u+w "$1" 2>/dev/null || true; rm -rf "$1"; }
+
       game_dir="$HOME/.steam/steam/steamapps/common/Balatro"
       save_dir="$HOME/.steam/steam/steamapps/compatdata/2379780/pfx/drive_c/users/steamuser/AppData/Roaming/Balatro"
       mods_dir="$save_dir/Mods"
@@ -63,19 +81,19 @@ in
 
       # smods framework: the source zip's top folder must end up as
       # Mods/smods/<files> (not Mods/smods/smods-.../<files>).
-      rm -rf "$mods_dir/smods"
+      rm_rw "$mods_dir/smods"
       $unzip -q -o "${smods}" -d "$tmp/smods"
       mv "$tmp/smods/smods-26.829.0" "$mods_dir/smods"
 
       # BalatroAP mod.
-      rm -rf "$mods_dir/BalatroAP"
+      rm_rw "$mods_dir/BalatroAP"
       $unzip -q -o "${balatroAPMod}" -d "$tmp/mod"
       cp -r "$tmp/mod/BalatroAP" "$mods_dir/"
 
       # Server-side world for the local Archipelago WebHost.
       worlds_dir="$HOME/.local/share/Archipelago/worlds"
       mkdir -p "$worlds_dir"
-      rm -rf "$worlds_dir/balatro"
+      rm_rw "$worlds_dir/balatro"
       $unzip -q -o "${balatroWorld}" -d "$worlds_dir"
 
       # Balatro launch options, declaratively. Steam keeps per-app launch
