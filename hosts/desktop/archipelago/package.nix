@@ -228,6 +228,24 @@ let
     propagatedBuildInputs = [ asyncgui ];
   };
 
+  # KivyMD's uix/fitimage imports materialshapes.kivy_widget, which imports
+  # cairo (pycairo) at module level. Pure-python sdist, PEP517 setuptools
+  # backend. pycairo is a hard runtime import, so propagate it.
+  materialshapes = py.buildPythonPackage {
+    pname = "materialshapes";
+    version = "0.3";
+    pyproject = true;
+    src = fetchPypi {
+      pname = "materialshapes";
+      version = "0.3";
+      hash = "sha256-FB1M6q9BIjeeuBR4Bdmofo4RvekLA1KcuuGhaJ3+aGg=";
+    };
+    build-system = [ py.setuptools py.wheel ];
+    # The wheel's METADATA declares kivy/pycairo/pillow; the runtime deps
+    # check requires all of them in propagatedBuildInputs.
+    propagatedBuildInputs = [ kivy py.pycairo py.pillow ];
+  };
+
   # requirements.txt pins KivyMD at this git rev (>=2.0.1.dev0); not on PyPI.
   # Runtime deps from setup.py install_requires (checked by
   # pythonRuntimeDepsCheckHook): kivy, pillow, materialyoucolor, asynckivy.
@@ -324,6 +342,9 @@ let
       py.pillow
       py.materialyoucolor
       asynckivy
+      # uix/fitimage (loaded via uix/list) imports materialshapes.kivy_widget,
+      # which imports cairo (pycairo) at module level.
+      materialshapes
 
       # --- pkg_resources (see setuptools80 above); last so it shadows the
       # newer setuptools that transitive packages might pull in ---
