@@ -422,6 +422,15 @@ stdenvNoCC.mkDerivation {
     sed -i 's/^from kivy\.core\.audio import SoundLoader$/from kivy.core.audio_output import SoundLoader/' \
       $out/lib/archipelago/kvui.py
 
+    # Kivy's default <ToggleButton> rule (kivy/data/style.kv) reads
+    # background_normal / background_down / …, but kvui.py's ToggleButton mixes in
+    # Kivy's ToggleButtonBehavior (which defines none of them), so the first
+    # WorldButton instantiation crashes with AttributeError. Add inert StringProps
+    # so the rule evaluates; the button styles itself via md_bg_color in _update_bg,
+    # not state_image, so behavior is unchanged.
+    sed -i 's|^class ToggleButton(MDButton, ToggleButtonBehavior):$|class ToggleButton(MDButton, ToggleButtonBehavior):\n    background_normal = StringProperty("")\n    background_down = StringProperty("")\n    background_disabled_normal = StringProperty("")\n    background_disabled_down = StringProperty("")|' \
+      $out/lib/archipelago/kvui.py
+
     # user_path() populates the home dir from the source tree by copytree'ing
     # Players/, data/sprites/ and data/lua/ — a code path that only runs from
     # a read-only install (i.e. the store). Players/ is absent from a git

@@ -447,7 +447,8 @@ let
   # mounted.
   baseMounts = system: (lib.optional (!system) "/etc/nixos") ++ [ "/var/log" ]
     ++ (if system then [ "/var/log/journal" "/run/systemd" "/etc/machine-id" ] else [ ])
-    ++ (if system then [ "/sys" "/run/user" ] else [ ]);
+    ++ (if system then [ "/sys" "/run/user" ] else [])
+    ++ [ "/nix/store"];
 
   # agenix secret file(s) mounted read-only into every jail. Kept out of
   # baseMounts on purpose: naming the secret path in AGENTS.md would leak

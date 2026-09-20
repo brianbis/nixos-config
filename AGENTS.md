@@ -117,9 +117,9 @@ regardless of working directory.
 
 * User jails run as the human user (home /home/b); system jails run as the `llm` agent user via `sudo -u llm` (home /home/llm), so they can edit the repo without being root.
 
-* Read-only mounts (user jails): `/etc/nixos`, `/var/log`.
+* Read-only mounts (user jails): `/etc/nixos`, `/var/log`, `/nix/store`.
 
-* Read-only mounts (system jails): `/var/log`, `/var/log/journal`, `/run/systemd`, `/etc/machine-id`, `/sys`, `/run/user`.
+* Read-only mounts (system jails): `/var/log`, `/var/log/journal`, `/run/systemd`, `/etc/machine-id`, `/sys`, `/run/user`, `/nix/store`.
 
 * Writable paths (system jails): `/etc/nixos`, `/home/llm`.
 
