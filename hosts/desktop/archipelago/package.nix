@@ -198,10 +198,14 @@ let
   # requirements.txt pins KivyMD at this git rev (>=2.0.1.dev0); not on PyPI.
   # Runtime deps from setup.py install_requires (checked by
   # pythonRuntimeDepsCheckHook): kivy, pillow, materialyoucolor, asynckivy.
+  # format = "setuptools": the pyproject.toml has no [build-system], so
+  # pyproject=true (PEP517) would fail; pyproject=false maps to format="other"
+  # which expects a custom buildPhase (none provided) and produces an empty
+  # package. "setuptools" builds a wheel via setup.py and installs it.
   kivymd = py.buildPythonPackage {
     pname = "kivymd";
     version = "2.0.1.dev0";
-    pyproject = false; # no [build-system] in pyproject.toml; setup.py + setup.cfg
+    format = "setuptools";
     # Source from the flakeless `kivymd` input (see flake.nix);
     # `nix flake update kivymd` re-pins it.
     src = kivymdSrc;
