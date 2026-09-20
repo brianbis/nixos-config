@@ -32,6 +32,13 @@ Balatro:
     vanilla: 50
   decks_unlocked_from_start:
     1: 50
+  # Start with 5 packs of jokers. NOTE: the pinned world (v0.1.9f) has no
+  # such option — this key is a best-guess for a newer/dev world build. If
+  # the WebHost rejects the yaml, check the world's Options.py for the exact
+  # key (v0.1.9f's closest options are decks_unlocked_from_start and
+  # joker_bundle_size) and rename accordingly.
+  starting_pack_of_jokers:
+    5: 50
   # Lean item volume: fewer consumables/shop/perma items to chase.
   ap_consumable_items:
     40: 50
