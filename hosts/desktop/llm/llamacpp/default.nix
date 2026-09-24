@@ -32,6 +32,17 @@ let
     "RVN-Q6_K.gguf"
   ];
 
+  # MiMo-V2.6-Distill-Qwen-9B (bartowski bf16 GGUF): a 9B agentic distill of
+  # Qwen3.5-9B, served by the stock router alongside Muse / Qwen / Heretic. The
+  # bf16 weights (17.9 GiB) leave ample VRAM headroom on the 32 GB card, so the
+  # KV cache stays on the card (kv-offload, no offload). The bf16 mmproj is the
+  # vision tower (image input).
+  mimoRepo = "bartowski/MiMo-V2.6-Distill-Qwen-9B-GGUF";
+  mimoIncludes = [
+    "MiMo-V2.6-Distill-Qwen-9B-bf16.gguf"
+    "mmproj-MiMo-V2.6-Distill-Qwen-9B-bf16.gguf"
+  ];
+
   # Ternary-Bonsai-2-27B: fetched declaratively by pinned sha256 (immutable
   # store inputs) and assembled into a store dir the Bonsai router reads, so
   # there is no runtime activation download for this model. The PQ2_0 language
@@ -53,7 +64,7 @@ let
   };
   # Assemble the two files into a dir with the exact basenames the router's
   # --models-dir scan and its mmproj auto-detection expect.
-  bonsaiModelsDir = pkgs.runCommand "llama-bonsai-models" {} ''
+  bonsaiModelsDir = pkgs.runCommand "llama-bonsai-models" { } ''
     mkdir -p $out
     cp ${bonsaiPQ2} $out/Ternary-Bonsai-2-27B-PQ2_0.gguf
     cp ${bonsaiMmproj} $out/Ternary-Bonsai-2-27B-mmproj-Q8_0.gguf
@@ -150,6 +161,20 @@ let
     top-p = 0.95
     presence-penalty = 0.0
     chat-template-kwargs = {"reasoning_effort":"xhigh"}
+
+    ; MiMo-V2.6-Distill-Qwen-9B bf16: a 9B agentic distill of Qwen3.5-9B.
+    ; Thinking is a boolean (enable_thinking) in this model's chat template,
+    ; not a reasoning_effort level, so it's enabled by default here and the
+    ; catalog entry is a plain reasoning model (no effort selector). The 18 GiB
+    ; bf16 weights leave ample VRAM headroom, so the KV cache stays on the card
+    ; (kv-offload inherited from [*], no offload).
+    [mimo-v2.6-9b-bf16]
+    model = ${cfg.modelsDir}/MiMo-V2.6-Distill-Qwen-9B-bf16.gguf
+    mmproj = ${cfg.modelsDir}/mmproj-MiMo-V2.6-Distill-Qwen-9B-bf16.gguf
+    ctx-size = 262144
+    top-k = 20
+    presence-penalty = 0.0
+    chat-template-kwargs = {"enable_thinking":true}
   '';
 
   # Bonsai router presets. One entry per mode (thinking / instruct); both load
@@ -233,6 +258,8 @@ in
     system.activationScripts.qwenModels.text = download "llamacpp-qwen" qwenRepo cfg.modelsDir qwenIncludes;
 
     system.activationScripts.hereticModel.text = download "llamacpp-heretic" hereticRepo cfg.modelsDir hereticIncludes;
+
+    system.activationScripts.mimoModel.text = download "llamacpp-mimo" mimoRepo cfg.modelsDir mimoIncludes;
 
     system.activationScripts.dflashModel.text = download "llamacpp-dflash" draftRepo cfg.draftDir draftIncludes;
 

@@ -151,6 +151,8 @@ let
     { name = "findutils"; pkg = pkgs.findutils; }
     { name = "gzip"; pkg = pkgs.gzip; }
     { name = "unzip"; pkg = pkgs.unzip; }
+    # xz: decompress .xz archives (Nix binary-cache NARs, tarballs, etc.).
+    { name = "xz"; pkg = pkgs.xz; }
     # Read-only host journal access for system jails: unit states, linger
     # activation, core-pin guard warnings. The binary is present in all
     # jails but only works in system jails (user jails lack /run/systemd).
@@ -200,6 +202,17 @@ let
     # flakeless `difftastic` input) renders syntax-aware diffs; a drop-in for
     # `diff`/`git diff` output.
     { name = "difftastic"; pkg = pkgs.difftastic; }
+    # ripwire: "the ripgrep of AI context" (redhat-et/ripwire): a
+    # zero-dependency C++23 CLI + MCP server that gives agents a ranked,
+    # deterministic map of a repo — signatures, blast radius, tests-to-run,
+    # quality deltas. nixpkgs carries 0.5.0; built from
+    # ./home/llm/tools/ripwire.nix (the flakeless `ripwire` input) so
+    # `nix flake update ripwire` tracks upstream.
+    { name = "ripwire"; pkg = pkgs.ripwire; }
+    # open-code-review: Alibaba's AI code review CLI (alibaba/open-code-review).
+    # The `ocr` binary (built from ./home/llm/tools/open-code-review.nix, pinned
+    # to the v1.12.8 release tag) runs LLM-powered code reviews.
+    { name = "openCodeReview"; pkg = pkgs.openCodeReview; }
 
     # Nix CLI so jailed agents can search nixpkgs (`nix search nixpkgs <term>`)
     # and eval packages against the source mounted read-only below.
@@ -447,8 +460,8 @@ let
   # mounted.
   baseMounts = system: (lib.optional (!system) "/etc/nixos") ++ [ "/var/log" ]
     ++ (if system then [ "/var/log/journal" "/run/systemd" "/etc/machine-id" ] else [ ])
-    ++ (if system then [ "/sys" "/run/user" ] else [])
-    ++ [ "/nix/store"];
+    ++ (if system then [ "/sys" "/run/user" ] else [ ])
+    ++ [ "/nix/store" ];
 
   # agenix secret file(s) mounted read-only into every jail. Kept out of
   # baseMounts on purpose: naming the secret path in AGENTS.md would leak
@@ -614,10 +627,17 @@ let
     version = dshVersion;
   };
 
+  # The official Node.js binary dsh runs on (home/llm/node-official.nix): the
+  # node-addon-require-builtin probe dsh 0.1.6-alpha.2+ runs on every profile
+  # boot only matches the official node build, so the nixpkgs node build
+  # cannot be the runtime node.
+  nodeOfficial = (import ./node-official.nix) { inherit pkgs; };
+
   dshPatched = (pkgs.callPackage ./dsh-package.nix {
     versionCheckHomeHook = agent "versionCheckHomeHook";
     src = dshTarball;
     version = dshVersion;
+    nodejs = nodeOfficial;
   }).overrideAttrs (old: {
     nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ pkgs.gnupatch ];
     postInstall = (old.postInstall or "") + ''
@@ -714,6 +734,10 @@ in
     # module can run a specific jail directly (dsh-web.service runs
     # "dsh-jail-system") without re-deriving the jail pair.
     jailsByTool
+    # The raw dsh npm package (before jail wrapping). Exported so the npm
+    # closure re-pin (home/llm/dsh-package-lock.json + npmDepsHash) can be
+    # verified in isolation instead of rebuilding the whole system.
+    dshPatched
     headroomDeepseekWrapper
     commonPkgs
     commonPkgNames

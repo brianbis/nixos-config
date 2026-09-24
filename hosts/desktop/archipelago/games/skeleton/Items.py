@@ -34,4 +34,6 @@ item_table = {
 # Event item placed at the Vault location (not part of the item pool).
 event_code = 10000 + MAX_ROOMS + 5
 
-lookup_id_to_name: typing.Dict[int, str] = {data.code: name for name, data in item_table.items()}
+lookup_id_to_name: typing.Dict[int, str] = {
+    data.code: name for name, data in item_table.items()
+}

@@ -12,8 +12,10 @@ let
   childPortA3B = 8083;
   childPortGzenz = 8085;
   childPortSwift = 8089;
+  childPortCinference = 8092;
   requestLogGzenz = "${logDir}/requests-gzenz.jsonl";
   requestLogSwift = "${logDir}/requests-swift.jsonl";
+  requestLogCinference = "${logDir}/requests-cinference.jsonl";
 
   # Shared build for the NInfer engine. Two engines are built from two
   # different sources: the pinned upstream rev (with the local
@@ -101,6 +103,20 @@ let
     # `nix flake update ninfer-gzenz` re-pins it.
     src = inputs.ninfer-gzenz;
     homepage = "https://github.com/gzenz/ninfer";
+  };
+
+  # Cinference fork: a focused NInfer fork (satellitedown/cinference) that raises
+  # the MTP draft window to 10 and derives CUDA Graph topology classes from the
+  # captured graph. Its base is the same NInfer rev we pin (9e163eee), so the
+  # shared build recipe (CUDA 13.1, arch 120a, ninfer / ninfer-serve app layout)
+  # builds it unchanged and the reasoning-effort patch applies (it only touches
+  # src/serve/*, which the fork's MTP delta does not modify). Source from the
+  # flakeless `cinference` input; `nix flake update cinference` re-pins it.
+  cinference = mkNinfer {
+    pname = "cinference";
+    src = inputs.cinference;
+    patchFile = ./reasoning-effort.patch;
+    homepage = "https://github.com/satellitedown/cinference";
   };
 
   # Socket-activated idle wrapper (shared with the vLLM containers; the
@@ -382,6 +398,65 @@ let
     requestLogSwift
   ];
 
+  # Fifth serving child: the Cinference fork engine (MTP-10) on the Swift
+  # (abliterated) Qwen3.8-27B NVFP4 checkpoint, on its own loopback port.
+  #
+  # The whole point of the fork is MTP-10: --draft-tokens 10 (the stock/gzenz
+  # children use 3; the Swift child uses DFlash2 K7). cinference extends the MTP
+  # window cap from 5 to 10 and derives CUDA Graph topology classes from the
+  # captured graph, so longer proposals share executables instead of re-capturing.
+  #
+  # Model/spec pairing note: the Swift artifact is documented with a DFlash2
+  # drafter (the stock engine runs it with --spec dflash2). MTP-10 needs MTP
+  # layers; the Swift checkpoint keeps the official Qwen3.8 NVFP4 layout (which
+  # carries MTP), so --spec mtp is expected to load. If it does not, the child
+  # fails at load — flip --spec mtp to --spec dflash2 (cinference supports
+  # DFlash2 to K=15) or point at the stock qwen3_8_27b_nvfp4.ninfer (known
+  # MTP-capable).
+  childCommandCinference = [
+    "${cinference}/bin/ninfer-serve"
+    "${modelsDir}/${ninferModelFileSwift}"
+    "--host"
+    "127.0.0.1"
+    "--port"
+    (toString childPortCinference)
+    "--kv-dtype"
+    "nvfp4"
+    "--max-context"
+    "240000"
+    "--kv-capacity"
+    "250000"
+    "--default-max-tokens"
+    "200000"
+    "--pending-timeout-ms"
+    "900000"
+    "--prefill-chunk"
+    "1024"
+    "--max-concurrency"
+    "2"
+    "--max-pending-requests"
+    "128"
+    "--device-state-slots"
+    "2"
+    "--host-state-slots"
+    "8"
+    "--host-kv-mib"
+    "8192"
+    "--temperature"
+    "0.7"
+    "--presence-penalty"
+    "0.0"
+    "--spec"
+    "mtp"
+    "--draft-tokens"
+    "10"
+    "--lm-head-draft"
+    "--reasoning-effort"
+    "low"
+    "--request-log-jsonl"
+    requestLogCinference
+  ];
+
   downloadNinferModel = name: repo: dir: file: ''
     mkdir -p ${dir}
     if [ ! -f "${dir}/${file}" ]; then
@@ -403,7 +478,7 @@ let
 
 in
 {
-  environment.systemPackages = [ ninfer ninferGzenz ];
+  environment.systemPackages = [ ninfer ninferGzenz cinference ];
 
   systemd.tmpfiles.rules = [
     "d ${modelsDir} 0755 root root -"
@@ -535,6 +610,38 @@ in
       Type = "simple";
 
       ExecStart = serveExecStart childPortSwift requestLogSwift childCommandSwift;
+
+      Restart = "on-abnormal";
+      RestartSec = "3";
+
+      Environment = [
+        "CUDA_VISIBLE_DEVICES=0"
+        "LD_LIBRARY_PATH=/run/opengl-driver/lib"
+      ];
+    };
+  };
+
+  # Fifth socket-activated service: the Cinference fork engine (MTP-10) on port
+  # 8091 (front) / 8092 (child), serving the Swift (abliterated) Qwen3.8-27B
+  # NVFP4 checkpoint. Same idle-unload pattern as the other four; mutually
+  # exclusive in practice (one 32 GB card, all socket-activated on demand).
+  systemd.sockets.ninfer-serve-cinference = {
+    description = "Cinference (MTP-10 fork) engine socket (socket activation, on-demand model residency)";
+    wantedBy = [ "sockets.target" ];
+
+    socketConfig = {
+      ListenStream = "127.0.0.1:8091";
+    };
+  };
+
+  systemd.services.ninfer-serve-cinference = {
+    description = "Cinference (MTP-10 fork) engine for Qwen3.8-27B NVFP4 (socket-activated, unloads after ${toString idleSeconds}s idle)";
+    after = [ "ninfer-serve-cinference.socket" ];
+
+    serviceConfig = {
+      Type = "simple";
+
+      ExecStart = serveExecStart childPortCinference requestLogCinference childCommandCinference;
 
       Restart = "on-abnormal";
       RestartSec = "3";

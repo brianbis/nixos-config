@@ -17,7 +17,7 @@ in
 
     servedName = "gemma-4-nvfp4";
 
-    port = 8000;
+    port = 8021;
 
     maxModelLen = 32768;
 

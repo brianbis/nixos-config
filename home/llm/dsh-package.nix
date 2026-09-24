@@ -10,20 +10,23 @@
 # `nix flake update dsh` re-pins the source; the version follows the pinned
 # tree's root package.json (see jails.nix).
 #
-# The packed tarball's package.json lists four devDependencies for
-# experimental features (the dsh-experimental-* packages). They are
-# dev-only — the CLI's runtime loads its `dependencies`, and none of the
-# shipped compositions reference the experimental ones — so srcWithLock
-# strips them to keep the installed tree minimal and in sync with the
-# lockfile for `npm ci`. (At 0.1.2-alpha.5 they were also unpublished;
-# by 0.1.6-alpha.1 they are published, but still stripped: dev-only.)
+# srcWithLock strips dev-only experimental devDependencies (the
+# dsh-experimental-* packages) from the packed tarball's package.json to keep
+# the installed tree minimal and in sync with the lockfile for `npm ci`.
+# At 0.1.6-alpha.2 the strip is a no-op: those packages are no longer
+# devDependencies (dsh-experimental-agent-team-profile and
+# dsh-experimental-agent-team-web-profile are runtime dependencies), so the
+# lockfile covers them like any other dependency. (At 0.1.2-alpha.5 they were
+# also unpublished; by 0.1.6-alpha.1 they are published, but were still
+# dev-only and stripped.)
 { lib, bashInteractive, buildNpmPackage, jq, makeWrapper, nodejs, runCommand, versionCheckHook, versionCheckHomeHook, src, version }:
 
 let
   # src is the @deepseek-ai/dsh tarball built from source (dsh-source.nix).
-  srcWithLock = runCommand "dsh-tarball-with-lock" {
-    nativeBuildInputs = [ jq ];
-  } ''
+  srcWithLock = runCommand "dsh-tarball-with-lock"
+    {
+      nativeBuildInputs = [ jq ];
+    } ''
     mkdir -p $out
     tar -xzf ${src} -C $out --strip-components=1
     # Strip the dev-only experimental devDependencies (see file header).
@@ -40,11 +43,16 @@ buildNpmPackage {
   inherit version;
   src = srcWithLock;
 
+  # npm ci OOMs at node's default 4 GiB heap on this dependency tree
+  # (0.1.7-alpha.2, "Ineffective mark-compacts near heap limit"); the host
+  # has 62 GiB, so give npm's node process 8 GiB.
+  NODE_OPTIONS = "--max-old-space-size=16384";
+
   npmDepsFetcherVersion = 2;
   # Sub-pin of the npm closure (registry resolution of the tarball's
   # package.json against dsh-package-lock.json). Re-pin when the lockfile
   # changes: set to "", build, copy the `got: sha256-…` value back.
-  npmDepsHash = "sha256-iFpn65sj3NKWY0HsH5f8mJhzxhV8quJYShb0jeeKGh8=";
+  npmDepsHash = "sha256-SBnnIbpEWxbjiLIZclPmGFFqLWPVAk4e9tv1SE3NurA=";
 
   dontNpmBuild = true;
 

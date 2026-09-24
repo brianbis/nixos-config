@@ -49,7 +49,7 @@
   # so pin ffmpeg_8 (libavutil.so.60 / libavcodec.so.62 / ... = the "core8" set).
   # Only the 7 core FFmpeg libs are bundled; each carries a store RUNPATH to its
   # own transitive codecs (x264, vpx, dav1d, ...), so they resolve at runtime.
-  , ffmpeg_8          # libav*/libsw* — torchcodec's FFmpeg 8 ABI
+, ffmpeg_8          # libav*/libsw* — torchcodec's FFmpeg 8 ABI
   # A full, self-consistent CUDA toolkit (nvcc + headers + cicc/nvvm) for the
   # FlashInfer JIT. The JIT's CCCL (libcu++) cuda_toolkit.h check aborts the
   # build when the nvcc compiler's version disagrees with the toolkit headers'
@@ -59,7 +59,7 @@
   # toolkit is one self-consistent version, so it passes. It is unfree (CUDA
   # EULA) — enabled narrowly by the flake for this input alone, exactly as the
   # vLLM DFlash2 runtime does.
-  , cudaToolkit
+, cudaToolkit
 }:
 
 let

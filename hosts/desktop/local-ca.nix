@@ -12,10 +12,11 @@
 
 let
   services = {
-    "llm.local" = 8000; # llama.cpp router / vLLM (OpenAI-compatible API)
+    "llm.local" = 8000; # llama.cpp router (OpenAI-compatible API; vLLM now on :8020/:8021/:8022/:8023)
     "ninfer.local" = 8080; # NInfer engine (Qwen3.8-27B NVFP4, socket-activated)
     "ninfer-a3b.local" = 8082; # NInfer engine (Qwen3.6-35B-A3B, socket-activated)
     "ninfer-gzenz.local" = 8084; # NInfer gzenz fork engine (Qwen3.8-27B NVFP4, socket-activated)
+    "ninfer-cinference.local" = 8091; # Cinference fork engine (MTP-10, Qwen3.8-27B NVFP4 Swift abliterated, socket-activated)
     "sglang.local" = 8086; # SGLang engine (Qwen3.8-27B NVFP4, native, socket-activated)
     "headroom.local" = 8787; # Headroom compression proxy -> local llama.cpp
     "deepseek.local" = 8788; # Headroom compression proxy -> DeepSeek cloud

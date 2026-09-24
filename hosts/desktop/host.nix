@@ -33,7 +33,7 @@ in
   # kernel >= 6.8 (this box runs a 26.05-era kernel). Enabled by
   # swapDevices; the file itself is created by the ordered mk-swapfile
   # oneshot below.
-  swapDevices = [ { device = "/swapfile"; } ];
+  swapDevices = [{ device = "/swapfile"; }];
 
   # Ordering guarantee for the swap file. The fstab entry above makes
   # systemd-fstab-generator create a swapfile.swap unit at boot (in

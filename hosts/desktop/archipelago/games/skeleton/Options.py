@@ -8,6 +8,7 @@ class RoomCount(Range):
     Number of rooms in the crypt. Each room holds checks_per_room checks and
     is locked behind its own key.
     """
+
     display_name = "Room Count"
     range_start = 1
     range_end = 10
@@ -18,6 +19,7 @@ class ChecksPerRoom(Range):
     """
     Number of checks in each room.
     """
+
     display_name = "Checks per Room"
     range_start = 1
     range_end = 5
@@ -29,6 +31,7 @@ class StartWithKeys(Toggle):
     Start with all room keys and the master key. Rooms are open from the
     beginning; only the checks remain to find.
     """
+
     display_name = "Start With Keys"
     default = 0
 

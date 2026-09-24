@@ -5,13 +5,18 @@
 #   qwen38-dflash2.nix      Qwen3.8-27B NVFP4 + DFlash2 K7 (NATIVE process,
 #                           socket-activated on-demand; pinned release
 #                           artifacts)
+#   k2horizon-nvfp4.nix     K2-Horizon-MoVA-36B-A4B NVFP4 (docker, manual
+#                           start; pinned vLLM nightly — k2_horizon is not in
+#                           a release yet)
+#   lensvlm.nix             LensVLM-9B bf16 (docker, manual start; bare
+#                           apple/LensVLM-9B repo, full-size weights)
 #
-# The two Gemma checkpoints still run as docker containers (docker enable,
-# nvidia-container-toolkit, the oci-containers backend). The DFlash2 engine is
-# a native process (see ./qwen38-dflash2.nix + ./dflash2-package.nix) and needs
-# no container runtime. The shared /var/lib/vllm cache dirs and the ephemeral
-# HF_TOKEN env file live here; per-model checkpoints and services live in the
-# per-model files.
+# The Gemma and K2-Horizon checkpoints run as docker containers (docker
+# enable, nvidia-container-toolkit, the oci-containers backend). The DFlash2
+# engine is a native process (see ./qwen38-dflash2.nix + ./dflash2-package.nix)
+# and needs no container runtime. The shared /var/lib/vllm cache dirs and the
+# ephemeral HF_TOKEN env file live here; per-model checkpoints and services
+# live in the per-model files.
 { config, lib, pkgs, ... }:
 
 {
@@ -19,6 +24,8 @@
     ./gemma4-nvfp4-turbo.nix
     ./gemma4-awq.nix
     ./qwen38-dflash2.nix
+    ./k2horizon-nvfp4.nix
+    ./lensvlm.nix
   ];
 
   # Docker is still required for the Gemma containers.

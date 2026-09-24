@@ -12,7 +12,9 @@ class TestSkeleton(SkeletonTestBase):
 
     def test_id_tables_are_supersets(self):
         self.assertEqual(len(self.world.item_name_to_id), MAX_ROOMS + 4)
-        self.assertEqual(len(self.world.location_name_to_id), MAX_ROOMS * MAX_CHECKS + 1)
+        self.assertEqual(
+            len(self.world.location_name_to_id), MAX_ROOMS * MAX_CHECKS + 1
+        )
 
     def test_room1_is_bootstrap(self):
         # Room 1 needs no key: it is the player's starting point.
@@ -48,4 +50,8 @@ class TestSkeleton(SkeletonTestBase):
         for i in range(1, self.world.options.room_count.value + 1):
             entrance = self.multiworld.get_entrance(f"Room {i} Door", 1)
             self.assertTrue(entrance.can_reach(self.multiworld.state))
-        self.assertTrue(self.multiworld.get_entrance("Vault Door", 1).can_reach(self.multiworld.state))
+        self.assertTrue(
+            self.multiworld.get_entrance("Vault Door", 1).can_reach(
+                self.multiworld.state
+            )
+        )

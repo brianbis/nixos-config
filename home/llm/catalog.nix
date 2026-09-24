@@ -37,14 +37,16 @@ let
   # tool (crush / opencode / aider) derives its provider + model lists from
   # here, so a model edit hits all tools at once and every tool sees the same set.
   models = {
-    # Local backends. Two engines, both serving the OpenAI-compatible API on
-    # :8000, are mutually exclusive (start one at a time): vLLM (cached Gemma-4
-    # AWQ/NVFP4 weights) and llama.cpp (Muse-Glimmer-30B GGUF).
+    # Local backends. vLLM (cached Gemma-4 AWQ/NVFP4 weights) serves the
+    # OpenAI-compatible API on its own host ports (:8021 NVFP4 / :8022 AWQ);
+    # llama.cpp (Muse-Glimmer-30B GGUF) serves it on :8000. Only one vLLM engine
+    # runs at a time (VRAM), so the vLLM ports are mutually exclusive with each
+    # other — but none of them collide with the llama.cpp router's :8000.
     gemma4awq = {
       providerName = "vllm_awq";
       id = "gemma-4-awq";
       name = "Gemma 4 26B MoE AWQ";
-      url = headroomProxyUrl;
+      url = "http://127.0.0.1:8022";
       context = 262144;
       # Single-generation cap for a 32GB card. A request far beyond this
       # (e.g. 180k output) won't fit one run alongside the 17GB AWQ weights;
@@ -61,9 +63,9 @@ let
       providerName = "vllm_nvfp4";
       id = "gemma-4-nvfp4";
       name = "Gemma 4 31B NVFP4";
-      url = headroomProxyUrl;
+      url = "http://127.0.0.1:8021";
       # Must match --max-model-len 32768 in hosts/desktop/llm/vllm/gemma4-nvfp4-turbo.nix.
-      context = 32768;
+      context = 80000;
       maxTok = 30000;
       reason = true;
       attachments = false;
@@ -189,6 +191,45 @@ let
       reason = true;
       attachments = true;
     };
+    # MiMo-V2.6-Distill-Qwen-9B (bartowski bf16 GGUF, llama.cpp :8000 via
+    # headroom). A 9B agentic distill of Qwen3.5-9B. Thinking is a boolean
+    # (enable_thinking) in this model's chat template, not a reasoning_effort
+    # level, so it's a plain reasoning model (no reasoningEfforts selector); the
+    # router preset enables thinking by default. The 17.9 GiB bf16 weights leave
+    # ample VRAM headroom, so the KV cache stays on the card (kv-offload). The
+    # bf16 mmproj makes it vision-capable.
+    mimo = {
+      providerName = "llamacpp";
+      id = "mimo-v2.6-9b-bf16";
+      name = "MiMo-V2.6-Distill-Qwen-9B (bf16 GGUF)";
+      url = headroomProxyUrl;
+      context = 262144;
+      maxTok = 240000;
+      reason = true;
+      attachments = true;
+    };
+    # LensVLM-9B: Apple's 9B vision-language model (Qwen3.5-9B based) for
+    # selective context expansion over compressed document images, served by
+    # the vLLM docker container (hosts/desktop/llm/vllm/lensvlm.nix) on its own
+    # host port (:8023, direct URL) from the bare apple/LensVLM-9B repo — full
+    # bf16 weights, no quantization. The 18.8 GiB weights fit the 32 GB card
+    # with an fp8 KV cache; the 131072 context must match --max-model-len.
+    # Thinking is a boolean (enable_thinking) in this model's chat template, so
+    # it's a plain reasoning model (no reasoningEfforts selector).
+    lensvlm = {
+      providerName = "vllm_lensvlm";
+      id = "lensvlm-9b";
+      name = "LensVLM-9B (bf16 vLLM)";
+      url = "http://127.0.0.1:8023";
+      context = 131072;
+      maxTok = 32768;
+      reason = true;
+      attachments = true;
+      costIn = 0;
+      costOut = 0;
+      costInCached = 0;
+      costOutCached = 0;
+    };
     # Ternary-Bonsai-2-27B (PQ2_0): the PrismML-Eng ternary 27B, served by the
     # Bonsai fork router on :8010 (NOT via headroom, which upstreams the stock
     # :8000 router). Direct URL, like the ninfer/vllm engines. Two modes —
@@ -275,6 +316,29 @@ let
         xhigh = "xhigh";
       };
     };
+    # Same Qwen3.8-27B NVFP4 artifact as qwen38_nvfp4_ninfer, but served by the
+    # Cinference fork engine (ninfer-serve-cinference, socket-activated front
+    # :8091). The fork's distinguishing feature is MTP-10: --draft-tokens 10
+    # (vs the stock/gzenz 3), so longer speculative proposals are verified per
+    # round. Served on the Swift (abliterated) NVFP4 checkpoint (reused weights,
+    # no new download). The fork's serve binary has the reasoning-effort patch
+    # applied (same base rev), so the same low/medium/xhigh levels apply and a
+    # per-request reasoning_effort always wins.
+    qwen38_nvfp4_ninfer_cinference = {
+      providerName = "ninfer_cinference";
+      id = "qwen3.8-27b";
+      name = "Qwen3.8-27B NVFP4 NInfer (Cinference fork, MTP-10)";
+      url = "http://127.0.0.1:8091";
+      context = 240000;
+      maxTok = 200000;
+      reason = false;
+      attachments = false;
+      reasoningEfforts = {
+        low = "low";
+        medium = "medium";
+        xhigh = "xhigh";
+      };
+    };
     # Swift (abliterated) Qwen3.8-27B NVFP4 — community "abliterated" (safety
     # training removed) NVFP4 checkpoint, served by the stock engine
     # (ninfer-serve-swift, socket-activated front :8088). Same Qwen3.8-27B
@@ -324,6 +388,29 @@ let
       reason = false;
       attachments = false;
     };
+    # K2-Horizon-MoVA-36B-A4B NVFP4: the IFM 36B MoE / 4B-active Mixture-of-
+    # Values model, served by the pinned vLLM nightly docker container
+    # (hosts/desktop/llm/vllm/k2horizon-nvfp4.nix). k2_horizon is not in a vLLM
+    # release yet, so the container pins the exact nightly the NVFP4 checkpoint
+    # was validated on. On its own host port (:8020, direct URL) so it no longer
+    # shares :8000 with the llama.cpp router or the Gemma containers; only one
+    # vLLM engine runs at a time (VRAM).
+    k2horizon_nvfp4 = {
+      providerName = "vllm_k2horizon";
+      id = "k2-horizon-mova-36b-a4b-nvfp4";
+      name = "K2-Horizon-MoVA-36B-A4B NVFP4";
+      url = "http://127.0.0.1:8020";
+      # Must match --max-model-len 32768 in
+      # hosts/desktop/llm/vllm/k2horizon-nvfp4.nix.
+      context = 80000;
+      maxTok = 80000;
+      reason = true;
+      attachments = false;
+      costIn = 0;
+      costOut = 0;
+      costInCached = 0;
+      costOutCached = 0;
+    };
     deepseekPro = {
       providerName = "deepseek";
       id = "deepseek-v4-pro";
@@ -365,6 +452,12 @@ let
     vllm_dflash2_direct.name = "vLLM DFlash2 direct (local)";
     vllm_dflash2_direct.type = "openai-compat";
     vllm_dflash2_direct.api_key = "sk-local";
+    vllm_k2horizon.name = "vLLM K2-Horizon NVFP4 (local)";
+    vllm_k2horizon.type = "openai-compat";
+    vllm_k2horizon.api_key = "sk-local";
+    vllm_lensvlm.name = "vLLM LensVLM (local)";
+    vllm_lensvlm.type = "openai-compat";
+    vllm_lensvlm.api_key = "sk-local";
     ninfer.name = "NInfer (local)";
     ninfer.type = "openai-compat";
     ninfer.api_key = "sk-local";
@@ -374,6 +467,9 @@ let
     ninfer_gzenz.name = "NInfer gzenz fork (local)";
     ninfer_gzenz.type = "openai-compat";
     ninfer_gzenz.api_key = "sk-local";
+    ninfer_cinference.name = "NInfer Cinference fork (local)";
+    ninfer_cinference.type = "openai-compat";
+    ninfer_cinference.api_key = "sk-local";
     ninfer_swift.name = "NInfer Swift abliterated (local)";
     ninfer_swift.type = "openai-compat";
     ninfer_swift.api_key = "sk-local";
@@ -567,10 +663,13 @@ let
       vllm_nvfp4 = opencodeProvider "vllm_nvfp4";
       vllm_dflash2 = opencodeProvider "vllm_dflash2";
       vllm_dflash2_direct = opencodeProvider "vllm_dflash2_direct";
+      vllm_k2horizon = opencodeProvider "vllm_k2horizon";
+      vllm_lensvlm = opencodeProvider "vllm_lensvlm";
       ninfer = opencodeProvider "ninfer";
       ninfer_a3b = opencodeProvider "ninfer_a3b";
       ninfer_gzenz = opencodeProvider "ninfer_gzenz";
       ninfer_swift = opencodeProvider "ninfer_swift";
+      ninfer_cinference = opencodeProvider "ninfer_cinference";
       sglang = opencodeProvider "sglang";
       deepseek = opencodeProvider "deepseek";
     };

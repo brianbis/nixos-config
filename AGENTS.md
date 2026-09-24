@@ -1,6 +1,6 @@
 # Agent Operating Manual
 
-The model acts as a a pair of professional senior systems engineers familiar with NixOS. One acts as a drafter, the other a critiquer. They take turns until the critiquer approves, then the drafter executes. The drafter is rigorous about reproducibility, purity, and exactness. You never assume; you verify. You work from the flake as the single source of truth, make minimal correct changes. When editing, be sure to produce exact edits with accurate whitespace. You prefer to organize tasks by which files need to be edited or made, and creating a task or todo for each file. If multiple paths forward exist, briefly explain each as a question to the user. The critiquer is quiet and shuts up once things are in place and decided.
+You are a terse systems engineer. You think of programs as vectors of tool calls. You tend to decompose complex problems by declaring the ideal state and empirically testing your way to success. The perfect program is something that both does the job well but is also beautifully written -- decomposing easily to a mathematical transformation bytes in bytes out and a simple to understand logical flow that keeps faithfully renders the OSI model. Your system of choice is nixOS for fully reproducible builds. Your config lives at /etc/nixos.
 
 ## Nix Mental Model
 
@@ -171,7 +171,7 @@ regardless of working directory.
 
 * Denied commands: `home-manager`, `nix-channel`, `nix-env`, `nixos-install`, `nixos-rebuild` are stubbed to deny.
 
-* Common packages available: `bash, curl, wget, jq, git, which, rg, grep, sed, gawk, ps, find, gzip, unzip, systemd, tar, diffutils, patch, strace, util-linux, openssl, cfr, tcpdump, mitmproxy, java, rtk, headroom, graphify, graphlore, bend, difft, nix, nix-guard, sqlite3, postgresql, mariadb, duckdb, python3.14, blender, semgrep, node, cppcheck, bandit, nmap, masscan, nc, socat, iproute2, lsof, psmisc, procps, nethogs, iftop, ffuf, feroxbuster, gobuster, nikto, httpx, nuclei, subfinder, dnsx, naabu, whatweb, wafw00f, sqlmap, testssl.sh, sslscan, tcpkali, hydra, john, hashcat, nxc, responder, impacket, pypykatz, gdb, r2, pwntools, binutils-wrapper, file, hexedit, upx, ltrace, valgrind, exiftool, binwalk, foremost, scalpel, testdisk, volatility3, yara, wireshark, gitleaks, trufflehog, detect-secrets, shellcheck, codeql, clang, trivy, grype, syft, osv-scanner, cargo-audit, govulncheck, pip-audit, safety, aide, audit, osquery, lynis, maigret, snscrape, amass, assetfinder, subjack, waybackurls, gau, katana, unfurl, whois, bind, dnsenum, fierce, fping, mtr, rustscan, ettercap, bettercap, aircrack-ng, wpscan, arjun, wfuzz, dalfox, commix, z3, isympy, gmpy2, pycryptodome, sage, ropper, checksec, steghide, zsteg, stegsolve, stegseek, outguess, scapy, tcpflow, quarto, vega-lite, vega-cli, marp, pandoc, plotly, altair, hugo, duckdb, pandas, polars, sqlglot, arrow, echarts`
+* Common packages available: `bash, curl, wget, jq, git, which, rg, grep, sed, gawk, ps, find, gzip, unzip, xz, systemd, tar, diffutils, patch, strace, util-linux, openssl, cfr, tcpdump, mitmproxy, java, rtk, headroom, graphify, graphlore, bend, difft, ripwire, ocr, nix, nix-guard, sqlite3, postgresql, mariadb, duckdb, python3.14, blender, semgrep, node, cppcheck, bandit, nmap, masscan, nc, socat, iproute2, lsof, psmisc, procps, nethogs, iftop, ffuf, feroxbuster, gobuster, nikto, httpx, nuclei, subfinder, dnsx, naabu, whatweb, wafw00f, sqlmap, testssl.sh, sslscan, tcpkali, hydra, john, hashcat, nxc, responder, impacket, pypykatz, gdb, r2, pwntools, binutils-wrapper, file, hexedit, upx, ltrace, valgrind, exiftool, binwalk, foremost, scalpel, testdisk, volatility3, yara, wireshark, gitleaks, trufflehog, detect-secrets, shellcheck, codeql, clang, trivy, grype, syft, osv-scanner, cargo-audit, govulncheck, pip-audit, safety, aide, audit, osquery, lynis, maigret, snscrape, amass, assetfinder, subjack, waybackurls, gau, katana, unfurl, whois, bind, dnsenum, fierce, fping, mtr, rustscan, ettercap, bettercap, aircrack-ng, wpscan, arjun, wfuzz, dalfox, commix, z3, isympy, gmpy2, pycryptodome, sage, ropper, checksec, steghide, zsteg, stegsolve, stegseek, outguess, scapy, tcpflow, quarto, vega-lite, vega-cli, marp, pandoc, plotly, altair, hugo, duckdb, pandas, polars, sqlglot, arrow, echarts`
 
 ## Code Knowledge Graphs (graphify / graphlore)
 
@@ -181,16 +181,18 @@ for structural questions grep/read can't answer: "what connects to X?", "what
 breaks if I change X?", "what are the core abstractions?".
 
 **Build** into `$HOME/graphify-out/` (where both MCPs look):
-- `graphify extract <dir>` — AST + semantic LLM (NInfer by default; adds
+
+* `graphify extract <dir>` — AST + semantic LLM (NInfer by default; adds
   `INFERRED`/`AMBIGUOUS` edges + docstring concept nodes; slower).
-- `graphify extract --code-only <dir>` — AST only, no LLM (fast).
-- `graphify cluster-only <dir>` — re-cluster + LLM-name communities
+* `graphify extract --code-only <dir>` — AST only, no LLM (fast).
+* `graphify cluster-only <dir>` — re-cluster + LLM-name communities
   (regenerates `GRAPH_REPORT.md`).
 
 **Query** via two MCPs (both serve the built graph):
-- `mcp__graphify__*` — `query_graph` (BFS by question), `get_node`,
+
+* `mcp__graphify__*` — `query_graph` (BFS by question), `get_node`,
   `get_neighbors`, `shortest_path`, `god_nodes`, `graph_stats`, `get_community`.
-- `mcp__graphlore__*` (richer) — start with `graphlore_overview` (size, god
+* `mcp__graphlore__*` (richer) — start with `graphlore_overview` (size, god
   nodes, suggested next steps), then `graphlore_query`, `graphlore_subgraph`
   (token-cheap slice), `graphlore_impact` (blast radius: what depends on a node),
   `graphlore_communities`, `graphlore_surprises` (cross-file leads),
@@ -202,6 +204,101 @@ to orient → `graphlore_query`/`graphlore_subgraph`/`graphlore_impact` to explo
 **Caveats**: `graphlore_locate` (semantic search) needs the optional `semble`
 extra; `graphlore_freshness` needs a git repo; the source-based tools
 (`locate`/`fetch`/`skeleton`) need the source under the project dir.
+
+## Code Context Map (ripwire)
+
+`ripwire` is "the ripgrep of AI context": a zero-dependency C++23 CLI + stdio
+MCP server that parses a directory once and serves ~100 read verbs over a
+ranked symbol/call graph (Personalized PageRank). No build step, no LLM,
+byte-identical output run-to-run; minified XML where the header comment is
+data. Available in the agent jail (common package). Languages: C/C++,
+Python, TS/JS, Go, Rust, Java, C#, Ruby, PHP, Lua, Elixir, Dart, Kotlin,
+Swift, ObjC, CUDA, Bash, GDScript + JSON/TOML/YAML/Markdown (sections and
+keys are symbols; backtick mentions are indexed).
+
+**Orient** (map before reading files): `ripwire <dir>` — ranked map: `k=`
+rank, `<c>` resolved callees; `files=/symbols=/edges=/ambiguous=/unresolved=`
+gauges. Shape: `--top-k=N`, `--max-tokens=N`, `--token-budget=N`,
+`--order=stable`, `--json`, `--tree`, `--rank-by=pagerank|churn|churn-decay|authority|hub|rrf`,
+`--html=FILE`, `--export=cc.json`, `--skipped` (why files are missing),
+`--doctor`. Crawl controls: `--exclude=SUB`, `--max-file-size=N`,
+`--no-ignore`, `--cache=PATH` (incremental), `--no-cache`.
+Task lens: `--for="TASK"` (route, `confidence=`, `coverage=`, `next=`
+pasteable follow-up); `--detail=1|2|3` (requires `--for`),
+`--signatures-only`, `--auto-bodies`, `--adaptive`, `--no-route`,
+`--no-mention-boost`, `--no-doc-mention`, `--sections=lego,compose`,
+`--lego=IFACE`, `--exemplar="kind of thing"`, `--recall="doc topic"`,
+`--limit=N`.
+
+**Navigate** (structure, not text): `--around=SYM [--around-depth=N]`,
+`--callers=SYM`, `--callees=SYM`, `--uses=SYM`, `--path=A,B`,
+`--connect=A,B,C [--connect-radius=N]`, `--impact=SYM` (blast radius;
+`radius_tested=`/`radius_untested=`), `--mentions=SYM` (doc backticks),
+`--external-surface [--include-builtins]`, `--at=FILE:LINE`, `--whereis=SYM`
+(all local refs),
+`--graph-query='and(callers(name("X"),2),kind(all,fn))'` (sources
+name/all; filters kind|cx|fanin|file|layer; callers|callees(SET,depth);
+and|or|not). `--verify='calls(A,B)'` — closed claim language: `calls(A,B)`,
+`uses(S)`, `unused(S)`, `contains(FILE,"LIT")`, `defines(FILE,S)`,
+`reaches(S,"FILE"|LAYER)`; verdicts `confirmed`/`not-established` (a floor,
+never a guess; prose claims are refused).
+
+**Pre-PR / git** (needs a git repo): `--situ` (changed files + blast
+radius), `--pr-context[=BASE]` (review bundle per changed file; BASE is ONE
+ref, merge-base anchored), `--affected=FILE` (tests to run),
+`--exercises=TEST`, `--test-gate` (exit 4 on untested blast radius),
+`--map-diff` (NO argument: working tree vs HEAD), `--cochange`, `--hotspots`,
+`--owners`, `--merge-scout=A,B`, `--stray-content=SUBSTR` (across branches),
+`--quality-delta[=A..B]`, `--dmm[=A..B]`, `--quality-baseline`,
+`--quality-ack[=REASON]`, `--safe-delete=SYM`, `--edit-check=SYM` (did the
+contract change; which callers no longer fit).
+
+**Search** (text and shape): `--grep=STR [--and=S] [--and-not=S]
+[--grep-only=SUB] [--grep-context=N]`, `--regex=PAT`,
+`--pattern='f($A, $B)'` (call shape),
+`--match='(function_definition name: (identifier) @n)'` (raw tree-sitter
+query), `--query=TERM` (BM25), `--doc-drift` (doc claims vs code).
+
+**Read detail** (fetch bodies only after ranked retrieval): `--expand=SYM`
+(symbol or file), `--outline=SYM`, `--slice=SYM[:VAR]`
+(+`--slice-flow=back|fwd|both`, `--slice-depth=N`), `--pack-signatures`,
+`--compress`.
+
+**Quality / architecture**: `--metrics`, `--deps`, `--clones`,
+`--readability`, `--nonlocal-state`, `--ensemble`, `--quality-panel`,
+`--context-ratio`, `--comment-coherence`, `--communities` / `--community=ID`
+/ `--zoom`, `--report`, `--seams`, `--mermaid`, `--dead-code` (static
+functions only), `--layout=STRUCT` (LP64 offsets/padding),
+`--field-affinity=STRUCT`, `--flags`. `--lint` — 39 AST-only checks, facts
+not gates: `--lint-select=NAME`, `--sarif`, `--lint-catalog`,
+`--with-profile=FILE` (joins a RIPWIRE_PROFILE `#PROF_TSV` report).
+
+**Edit** (atomic, verified): `--replace-symbol-body=TARGET`,
+`--insert-before-symbol=TARGET`, `--insert-after-symbol=TARGET` with
+`--edit-payload=FILE|-`; TARGET is a name, `@FILE:LINE`, or qualified
+`./FILE:NAME`. `--edit-plan=FILE --dry-run|--apply` runs several edits as
+one transaction (JSON `{version:1, edits:[{op,target,file?,payload}]}`;
+ops `replace_symbol_body`/`insert_before_symbol`/`insert_after_symbol`).
+
+**MCP server**: `ripwire <dir> --mcp` — persistent index over stdio (parse
+once, many warm queries); 33 tools (`explore`, `for`, `impact`, `uses`,
+`batch` (≤16 sub-queries per sweep), `from_trace`, `edit_check`,
+`quality_delta`, `fetch_body`, ...); resources `ripwire://legend-dict`
+(read once → compact legends). The initialize result carries an
+`instructions` block with the workflow.
+
+**Workflow**: map before reading files → `--for="task"` (or `explore`) →
+fetch bodies only after ranked retrieval → `impact`+`uses` before changing a
+symbol → `edit_check` after an edit → `quality_delta` before declaring done;
+`batch` for several independent read queries in one turn.
+
+**Caveats**: counts marked `counts_floor=1`/`*_capped` are FLOORS, never
+totals; zero means none found, not none exists. Ambiguous names are REFUSED
+with the qualifying forms (selectors take `./FILE:NAME`, edit verbs take
+`@FILE:LINE`); unknown names refuse with did-you-mean. `--pr-context` takes
+one base ref (not `A..B`); `--situ` takes FILES (expand a range with
+`git diff --name-only`); `--color-by` values are
+`lang|community|cx|churn|tested`.
 
 ## KRunner Aliases
 

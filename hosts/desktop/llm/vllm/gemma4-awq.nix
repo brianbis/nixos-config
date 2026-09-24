@@ -17,7 +17,7 @@ in
 
     servedName = "gemma-4-awq";
 
-    port = 8000;
+    port = 8022;
 
     maxModelLen = 262144;
 

@@ -89,12 +89,13 @@ generations:
 rollback:
     sudo nixos-rebuild switch --rollback --flake . {{build-flags}}
 
-# vLLM docker containers (the Gemma checkpoints only). The Qwen3.8 DFlash2
-# engine is now a NATIVE process (see vllm-dflash2-* below), not a container.
+# vLLM docker containers (the Gemma + K2-Horizon checkpoints). The Qwen3.8
+# DFlash2 engine is now a NATIVE process (see vllm-dflash2-* below), not a
+# container.
 #
 # Only ever run ONE at a time: they fight over VRAM.
 
-vllm-containers := "docker-vllm-gemma4-nvfp4-turbo docker-vllm-gemma4-awq"
+vllm-containers := "docker-vllm-gemma4-nvfp4-turbo docker-vllm-gemma4-awq docker-vllm-k2horizon-nvfp4 docker-vllm-lensvlm"
 
 # Start commands
 
@@ -103,6 +104,12 @@ vllm-gemma4-nvfp4-turbo:
 
 vllm-gemma4-awq:
     sudo systemctl start docker-vllm-gemma4-awq.service
+
+vllm-k2horizon-nvfp4:
+    sudo systemctl start docker-vllm-k2horizon-nvfp4.service
+
+vllm-lensvlm:
+    sudo systemctl start docker-vllm-lensvlm.service
 
 # Qwen3.8 DFlash2 NATIVE engine (socket-activated on :18089, no docker). Like
 # the SGLang engine it is on-demand: a request to http://127.0.0.1:18089 starts

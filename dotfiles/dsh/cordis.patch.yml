@@ -45,7 +45,7 @@
 # The agent binds a target with the `open` tool, so no --file is needed here.
 - insert:
     - id: mcp-knife
-      name: '@deepseek-ai/dsh-mcp-client'
+      name: "@deepseek-ai/dsh-mcp-client"
       config:
         serverName: knife
         transport: stdio
@@ -69,7 +69,7 @@
 # this static profile can point at.
 - insert:
     - id: mcp-graphify
-      name: '@deepseek-ai/dsh-mcp-client'
+      name: "@deepseek-ai/dsh-mcp-client"
       config:
         serverName: graphify
         transport: stdio
@@ -92,7 +92,7 @@
 # inside the project being analyzed.)
 - insert:
     - id: mcp-graphlore
-      name: '@deepseek-ai/dsh-mcp-client'
+      name: "@deepseek-ai/dsh-mcp-client"
       config:
         serverName: graphlore
         transport: stdio
@@ -101,3 +101,25 @@
         cwd: /home/llm
         env:
           GRAPHLORE_PROJECT_DIR: /home/llm
+
+# ripwire: "the ripgrep of AI context" (redhat-et/ripwire): a zero-dependency
+# C++23 CLI + stdio MCP server that builds a ranked symbol/call graph
+# (Personalized PageRank) of a directory and serves ~100 read verbs (ranked
+# map, task lens, callers/callees/impact, pre-PR review bundles, quality
+# tracking, atomic edits, lint, evals). `ripwire` is on the jail PATH
+# (home/llm/jails.nix commonPkgSpecs), so the bare command resolves.
+#
+# Launched WITHOUT a directory (`ripwire --mcp`): both launch forms work
+# (verified — 33 tools each), but the dir-less form is the general one: every
+# tool carries its own required `path` argument, so one server serves any repo
+# the agent works in instead of pinning the index to a single directory. The
+# initialize result carries an `instructions` block with the workflow guidance.
+- insert:
+    - id: mcp-ripwire
+      name: "@deepseek-ai/dsh-mcp-client"
+      config:
+        serverName: ripwire
+        transport: stdio
+        command: ripwire
+        args: ["--mcp"]
+        cwd: !!js process.cwd()

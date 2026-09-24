@@ -17,7 +17,7 @@ let
   cargo = builtins.fromTOML (builtins.readFile (src + "/Cargo.toml"));
 in
 rustPlatform.buildRustPackage {
-  pname = cargo.package.name;      # "reknife"
+  pname = cargo.package.name; # "reknife"
   version = cargo.package.version; # "1.8.0"
   inherit src;
 

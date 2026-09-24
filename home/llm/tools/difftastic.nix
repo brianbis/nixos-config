@@ -14,7 +14,7 @@ let
   cargo = builtins.fromTOML (builtins.readFile (src + "/Cargo.toml"));
 in
 rustPlatform.buildRustPackage {
-  pname = cargo.package.name;      # "difftastic"
+  pname = cargo.package.name; # "difftastic"
   version = cargo.package.version; # "0.72.0"
   inherit src;
 

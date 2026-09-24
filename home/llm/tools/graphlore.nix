@@ -33,7 +33,7 @@ let
   # fetch the exact wheel by URL and unpack it (no build). `deps` are the
   # wheel's runtime deps (declared so the pythonRuntimeDepsCheckHook passes and
   # the package is self-contained).
-  pyWheel = { pname, version, hash, url, deps ? [] }: py.buildPythonPackage {
+  pyWheel = { pname, version, hash, url, deps ? [ ] }: py.buildPythonPackage {
     inherit pname version;
     format = "wheel";
     src = fetchurl { inherit url hash; };
@@ -60,19 +60,20 @@ let
     hash = "sha256-vemCWJRzoGCuFF40BumlMz/lOMlyKbqEH1p/kr4AT4E=";
     url = "https://files.pythonhosted.org/packages/1b/ff/8e7eade68b8a28f7da0ed1085544341b51f9c935dbf6b95c76b7edfea6a0/mcp-2.2.0-py3-none-any.whl";
     deps = [
-      py.anyio                  # >=4.10    (nixpkgs 4.14.2)
-      py.httpx2                 # >=2.5.0   (nixpkgs 2.9.1; brings httpcore2)
-      py.jsonschema             # >=4.20.0  (nixpkgs 4.26.0)
-      mcp-types                 # ==2.2.0   (not in nixpkgs)
-      py.opentelemetry-api      # >=1.28.0  (nixpkgs 1.43.0)
-      py.pydantic               # >=2.12.0  (nixpkgs 2.13.4)
-      py.pyjwt py.cryptography  # >=2.10.1 [crypto] (nixpkgs 2.13.0 / 50.0.0)
-      py."python-multipart"     # >=0.0.9   (nixpkgs 0.0.32)
-      py."sse-starlette"        # >=3.0.0   (nixpkgs 3.2.0)
-      py.starlette              # >=0.48.0  (nixpkgs 1.3.1)
-      py."typing-extensions"    # >=4.13.0  (nixpkgs 4.16.0)
-      py."typing-inspection"    # >=0.4.1   (nixpkgs 0.4.3)
-      py.uvicorn                # >=0.31.1  (nixpkgs 0.51.0)
+      py.anyio # >=4.10    (nixpkgs 4.14.2)
+      py.httpx2 # >=2.5.0   (nixpkgs 2.9.1; brings httpcore2)
+      py.jsonschema # >=4.20.0  (nixpkgs 4.26.0)
+      mcp-types # ==2.2.0   (not in nixpkgs)
+      py.opentelemetry-api # >=1.28.0  (nixpkgs 1.43.0)
+      py.pydantic # >=2.12.0  (nixpkgs 2.13.4)
+      py.pyjwt
+      py.cryptography # >=2.10.1 [crypto] (nixpkgs 2.13.0 / 50.0.0)
+      py."python-multipart" # >=0.0.9   (nixpkgs 0.0.32)
+      py."sse-starlette" # >=3.0.0   (nixpkgs 3.2.0)
+      py.starlette # >=0.48.0  (nixpkgs 1.3.1)
+      py."typing-extensions" # >=4.13.0  (nixpkgs 4.16.0)
+      py."typing-inspection" # >=0.4.1   (nixpkgs 0.4.3)
+      py.uvicorn # >=0.31.1  (nixpkgs 0.51.0)
     ];
   };
 in

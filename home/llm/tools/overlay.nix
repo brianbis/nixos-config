@@ -7,10 +7,12 @@
 #     the agents-md build)
 #   - the NixOS system's nixpkgs.overlays
 #
-# Takes the headroom, knife, graphify, graphlore, echarts, bend and difftastic
-# source trees (all flakeless inputs, threaded in from flake.nix) so `nix flake
-# update <name>` re-pins each.
-headroomSrc: knifeSrc: graphifySrc: graphloreSrc: echartsSrc: bendSrc: difftasticSrc: final: prev: {
+# Takes the headroom, knife, graphify, graphlore, echarts, bend, difftastic
+# and ripwire source trees (all flakeless inputs, threaded in from flake.nix)
+# so `nix flake update <name>` re-pins each. open-code-review is the
+# exception: it is pinned to a release tag inside ./open-code-review.nix
+# (fetchFromGitHub), so it takes no source argument.
+headroomSrc: knifeSrc: graphifySrc: graphloreSrc: echartsSrc: bendSrc: difftasticSrc: ripwireSrc: final: prev: {
   python3 = prev.python3.override {
     packageOverrides = pyfinal: pyprev: {
       ast-grep-cli =
@@ -76,4 +78,17 @@ headroomSrc: knifeSrc: graphifySrc: graphloreSrc: echartsSrc: bendSrc: difftasti
   # `difftastic` input (see ./difftastic.nix); `nix flake update difftastic`
   # re-pins the source.
   difftastic = final.callPackage ./difftastic.nix { src = difftasticSrc; };
+
+  # open-code-review: Alibaba's AI code review CLI, invoked as `ocr`
+  # (alibaba/open-code-review). Not in nixpkgs, so ./open-code-review.nix
+  # builds it with buildGoModule from the pinned v1.12.8 release tag
+  # (self-contained fetchFromGitHub; see the file for the re-pin notes).
+  openCodeReview = final.callPackage ./open-code-review.nix { };
+
+  # ripwire: "the ripgrep of AI context" (redhat-et/ripwire): a
+  # zero-dependency C++23 CLI + MCP server that gives coding agents a ranked,
+  # deterministic map of a repo (signatures, blast radius, tests-to-run,
+  # quality deltas). Built from the flakeless `ripwire` input (see
+  # ./ripwire.nix); `nix flake update ripwire` re-pins the source.
+  ripwire = final.callPackage ./ripwire.nix { src = ripwireSrc; };
 }

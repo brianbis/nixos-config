@@ -68,6 +68,6 @@
 /* Explicit fallbacks for widgets that do not resolve through the tokens */
 window.background,
 .background {
-    background-color: #000000;
-    color: #e6e6e6;
+  background-color: #000000;
+  color: #e6e6e6;
 }

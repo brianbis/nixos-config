@@ -48,81 +48,81 @@
 window,
 window.background,
 window.csd {
-    background-color: #000000;
-    color: #e6e6e6;
+  background-color: #000000;
+  color: #e6e6e6;
 }
 
 headerbar,
 titlebar,
 windowhandle {
-    background-color: #000000;
-    color: #e6e6e6;
-    border-bottom: 1px solid #2e2e2e;
+  background-color: #000000;
+  color: #e6e6e6;
+  border-bottom: 1px solid #2e2e2e;
 }
 
 box,
 grid,
 frame,
 label {
-    color: #e6e6e6;
+  color: #e6e6e6;
 }
 
 button {
-    background-color: #1a1a1a;
-    color: #e6e6e6;
-    border: 1px solid #2e2e2e;
+  background-color: #1a1a1a;
+  color: #e6e6e6;
+  border: 1px solid #2e2e2e;
 }
 button:hover {
-    background-color: #2a2a2a;
+  background-color: #2a2a2a;
 }
 button:active,
 button:checked {
-    background-color: #0a84ff;
-    color: #ffffff;
+  background-color: #0a84ff;
+  color: #ffffff;
 }
 
 entry,
 text,
 textview {
-    background-color: #0a0a0a;
-    color: #e6e6e6;
-    border: 1px solid #2e2e2e;
+  background-color: #0a0a0a;
+  color: #e6e6e6;
+  border: 1px solid #2e2e2e;
 }
 
 popover,
 menu,
 menubar,
 menus {
-    background-color: #0a0a0a;
-    color: #e6e6e6;
-    border: 1px solid #2e2e2e;
+  background-color: #0a0a0a;
+  color: #e6e6e6;
+  border: 1px solid #2e2e2e;
 }
 
 list,
 row {
-    background-color: #000000;
-    color: #e6e6e6;
+  background-color: #000000;
+  color: #e6e6e6;
 }
 row:selected {
-    background-color: #0a84ff;
-    color: #ffffff;
+  background-color: #0a84ff;
+  color: #ffffff;
 }
 
 card {
-    background-color: #0a0a0a;
-    color: #e6e6e6;
+  background-color: #0a0a0a;
+  color: #e6e6e6;
 }
 
 scrollbar {
-    background-color: #000000;
+  background-color: #000000;
 }
 scrollbar slider {
-    background-color: #2e2e2e;
+  background-color: #2e2e2e;
 }
 
 tooltip,
 tooltip window {
-    background-color: #1a1a1a;
-    color: #e6e6e6;
-    border: 1px solid #2e2e2e;
+  background-color: #1a1a1a;
+  color: #e6e6e6;
+  border: 1px solid #2e2e2e;
 }

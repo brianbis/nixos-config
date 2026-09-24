@@ -91,74 +91,74 @@ stdenvNoCC.mkDerivation {
   '';
 
   installPhase = ''
-    mkdir -p $out/bin $out/lib/archipelago $out/share/archipelago/worlds
+        mkdir -p $out/bin $out/lib/archipelago $out/share/archipelago/worlds
 
-    # Source tree. Copy from the current directory, which is the unpacked
-    # source root that postPatch modified — NOT $src, which still points at
-    # the pristine (unpatched) store path. WebHost.py sets local_path to the
-    # script directory; user_path() falls back to ~/.local/share/Archipelago
-    # because the store is not writable, so custom worlds load from
-    # ~/.local/share/Archipelago/worlds/.
-    cp -r . $out/lib/archipelago/
+        # Source tree. Copy from the current directory, which is the unpacked
+        # source root that postPatch modified — NOT $src, which still points at
+        # the pristine (unpatched) store path. WebHost.py sets local_path to the
+        # script directory; user_path() falls back to ~/.local/share/Archipelago
+        # because the store is not writable, so custom worlds load from
+        # ~/.local/share/Archipelago/worlds/.
+        cp -r . $out/lib/archipelago/
 
-    # user_path() populates the home dir from the source tree by copytree'ing
-    # Players/, data/sprites/ and data/lua/ — a code path that only runs from
-    # a read-only install (i.e. the store). Players/ is absent from a git
-    # clone (untracked), so create it here; the other two ship with the
-    # source. (Nix strips all write bits when importing into the store, so no
-    # chmod in the build can make the home copies writable — archipelago-init
-    # re-asserts write bits in the home dir at runtime instead.)
-    mkdir -p $out/lib/archipelago/Players
+        # user_path() populates the home dir from the source tree by copytree'ing
+        # Players/, data/sprites/ and data/lua/ — a code path that only runs from
+        # a read-only install (i.e. the store). Players/ is absent from a git
+        # clone (untracked), so create it here; the other two ship with the
+        # source. (Nix strips all write bits when importing into the store, so no
+        # chmod in the build can make the home copies writable — archipelago-init
+        # re-asserts write bits in the home dir at runtime instead.)
+        mkdir -p $out/lib/archipelago/Players
 
-    # manifest.json marks a "proper install": with it present (and copied to
-    # the home dir) user_path() populates the home once instead of re-copying
-    # the data tree on every start. The check is content-based (shallow=False,
-    # see postPatch), so the two stay equal across rebuilds.
-    cat > $out/lib/archipelago/manifest.json <<'EOF'
-    {
-      "buildtime": "nix",
-      "hashes": {},
-      "version": [0, 6, 8]
-    }
-EOF
+        # manifest.json marks a "proper install": with it present (and copied to
+        # the home dir) user_path() populates the home once instead of re-copying
+        # the data tree on every start. The check is content-based (shallow=False,
+        # see postPatch), so the two stay equal across rebuilds.
+        cat > $out/lib/archipelago/manifest.json <<'EOF'
+        {
+          "buildtime": "nix",
+          "hashes": {},
+          "version": [0, 6, 8]
+        }
+    EOF
 
-    # Custom worlds (per-game subdirectories of games/ that contain an
-    # archipelago.json), seeded into ~/.local/share/Archipelago/worlds/ by
-    # the archipelago-init service (see module.nix). Non-world game folders
-    # (seed profiles, patch-builder .nix) are not copied.
-    for d in ${./games}/*/; do
-      if [ -f "$d/archipelago.json" ]; then
-        cp -r "$d" $out/share/archipelago/worlds/
-      fi
-    done
+        # Custom worlds (per-game subdirectories of games/ that contain an
+        # archipelago.json), seeded into ~/.local/share/Archipelago/worlds/ by
+        # the archipelago-init service (see module.nix). Non-world game folders
+        # (seed profiles, patch-builder .nix) are not copied.
+        for d in ${./games}/*/; do
+          if [ -f "$d/archipelago.json" ]; then
+            cp -r "$d" $out/share/archipelago/worlds/
+          fi
+        done
 
-    # Entry-point wrappers. Each runs the uv2nix environment's interpreter
-    # (the `env` argument, built from uv.lock) on the corresponding upstream
-    # script. SKIP_REQUIREMENTS_UPDATE=1 skips ModuleUpdate's pip
-    # auto-install (everything is pre-installed in the environment).
-    # (Positional parameters instead of shell parameter expansion: the
-    # dollar-brace syntax is Nix string interpolation and cannot appear
-    # in single-quoted strings, so the loop is written with a function
-    # taking $1/$2.)
-    mk_wrapper() {
-      cat > "$out/bin/archipelago-$1" <<EOF
-#!/bin/sh
-exec env SKIP_REQUIREMENTS_UPDATE=1 ${env}/bin/python $out/lib/archipelago/$2 "\$@"
-EOF
-      chmod +x "$out/bin/archipelago-$1"
-    }
-    mk_wrapper webhost WebHost.py
-    mk_wrapper server MultiServer.py
-    mk_wrapper generate Generate.py
-    # The launcher is the only Kivy GUI. kivy 2.3.1 (the self-contained
-    # manylinux wheel) bundles SDL2 and ships the compiled _window_sdl2
-    # provider, so force the sdl2 window provider (works on Wayland via
-    # XWayland and on X11).
-    cat > "$out/bin/archipelago-launcher" <<EOF
-#!/bin/sh
-exec env SKIP_REQUIREMENTS_UPDATE=1 KIVY_WINDOW=sdl2 ${env}/bin/python $out/lib/archipelago/Launcher.py "\$@"
-EOF
-    chmod +x "$out/bin/archipelago-launcher"
+        # Entry-point wrappers. Each runs the uv2nix environment's interpreter
+        # (the `env` argument, built from uv.lock) on the corresponding upstream
+        # script. SKIP_REQUIREMENTS_UPDATE=1 skips ModuleUpdate's pip
+        # auto-install (everything is pre-installed in the environment).
+        # (Positional parameters instead of shell parameter expansion: the
+        # dollar-brace syntax is Nix string interpolation and cannot appear
+        # in single-quoted strings, so the loop is written with a function
+        # taking $1/$2.)
+        mk_wrapper() {
+          cat > "$out/bin/archipelago-$1" <<EOF
+    #!/bin/sh
+    exec env SKIP_REQUIREMENTS_UPDATE=1 ${env}/bin/python $out/lib/archipelago/$2 "\$@"
+    EOF
+          chmod +x "$out/bin/archipelago-$1"
+        }
+        mk_wrapper webhost WebHost.py
+        mk_wrapper server MultiServer.py
+        mk_wrapper generate Generate.py
+        # The launcher is the only Kivy GUI. kivy 2.3.1 (the self-contained
+        # manylinux wheel) bundles SDL2 and ships the compiled _window_sdl2
+        # provider, so force the sdl2 window provider (works on Wayland via
+        # XWayland and on X11).
+        cat > "$out/bin/archipelago-launcher" <<EOF
+    #!/bin/sh
+    exec env SKIP_REQUIREMENTS_UPDATE=1 KIVY_WINDOW=sdl2 ${env}/bin/python $out/lib/archipelago/Launcher.py "\$@"
+    EOF
+        chmod +x "$out/bin/archipelago-launcher"
   '';
 
   meta = with lib; {

@@ -8,7 +8,7 @@
 +        # 4x the plugin default (8192): the thinking default model spends part
 +        # of the budget on reasoning before writing the checkpoint, so the
 +        # default cap truncates a large share of compactions.
-+        maxTokens: 32768
++        maxTokens: 75000
  
      - id: command-compact
        name: '@deepseek-ai/dsh-command-compact'

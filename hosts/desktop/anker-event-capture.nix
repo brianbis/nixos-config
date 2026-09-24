@@ -48,11 +48,11 @@ in
     units = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [
-        "AXDDJWU0F38500392"  # unit-392
-        "AXDDJWU0F38500715"  # office
-        "AXDDJWU0F38500093"  # kitchen
-        "AXDDJWU0F38500371"  # living-room (TEST)
-        "AXDDJWU0F38500609"  # bedroom
+        "AXDDJWU0F38500392" # unit-392
+        "AXDDJWU0F38500715" # office
+        "AXDDJWU0F38500093" # kitchen
+        "AXDDJWU0F38500371" # living-room (TEST)
+        "AXDDJWU0F38500609" # bedroom
       ];
       description = "Device serial numbers to subscribe to (dt + cmd topics).";
     };

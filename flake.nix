@@ -132,6 +132,17 @@
       url = "github:Wilfred/difftastic";
       flake = false;
     };
+    # ripwire: "the ripgrep of AI context" (redhat-et/ripwire): a
+    # zero-dependency C++23 CLI + MCP server that gives coding agents a
+    # ranked, deterministic map of a repo (signatures, blast radius,
+    # tests-to-run, quality deltas). Not a flake upstream, so this is a
+    # flakeless input: inputs.ripwire is the source tree, and `nix flake
+    # update ripwire` re-pins it to the newest commit of the default branch.
+    # The local package (home/llm/tools/ripwire.nix) builds it.
+    ripwire = {
+      url = "github:redhat-et/ripwire";
+      flake = false;
+    };
     minuspod = {
       url = "github:ttlequals0/MinusPod";
       flake = false;
@@ -160,6 +171,16 @@
       url = "github:gzenz/ninfer";
       flake = false;
     };
+    # Cinference: a focused NInfer fork (satellitedown/cinference) that raises
+    # the MTP draft window to 10 and derives CUDA Graph topology classes from
+    # the captured graph. Its base is the same NInfer rev we pin (9e163eee) and
+    # it keeps the ninfer / ninfer-serve app layout, so the shared mkNinfer
+    # recipe (CUDA 13.1, arch 120a) builds it unchanged and the reasoning-effort
+    # patch applies. Flakeless input: `nix flake update cinference` re-pins it.
+    cinference = {
+      url = "github:satellitedown/cinference";
+      flake = false;
+    };
     # Archipelago meta-flake (hosts/desktop/archipelago/flake.nix). Bundles the
     # main Archipelago source + the PopTracker / apworld repos as nested
     # inputs, so `nix flake update archipelago` re-pins them all in one shot.
@@ -177,6 +198,28 @@
     };
     zilliandomizer = {
       url = "github:beauxq/zilliandomizer";
+      flake = false;
+    };
+    # recurse: AI-native IDE for reverse engineering (Recurse-Labs/recurse).
+    # Tauri 2 desktop app: React/TypeScript frontend (tauri/) + Rust backend
+    # (tauri/src-tauri) over a pluggable analysis backend (default: pure-Rust
+    # native engine; an external radare2 engine is opt-in at runtime). Not a
+    # flake upstream, so this is a flakeless input: inputs.recurse is the
+    # source tree, and `nix flake update recurse` re-pins it to the newest
+    # commit of the default branch (master). The local package
+    # (hosts/desktop/recurse/package.nix) builds it.
+    recurse = {
+      url = "github:Recurse-Labs/recurse";
+      flake = false;
+    };
+    # Serein: a tiny, performant 100% native Discord client (ViceVerse-cz/
+    # Serein): Rust/egui/wgpu desktop app with direct gateway/REST transport
+    # and a native voice engine. Not a flake upstream, so this is a flakeless
+    # input: inputs.serein is the source tree, and `nix flake update serein`
+    # re-pins it to the newest commit of the default branch. The local
+    # package (hosts/desktop/serein/package.nix) builds it.
+    serein = {
+      url = "github:ViceVerse-cz/Serein";
       flake = false;
     };
 
@@ -271,13 +314,33 @@
       # build) and to the NixOS system's nixpkgs.overlays. The overlay takes the
       # flakeless `headroom`, `knife`, `graphify` and `graphlore` inputs as its
       # sources, so `nix flake update <name>` re-pins each.
-      headroomOverlay = (import ./home/llm/tools/overlay.nix) inputs.headroom inputs.knife inputs.graphify inputs.graphlore inputs.echarts inputs.bend inputs.difftastic;
+      headroomOverlay = (import ./home/llm/tools/overlay.nix) inputs.headroom inputs.knife inputs.graphify inputs.graphlore inputs.echarts inputs.bend inputs.difftastic inputs.ripwire;
+
+      # Work around a nixpkgs CUDA cccl patch regression: the
+      # fix-invalid-cpp-syntax backport (applied for CUDA >= 13.2 < 13.4) is
+      # already present in the CCCL 13.3.3.4.1 tarball, so patch(1) reports
+      # "Reversed (or previously applied) patch detected" and the
+      # cuda13.3-cccl build fails. Upstream fixed it in b01001ac
+      # ("cudaPackages_13_3.cccl: don't patch 13.3+") by narrowing the gate to
+      # < 13.3; that commit is not yet in the nixos-unstable pin, so drop the
+      # patch locally by disabling the version gate (cudaOlder) for the
+      # affected package sets. Applied to every pkgs instance that consumes a
+      # CUDA 13.2/13.3 toolkit (see the `pkgs` and `cudaToolkitPkgs` bindings
+      # and the nixosConfigurations overlays below).
+      ccclPatchWorkaround = final: prev: {
+        cudaPackages_13_2 = prev.cudaPackages_13_2.overrideScope (f: p: {
+          cccl = p.cccl.override { cudaOlder = _: false; };
+        });
+        cudaPackages_13_3 = prev.cudaPackages_13_3.overrideScope (f: p: {
+          cccl = p.cccl.override { cudaOlder = _: false; };
+        });
+      };
 
       # Base package set for the NixOS configuration.
       pkgs = import nixpkgs {
         inherit system;
 
-        overlays = [ headroomOverlay ];
+        overlays = [ headroomOverlay ccclPatchWorkaround ];
       };
 
       # package.nix uses deprecated/removed xorg.libX11-style names, so the
@@ -302,6 +365,21 @@
       # LibrePods battery system-tray indicator (StatusNotifierItem). Slim,
       # mostly-textual SNI icon that reads the daemon's state.json.
       librepodsTray = pkgs.callPackage ./hosts/desktop/librepods/tray.nix { };
+
+      # Recurse — AI-native IDE for reverse engineering (Tauri 2 app; see
+      # hosts/desktop/recurse/package.nix). Source from the flakeless
+      # `recurse` input; `nix flake update recurse` re-pins it.
+      recurse = pkgs.callPackage ./hosts/desktop/recurse/package.nix {
+        src = inputs.recurse;
+        version = "0.1.0";
+      };
+
+      # Serein — lightweight native Discord client (Rust/egui/wgpu; see
+      # hosts/desktop/serein/package.nix). Source from the flakeless
+      # `serein` input; `nix flake update serein` re-pins it.
+      serein = pkgs.callPackage ./hosts/desktop/serein/package.nix {
+        src = inputs.serein;
+      };
 
       # SGLang runtime (pinned CUDA wheel assembly on python313). Built once
       # here and exposed both as a flake package (testable in isolation) and
@@ -363,6 +441,9 @@
       cudaToolkitPkgs = import inputs.nixpkgs {
         inherit system;
         config.allowUnfree = true;
+        # CUDA 13.3 toolkit (cudatoolkit) pulls the cuda13.3-cccl package, so
+        # the cccl patch workaround must apply to this unfree pkgs instance too.
+        overlays = [ ccclPatchWorkaround ];
       };
 
       vllmDflash2Pkg =
@@ -536,20 +617,47 @@
           # .#packages.x86_64-linux.difftastic
           difftastic = pkgs.difftastic;
 
+          # ripwire: "the ripgrep of AI context" — a zero-dependency C++23
+          # CLI + MCP server for coding agents (see
+          # home/llm/tools/ripwire.nix). Testable in isolation:
+          # nix build --no-link --print-out-paths
+          # .#packages.x86_64-linux.ripwire
+          ripwire = pkgs.ripwire;
+
+          # open-code-review: Alibaba's AI code review CLI, invoked as `ocr`
+          # (see home/llm/tools/open-code-review.nix). Testable in isolation:
+          # nix build --no-link --print-out-paths
+          # .#packages.x86_64-linux.open-code-review
+          open-code-review = pkgs.openCodeReview;
+
+          # Recurse: AI-native IDE for reverse engineering (Tauri 2 app; see
+          # hosts/desktop/recurse/package.nix). Testable in isolation:
+          # nix build --no-link --print-out-paths
+          # .#packages.x86_64-linux.recurse
+          recurse = recurse;
+
+          # Serein: lightweight native Discord client (Rust/egui/wgpu; see
+          # hosts/desktop/serein/package.nix). Testable in isolation:
+          # nix build --no-link --print-out-paths
+          # .#packages.x86_64-linux.serein
+          serein = serein;
+
           # TEMPORARY (minuspod 2.97.4 re-pin verification): removed once the
           # isolated build passes. Uses allowUnfree pkgs because the CUDA
           # ctranslate2 core is unfree (the system pkgs sets allowUnfree).
-          minuspod = let
-            pkgsU = import inputs.nixpkgs {
-              inherit system;
-              config.allowUnfree = true;
-            };
-            m = import ./home/minuspod.nix {
-              pkgs = pkgsU;
-              lib = nixpkgs.lib;
-              inherit inputs;
-            };
-          in builtins.elemAt m.home.packages 0;
+          minuspod =
+            let
+              pkgsU = import inputs.nixpkgs {
+                inherit system;
+                config.allowUnfree = true;
+              };
+              m = import ./home/minuspod.nix {
+                pkgs = pkgsU;
+                lib = nixpkgs.lib;
+                inherit inputs;
+              };
+            in
+            builtins.elemAt m.home.packages 0;
 
           # Tether — Linux + iPhone Continuity bridge (upstream package).
           tether = inputs.tether.packages.${system}.default;
@@ -558,9 +666,10 @@
           # under share/tether/extensions/; home-manager's firefox module wants
           # a <id>.xpi under share/mozilla/extensions/{ec8030f7-...}/ (the NUR
           # layout), so repack it there.
-          tether-firefox-extension = pkgs.runCommand "tether-firefox-extension-xpi" {
-            tether = inputs.tether.packages.${system}.default;
-          } ''
+          tether-firefox-extension = pkgs.runCommand "tether-firefox-extension-xpi"
+            {
+              tether = inputs.tether.packages.${system}.default;
+            } ''
             mkdir -p "$out/share/mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}"
             cp "$tether/share/tether/extensions/tether-browser-extension.zip" \
               "$out/share/mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}/tether@tether.com.xpi"
@@ -601,6 +710,11 @@
             nixpkgs.overlays = [
               nur.overlays.default
 
+              # CUDA cccl patch workaround (see the ccclPatchWorkaround
+              # binding): also applied to the system pkgs so any consumer of
+              # the 13.2/13.3 toolkit in the NixOS config gets the fix.
+              ccclPatchWorkaround
+
               # Provide the locally patched hushmic package under the same
               # attribute name consumed by hosts/desktop/audio.nix.
               (final: prev: {
@@ -614,6 +728,20 @@
               (final: prev: {
                 librepods = librepods;
                 librepodsTray = librepodsTray;
+              })
+
+              # Provide the locally built Recurse (see hosts/desktop/recurse/
+              # package.nix) under the attribute name consumed by
+              # home/packages.nix (pkgs.recurse).
+              (final: prev: {
+                recurse = recurse;
+              })
+
+              # Provide the locally built Serein (see hosts/desktop/serein/
+              # package.nix) under the attribute name consumed by
+              # home/packages.nix (pkgs.serein).
+              (final: prev: {
+                serein = serein;
               })
 
               # Provide the locally built SGLang runtime under the attribute

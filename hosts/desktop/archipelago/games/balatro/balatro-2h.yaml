@@ -35,8 +35,7 @@ Balatro:
   # Start with Joker Bundle 1 (requires joker_bundles on, below).
   # start_inventory is a built-in Archipelago option: a dict of item name ->
   # count the player begins with.
-  start_inventory:
-    {Joker Bundle 1: 1}
+  start_inventory: { Joker Bundle 1: 1 }
   # Lean item volume: fewer consumables/shop/perma items to chase.
   ap_consumable_items:
     40: 50
