@@ -97,6 +97,15 @@ let
     ];
   };
 
+  # music-transcription: SOTA audio->Sonic-Pi pipeline env (python3.12 + torch CPU +
+  # demucs + librosa + torchcrepe). `mt` runs its python so it doesn't shadow the
+  # data-analysis `python3` already on PATH. Usage: mt /home/llm/music-transcription/pipe.py <track.mp3> -o out.json
+  musicTranscriptionEnv = pkgs.callPackage ../../hosts/desktop/music-transcription/package.nix { };
+  mt = pkgs.writeShellApplication {
+    name = "mt";
+    text = "exec ${musicTranscriptionEnv}/bin/python \"$@\"";
+  };
+
   # Packages injected into every jail. Each spec carries a stable doc name + a resolver so the doc generator can list names without evaluating any package.
   commonPkgSpecs = [
     { name = "bashInteractive"; pkg = pkgs.bashInteractive; }
@@ -173,6 +182,9 @@ let
         ps.jupyter
       ]);
     }
+
+    # mt: SOTA audio->Sonic-Pi pipeline env (python3.12 + torch CPU + demucs + librosa + torchcrepe); runs the env's python (see musicTranscriptionEnv).
+    { name = "music-transcription"; pkg = mt; }
 
     # blender: headless 3D rendering for the code-tree generator (the blenderHeadless wrapper supplies the software GL).
     { name = "blender"; pkg = blenderHeadless; }
