@@ -1,13 +1,11 @@
 # Qwen3.8-27B NVFP4 + DFlash2 K7, served as a NATIVE (non-docker) process on
-# the RTX 5090.
-#
-# This is the undockerified counterpart to the former `vllm-qwen38-dflash2`
-# docker container (the community `seanyourhighness/vllm-sm12x-nvfp4-dflash2`
-# image). The engine is now the `pkgs.vllmDflash2` derivation (a pinned-wheel
-# vLLM v0.27.1 venv with the DFlash2 Python overlays applied — see
-# ./dflash2-package.nix) and runs as a socket-activated child process under
-# the shared idle wrapper, exactly like the SGLang native engine. Between
-# requests no process is resident and the model's VRAM is released.
+# the RTX 5090. Undockerified counterpart to the former `vllm-qwen38-dflash2`
+# container (the community `seanyourhighness/vllm-sm12x-nvfp4-dflash2` image):
+# the engine is now the `pkgs.vllmDflash2` derivation (a pinned-wheel vLLM
+# v0.27.1 venv with the DFlash2 Python overlays — see ./dflash2-package.nix)
+# running as a socket-activated child process under the shared idle wrapper,
+# exactly like the SGLang native engine. Between requests no process is
+# resident and the model's VRAM is released.
 #
 # The weights are the SAME artifacts the SGLang engine and the old container
 # used:
@@ -45,12 +43,12 @@ let
   # The full `vllm serve` invocation, baked into a runner script. The JSON
   # args (--speculative-config, --compilation-config, --attention-config, ...)
   # must survive systemd's ExecStart parser, which treats double quotes as
-  # quoting characters and would strip them from the JSON (the value would
-  # arrive as {method:dflash,...} and vllm's argparse would reject it).
-  # Putting the command in a bash script sidesteps that: systemd passes only
-  # the script path (a plain token) to the idle wrapper, which execs it; the
-  # JSON is single-quoted for bash, not systemd. `exec` replaces the shell, so
-  # the wrapper's child PID is the vllm process itself (clean SIGTERM/SIGKILL).
+  # quoting characters and would strip them from the JSON (vllm's argparse
+  # would reject {method:dflash,...}). A bash script sidesteps that: systemd
+  # passes only the script path (a plain token) to the idle wrapper, which
+  # execs it; the JSON is single-quoted for bash, not systemd. `exec` replaces
+  # the shell, so the wrapper's child PID is the vllm process itself (clean
+  # SIGTERM/SIGKILL).
   #
   # The model is a POSITIONAL argument (vllm 0.27.1 deprecates --model for
   # `serve`), and the validated capacity-first profile (the "everything we
@@ -95,10 +93,8 @@ let
   # passes it through verbatim; the JSON lives inside the script).
   childCommand = [ runScript ];
 
-  /*
-   * Runtime download helper (unchanged from the docker version). Called by
-   * normal systemd services, never by system.activationScripts.
-   */
+  # Runtime download helper (unchanged from the docker version). Called by
+  # normal systemd services, never by system.activationScripts.
   downloadVllm =
     name: repo: revision: dir: sentinels: pkgs.writeShellScript name ''
       set -euo pipefail
@@ -170,13 +166,11 @@ in
   ];
 
   /*
-   * ------------------------------------------------------------------------
    * CHECKPOINT DOWNLOAD SERVICES
-   * ------------------------------------------------------------------------
    *
-   * Deliberately NOT WantedBy=multi-user.target. They are pulled in by the
-   * first request through the preparation target below, so boot performs no
-   * HF download. (The SGLang engine requires the target service directly.)
+   * Deliberately NOT WantedBy=multi-user.target: pulled in by the first
+   * request through the preparation target below, so boot performs no HF
+   * download. (The SGLang engine requires the target service directly.)
    */
 
   systemd.services.vllm-qwen38-dflash2-target = {
@@ -223,21 +217,19 @@ in
   };
 
   /*
-   * ------------------------------------------------------------------------
    * NATIVE ENGINE (socket-activated child process)
-   * ------------------------------------------------------------------------
    *
-   * No wantedBy: the service is started by the socket unit on demand and
-   * exits (code 0) after the idle window, leaving nothing resident between
-   * requests. It must not be pulled in at boot.
+   * No wantedBy: started by the socket unit on demand and exits (code 0)
+   * after the idle window, leaving nothing resident between requests. It must
+   * not be pulled in at boot.
    */
   systemd.services.vllm-qwen38-dflash2 = {
     description =
       "vLLM Qwen3.8 DFlash2 native engine (socket-activated, unloads after ${toString idleSeconds}s idle)";
 
     /*
-     * Starting the wrapper causes systemd to start the preparation target.
-     * The wrapper does not run until the target's wanted services have
+     * Starting the wrapper causes systemd to start the preparation target;
+     * the wrapper does not run until the target's wanted services have
      * completed successfully (checkpoints present).
      */
     requires = [ "vllm-qwen38-dflash2-prep.target" ];
@@ -271,14 +263,13 @@ in
       Restart = "on-abnormal";
       RestartSec = "3";
 
-      # The host NVIDIA driver (libcuda.so.1); the CUDA runtime libraries
-      # themselves ship inside the vllm venv (the nvidia-* wheels — the
-      # nvidia/cu13/lib dir is on the loader path so the JIT'd flashinfer
-      # modules' NEEDED libcudart.so.13 resolves to the same copy torch
-      # uses). The venv also bundles the C++ runtime at
-      # ${pkgs.vllmDflash2}/lib (libstdc++), which the dlopen'd C-extension
-      # wheels (torch, flashinfer, ...) need; it is prepended so the loader
-      # finds it.
+      # The host NVIDIA driver (libcuda.so.1); the CUDA runtime libraries ship
+      # inside the vllm venv (the nvidia-* wheels — nvidia/cu13/lib is on the
+      # loader path so the JIT'd flashinfer modules' NEEDED libcudart.so.13
+      # resolves to the same copy torch uses). The venv also bundles the C++
+      # runtime at ${pkgs.vllmDflash2}/lib (libstdc++), needed by the dlopen'd
+      # C-extension wheels (torch, flashinfer, ...); it is prepended so the
+      # loader finds it.
       Environment = [
         "CUDA_VISIBLE_DEVICES=0"
         "LD_LIBRARY_PATH=${pkgs.vllmDflash2}/lib:${pkgs.vllmDflash2}/venv/lib/python3.12/site-packages/nvidia/cu13/lib:/run/opengl-driver/lib"
@@ -293,13 +284,13 @@ in
         # ninja workdir) under $FLASHINFER_WORKSPACE_BASE/.cache/flashinfer/
         # <version>/<arch>/cached_ops. Pin the base to /var/lib/vllm so the
         # cache is persistent and in a known place (consistent with
-        # TRITON_CACHE_DIR / HF_HOME) instead of the service user's
-        # ~/.cache. The dir is created at runtime (flashinfer mkdir -p's it).
+        # TRITON_CACHE_DIR / HF_HOME) instead of the service user's ~/.cache.
+        # The dir is created at runtime (flashinfer mkdir -p's it).
         "FLASHINFER_WORKSPACE_BASE=/var/lib/vllm/flashinfer"
         # Triton 3.7.1's nvidia backend locates libcuda.so.1 by shelling out
         # to `/sbin/ldconfig -p`, which does not exist on NixOS (and nixpkgs'
-        # ldconfig has its cache path baked to a store path, so it could
-        # never work here). TRITON_LIBCUDA_PATH is triton's override knob: it
+        # ldconfig has its cache path baked to a store path, so it could never
+        # work here). TRITON_LIBCUDA_PATH is triton's override knob: it
         # short-circuits the ldconfig lookup and is used as the -L directory
         # when triton compiles its driver.c shim.
         "TRITON_LIBCUDA_PATH=/run/opengl-driver/lib"
@@ -313,17 +304,17 @@ in
         # FlashInfer JIT-compiles the XQA decode kernel (nvcc + ninja) on the
         # first decode. Its get_cuda_path() shells out to `which nvcc` unless
         # CUDA_HOME is set (and `which` is not on the unit's PATH), so point
-        # it at the derivation's $out/cuda-home — a CUDA home assembled from
-        # the nixpkgs toolkit + the venv's libcudart (see dflash2-package.nix).
-        # The pip nvidia-cuda-nvcc wheel is only the nvcc driver (no
-        # cicc/nvvm), which is why the venv's own toolchain cannot do this.
+        # it at the derivation's $out/cuda-home — assembled from the nixpkgs
+        # toolkit + the venv's libcudart (see dflash2-package.nix). The pip
+        # nvidia-cuda-nvcc wheel is only the nvcc driver (no cicc/nvvm), which
+        # is why the venv's own toolchain cannot do this.
         "CUDA_HOME=${pkgs.vllmDflash2}/cuda-home"
         # flashinfer's ninja build compiles the host C++ with $CXX and the
         # CUDA side with nvcc -ccbin $CC.
         "CXX=${pkgs.stdenv.cc}/bin/c++"
-        # flashinfer's run_ninja() invokes bare `ninja`; the venv's ninja
-        # wheel provides it. (Overrides the unit default PATH; the rest is
-        # the usual NixOS fallback set.)
+        # flashinfer's run_ninja() invokes bare `ninja`; the venv's ninja wheel
+        # provides it. (Overrides the unit default PATH; the rest is the usual
+        # NixOS fallback set.)
         "PATH=${pkgs.vllmDflash2}/venv/bin:/run/wrappers/bin:/run/current-system/sw/bin:/usr/bin:/bin"
       ];
 

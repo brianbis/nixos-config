@@ -25,19 +25,18 @@
 # package-lock.json + vite config) lives in tauri/.
 #
 # Build, two derivations:
-#   1. frontend — buildNpmPackage on tauri/. The build sandbox blocks
-#      network, so the npm closure comes from fetchNpmDeps, a fixed-output
-#      derivation (the only network step; FODs are exempt from the sandbox
-#      network block — same pattern as fetchPnpmDeps in
-#      home/llm/dsh-source.nix). `npm ci` then runs offline from the fetched
-#      cache, and `npm run build` (tsc && vite build) emits dist/.
+#   1. frontend — buildNpmPackage on tauri/. The build sandbox blocks network,
+#      so the npm closure comes from fetchNpmDeps, a fixed-output derivation
+#      (the only network step; FODs are exempt from the sandbox network block —
+#      same pattern as fetchPnpmDeps in home/llm/dsh/tarball.nix). `npm ci`
+#      then runs offline from the fetched cache, and `npm run build` (tsc &&
+#      vite build) emits dist/.
 #   2. the app — rustPlatform.buildRustPackage. preBuild drops the prebuilt
 #      dist/ where tauri.conf.json's frontendDist (../dist, relative to
 #      tauri/src-tauri) points; tauri-build embeds it into the binary at
 #      compile time, so a plain `cargo build` of the tauri/src-tauri crate
 #      produces the whole app — the tauri CLI is only needed for bundling,
 #      which we skip (we install the binary + icon directly).
-
 let
   frontend = buildNpmPackage {
     pname = "recurse-frontend";

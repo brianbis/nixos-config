@@ -1,56 +1,41 @@
-# Shared rendering for the jailed LLM tooling: single source of truth for the
-# model/LSP catalogs, provider mapping, and config builders. Imported by the
-# home-manager modules (user + system homes) and the doc build, so both stay identical.
+# Shared rendering for the jailed LLM tooling: single source of truth for the model/LSP catalogs, provider mapping, and config builders.
+# Imported by the home-manager modules (user + system homes) and the doc build, so both stay identical.
 { lib, pkgs, jail-nix, ... }:
 
 let
   jail = jail-nix.lib.init pkgs;
   users = import ../users.nix;
-  # Context-compression proxy layering: local llama.cpp traffic from every
-  # jailed agent (crush/opencode/aider) routes through the Headroom proxy,
-  # which forwards upstream to llama-server on :8000.
+  # Context-compression proxy: local llama.cpp traffic from every jailed agent routes through Headroom, which forwards upstream to llama-server on :8000.
   headroomPort = 8787;
   headroomProxyUrl = "http://127.0.0.1:${toString headroomPort}";
   headroomUpstreamUrl = "http://127.0.0.1:8000";
 
-  # DeepSeek-facing headroom proxy (port 8788). Routes cloud traffic through
-  # the same context-compression layer.
+  # DeepSeek-facing headroom proxy (port 8788): routes cloud traffic through the same context-compression layer.
   headroomCloudPort = 8788;
   headroomCloudProxyUrl = "http://127.0.0.1:${toString headroomCloudPort}";
   headroomCloudUpstreamUrl = "https://api.deepseek.com/v1";
 
-  # Claude Code-facing headroom proxy (port 8789): Claude Code speaks the
-  # Anthropic Messages API, so this forwards to the local llama-server. The
-  # OpenAI proxy on headroomPort can't be reused (would fall back to api.anthropic.com).
+  # Claude Code-facing headroom proxy (port 8789): Claude Code speaks the Anthropic Messages API, so this forwards to the local llama-server (the OpenAI proxy can't be reused).
   headroomClaudePort = 8789;
   headroomClaudeProxyUrl = "http://127.0.0.1:${toString headroomClaudePort}";
 
-  # DSH-default-model-facing headroom proxy (port 8791): the default agent model
-  # (ninfer qwen3.8-27b, upstream :8080) routes through the compression layer.
-  # --lossless (marker-free): DSH has no headroom_retrieve MCP tool, so default
-  # CCR mode would inject markers it cannot redeem and corrupt its context.
+  # DSH-default-model-facing headroom proxy (port 8791): the default agent model (ninfer qwen3.8-27b, upstream :8080) routes through the compression layer.
+  # --lossless (marker-free): DSH has no headroom_retrieve MCP tool, so default CCR mode would inject markers it cannot redeem.
   headroomNinferPort = 8791;
   headroomNinferProxyUrl = "http://127.0.0.1:${toString headroomNinferPort}";
   headroomNinferUpstreamUrl = "http://127.0.0.1:8080";
 
-  # Single source of truth for every LLM exposed to the jailed agents. Each
-  # tool (crush / opencode / aider) derives its provider + model lists from
-  # here, so a model edit hits all tools at once and every tool sees the same set.
+  # Single source of truth for every LLM exposed to the jailed agents; each tool (crush/opencode/aider) derives its provider + model lists from here.
   models = {
-    # Local backends. vLLM (cached Gemma-4 AWQ/NVFP4 weights) serves the
-    # OpenAI-compatible API on its own host ports (:8021 NVFP4 / :8022 AWQ);
-    # llama.cpp (Muse-Glimmer-30B GGUF) serves it on :8000. Only one vLLM engine
-    # runs at a time (VRAM), so the vLLM ports are mutually exclusive with each
-    # other — but none of them collide with the llama.cpp router's :8000.
+    # Local backends. vLLM serves the OpenAI API on its own host ports (:8021 NVFP4 / :8022 AWQ); llama.cpp on :8000.
+    # Only one vLLM engine runs at a time (VRAM), so the vLLM ports are mutually exclusive but none collide with llama.cpp's :8000.
     gemma4awq = {
       providerName = "vllm_awq";
       id = "gemma-4-awq";
       name = "Gemma 4 26B MoE AWQ";
       url = "http://127.0.0.1:8022";
       context = 262144;
-      # Single-generation cap for a 32GB card. A request far beyond this
-      # (e.g. 180k output) won't fit one run alongside the 17GB AWQ weights;
-      # agents loop via tool calls instead.
+      # Single-generation cap for a 32GB card (a far-larger request won't fit one run alongside the 17GB AWQ weights; agents loop via tool calls).
       maxTok = 65536;
       reason = true;
       attachments = true;
@@ -74,40 +59,30 @@ let
       costInCached = 0.014;
       costOutCached = 0.28;
     };
-    # Qwen3.8-27B NVFP4 + DFlash2 K7 (RTX 5090 / SM120). Served by the
-    # on-demand vllm-qwen38-dflash2 NATIVE engine (socket-activated idle
-    # wrapper on :18089). Pinned to the community release's exact artifacts.
+    # Qwen3.8-27B NVFP4 + DFlash2 K7 (RTX 5090 / SM120); served by the on-demand vllm-qwen38-dflash2 NATIVE engine (socket-activated idle wrapper on :18089).
     qwen38_dflash2 = {
       providerName = "vllm_dflash2";
       id = "qwen3.8-27b-nvfp4-dflash2";
       name = "Qwen3.8-27B NVFP4 DFlash2";
-      # Direct to the socket-activated front port (like the ninfer models), not
-      # via headroom. The wrapper starts the engine on the first request.
+      # Direct to the socket-activated front port (like the ninfer models), not via headroom; the wrapper starts the engine on the first request.
       url = "http://127.0.0.1:18089";
       # Must match --max-model-len 262144 in hosts/desktop/llm/vllm/qwen38-dflash2.nix.
       context = 262144;
-      # Per-request output cap (tunable). The 262K-context model supports long
-      # generations; this is a conservative default.
+      # Per-request output cap (tunable); the 262K-context model supports long generations, this is a conservative default.
       maxTok = 32768;
       reason = true;
-      # Text-only: the optional CPU vision sidecar is not part of this
-      # integration.
+      # Text-only: the optional CPU vision sidecar is not part of this integration.
       attachments = false;
       costIn = 0;
       costOut = 0;
       costInCached = 0;
       costOutCached = 0;
     };
-    # Same Qwen3.8-27B NVFP4 + DFlash2 K7 checkpoint, but routed DIRECTLY to
-    # the engine's child port (:18090) instead of the socket-activated idle
-    # wrapper (:18089). Use this while the engine is resident (after any
-    # request via :18089) to bypass the router/wrapper. The two entries are
-    # mutually exclusive at the port level: the on-demand wrapper owns :18089,
-    # the direct engine owns :18090.
+    # Same Qwen3.8-27B NVFP4 + DFlash2 K7 checkpoint, but routed DIRECTLY to the engine's child port (:18090) instead of the socket-activated idle wrapper (:18089).
+    # Use this while the engine is resident (after any request via :18089) to bypass the router/wrapper; the two entries are mutually exclusive at the port level.
     qwen38_dflash2_direct = {
       providerName = "vllm_dflash2_direct";
-      # Must equal the engine's --served-model-name (vLLM rejects any other
-      # model id); the "(direct)" distinction lives in the display name only.
+      # Must equal the engine's --served-model-name (vLLM rejects any other model id); the "(direct)" distinction lives in the display name only.
       id = "qwen3.8-27b-nvfp4-dflash2";
       name = "Qwen3.8-27B NVFP4 DFlash2 (direct)";
       url = "http://127.0.0.1:18090";
@@ -126,35 +101,26 @@ let
       id = "muse-glimmer-30B";
       name = "Muse-Glimmer-30B (kquant-dynamic GGUF)";
       url = headroomProxyUrl;
-      # Repo advertises 131072-token context; the 18.3GiB weights on a 32GB
-      # card cap effective context to ~32k with a single generation.
+      # Repo advertises 131072-token context; the 18.3GiB weights on a 32GB card cap effective context to ~32k with a single generation.
       context = 131072;
       maxTok = 8192;
       reason = true;
       attachments = true;
     };
-    # Qwen3.8-27B Q8_0 (llama.cpp, :8000 via headroom). Two modes — thinking
-    # (temp 1.0 / top-p 0.95 / presence 0.0) and instruct (temp 0.7 / top-p 0.8 /
-    # presence 1.5) — each a single catalog entry whose effort is a per-request
-    # parameter (reasoning_effort), exposed in the web UI as a dropdown like the
-    # ninfer models. The router preset's chat-template-kwargs sets the default
-    # effort for requests that omit one; a selected level always wins.
+    # Qwen3.8-27B Q8_0 (llama.cpp, :8000 via headroom). Two modes — thinking and instruct — each a single catalog entry whose effort is a per-request parameter (reasoning_effort), exposed in the web UI as a dropdown like the ninfer models.
+    # The router preset's chat-template-kwargs sets the default effort for requests that omit one; a selected level always wins.
     qwen38_thinking = {
       providerName = "llamacpp";
       id = "qwen3-8-27b-q8_0-thinking";
       name = "Qwen3.8-27B Q8_0 Thinking";
       url = headroomProxyUrl;
-      # Repo advertises 262144-token context; matches the llama.cpp router's
-      # --ctx-size. The KV cache lives in system RAM (--no-kv-offload), so the
-      # full context fits alongside the ~27 GiB weights on the 32 GB card.
+      # Repo advertises 262144-token context (matches the router's --ctx-size); the KV cache lives in system RAM (--no-kv-offload) so the full context fits alongside the ~27 GiB weights.
       context = 262144;
       maxTok = 8192;
       reason = true;
       attachments = true;
       thinkingBudget = -1;
-      # Thinking levels the Qwen3.8-27B chat template supports (low/medium/xhigh;
-      # "none" maps to the template's off state). Declaring them makes dsh
-      # materialize the model as a reasoning model (web UI effort selector).
+      # Thinking levels the Qwen3.8-27B chat template supports (low/medium/xhigh); declaring them makes dsh materialize the model as a reasoning model (web UI effort selector).
       reasoningEfforts = {
         low = "low";
         medium = "medium";
@@ -184,20 +150,14 @@ let
       id = "qwen3-8-27b-heretic-q6_k";
       name = "Qwen3.8-27B Heretic RVN Abliterated Uncensored Q6_K";
       url = headroomProxyUrl;
-      # RVN-Q6_K.gguf is ~20.6 GiB; like the base Qwen it keeps KV in system
-      # RAM (no-kv-offload) so the 131072 context fits on the 32 GB card.
+      # RVN-Q6_K.gguf is ~20.6 GiB; like the base Qwen it keeps KV in system RAM (no-kv-offload) so the 131072 context fits on the 32 GB card.
       context = 131072;
       maxTok = 80000;
       reason = true;
       attachments = true;
     };
-    # MiMo-V2.6-Distill-Qwen-9B (bartowski bf16 GGUF, llama.cpp :8000 via
-    # headroom). A 9B agentic distill of Qwen3.5-9B. Thinking is a boolean
-    # (enable_thinking) in this model's chat template, not a reasoning_effort
-    # level, so it's a plain reasoning model (no reasoningEfforts selector); the
-    # router preset enables thinking by default. The 17.9 GiB bf16 weights leave
-    # ample VRAM headroom, so the KV cache stays on the card (kv-offload). The
-    # bf16 mmproj makes it vision-capable.
+    # MiMo-V2.6-Distill-Qwen-9B (bartowski bf16 GGUF, llama.cpp :8000 via headroom); a 9B agentic distill of Qwen3.5-9B. Thinking is a boolean (enable_thinking), not a reasoning_effort level, so it's a plain reasoning model (no selector); the router preset enables thinking by default.
+    # The 17.9 GiB bf16 weights leave ample VRAM headroom (KV stays on the card); the bf16 mmproj makes it vision-capable.
     mimo = {
       providerName = "llamacpp";
       id = "mimo-v2.6-9b-bf16";
@@ -208,14 +168,8 @@ let
       reason = true;
       attachments = true;
     };
-    # LensVLM-9B: Apple's 9B vision-language model (Qwen3.5-9B based) for
-    # selective context expansion over compressed document images, served by
-    # the vLLM docker container (hosts/desktop/llm/vllm/lensvlm.nix) on its own
-    # host port (:8023, direct URL) from the bare apple/LensVLM-9B repo — full
-    # bf16 weights, no quantization. The 18.8 GiB weights fit the 32 GB card
-    # with an fp8 KV cache; the 131072 context must match --max-model-len.
-    # Thinking is a boolean (enable_thinking) in this model's chat template, so
-    # it's a plain reasoning model (no reasoningEfforts selector).
+    # LensVLM-9B: Apple's 9B vision-language model (Qwen3.5-9B based) for selective context expansion over compressed document images, served by the vLLM docker container (hosts/desktop/llm/vllm/lensvlm.nix) on :8023 (direct URL) from the bare repo — full bf16 weights, no quantization.
+    # The 18.8 GiB weights fit the 32 GB card with an fp8 KV cache; the 131072 context must match --max-model-len. Thinking is a boolean (enable_thinking), so it's a plain reasoning model (no selector).
     lensvlm = {
       providerName = "vllm_lensvlm";
       id = "lensvlm-9b";
@@ -230,14 +184,8 @@ let
       costInCached = 0;
       costOutCached = 0;
     };
-    # Ternary-Bonsai-2-27B (PQ2_0): the PrismML-Eng ternary 27B, served by the
-    # Bonsai fork router on :8010 (NOT via headroom, which upstreams the stock
-    # :8000 router). Direct URL, like the ninfer/vllm engines. Two modes —
-    # thinking and instruct — each a single catalog entry whose effort is a
-    # per-request parameter (reasoning_effort), exposed in the web UI as a
-    # dropdown like the ninfer models. The template supports xhigh/medium (low
-    # behaves like xhigh, so no low entry). The 7.2 GB weights leave ample VRAM
-    # headroom, so the 262K context fits on the 32 GB card.
+    # Ternary-Bonsai-2-27B (PQ2_0): the PrismML-Eng ternary 27B, served by the Bonsai fork router on :8010 (NOT via headroom, which upstreams the stock :8000 router). Direct URL, like the ninfer/vllm engines.
+    # Two modes (thinking/instruct), each a single entry with a per-request reasoning_effort. The template supports xhigh/medium (low behaves like xhigh, so no low entry); the 7.2 GB weights leave ample VRAM so the 262K context fits.
     bonsai2_27b_pq2_thinking = {
       providerName = "llamacpp_bonsai";
       id = "bonsai2-27b-pq2_0-thinking";
@@ -277,34 +225,21 @@ let
       maxTok = 200000;
       reason = false;
       attachments = false;
-      # Thinking levels the Qwen3.8-27B chat template supports (low/medium/xhigh).
-      # Declaring them makes dsh materialize the model as a reasoning model (web
-      # UI effort selector); a selected level is sent as reasoning_effort, overriding the serve default.
+      # Thinking levels the Qwen3.8-27B chat template supports (low/medium/xhigh); declaring them makes dsh materialize the model as a reasoning model, and a selected level is sent as reasoning_effort.
       reasoningEfforts = {
         low = "low";
         medium = "medium";
         xhigh = "xhigh";
       };
     };
-    # Same Qwen3.8-27B NVFP4 artifact as qwen38_nvfp4_ninfer, but served by the
-    # gzenz fork engine (ninfer-serve-gzenz, socket-activated front :8084). The
-    # fork's distinguishing feature here is COMPRESSED KV: --kv-dtype nvfp4
-    # (144 vs 264 bytes/token/KV-head) lets it run a HIGHER context than the
-    # stock int8 engine on the same card — ~420k effective vs the stock 240k
-    # (555k logical ceiling via YaRN 2.12, but the KV pool is auto-sized to
-    # fit the free VRAM at load time). The fork's serve binary has no
-    # --reasoning-effort flag: its Qwen3.8 template defaults to xhigh thinking,
-    # and a per-request reasoning_effort (the levels below) always wins.
+    # Same Qwen3.8-27B NVFP4 artifact as qwen38_nvfp4_ninfer, but served by the gzenz fork engine (ninfer-serve-gzenz, socket-activated front :8084). The fork's distinguishing feature is COMPRESSED KV (--kv-dtype nvfp4), letting it run a HIGHER context (~420k effective vs the stock 240k).
+    # The fork's serve binary has no --reasoning-effort flag (its Qwen3.8 template defaults to xhigh thinking); a per-request reasoning_effort always wins.
     qwen38_nvfp4_ninfer_gzenz = {
       providerName = "ninfer_gzenz";
       id = "qwen3.8-27b";
       name = "Qwen3.8-27B NVFP4 NInfer (gzenz fork, ~420k ctx)";
       url = "http://127.0.0.1:8084";
-      # Effective per-request ceiling: the engine's --kv-capacity auto pool
-      # resolves to ~420k tokens at the current ~9.75 GiB free-after-weights
-      # (see childCommandGzenz in hosts/desktop/llm/ninfer/default.nix; the
-      # 555000 --max-context is the logical ceiling, but a request cannot
-      # reserve more than the shared pool). Still ~1.75x the stock 240000.
+      # Effective per-request ceiling: the engine's --kv-capacity auto pool resolves to ~420k tokens at the current ~9.75 GiB free-after-weights (still ~1.75x the stock 240000).
       context = 420000;
       maxTok = 200000;
       reason = false;
@@ -316,21 +251,15 @@ let
         xhigh = "xhigh";
       };
     };
-    # Same Qwen3.8-27B NVFP4 artifact as qwen38_nvfp4_ninfer, but served by the
-    # Cinference fork engine (ninfer-serve-cinference, socket-activated front
-    # :8091). The fork's distinguishing feature is MTP-10: --draft-tokens 10
-    # (vs the stock/gzenz 3), so longer speculative proposals are verified per
-    # round. Served on the Swift (abliterated) NVFP4 checkpoint (reused weights,
-    # no new download). The fork's serve binary has the reasoning-effort patch
-    # applied (same base rev), so the same low/medium/xhigh levels apply and a
-    # per-request reasoning_effort always wins.
+    # Same Qwen3.8-27B NVFP4 artifact as qwen38_nvfp4_ninfer, but served by the Cinference fork engine (ninfer-serve-cinference, socket-activated front :8091). The fork's distinguishing feature is MTP-10 (--draft-tokens 10 vs the stock/gzenz 3).
+    # Served on the Swift (abliterated) NVFP4 checkpoint (reused weights, no new download); the fork has the reasoning-effort patch applied, so the same low/medium/xhigh levels apply.
     qwen38_nvfp4_ninfer_cinference = {
       providerName = "ninfer_cinference";
       id = "qwen3.8-27b";
       name = "Qwen3.8-27B NVFP4 NInfer (Cinference fork, MTP-10)";
       url = "http://127.0.0.1:8091";
-      context = 240000;
-      maxTok = 200000;
+      context = 262144;
+      maxTok = 262144;
       reason = false;
       attachments = false;
       reasoningEfforts = {
@@ -339,11 +268,7 @@ let
         xhigh = "xhigh";
       };
     };
-    # Swift (abliterated) Qwen3.8-27B NVFP4 — community "abliterated" (safety
-    # training removed) NVFP4 checkpoint, served by the stock engine
-    # (ninfer-serve-swift, socket-activated front :8088). Same Qwen3.8-27B
-    # template as qwen38_nvfp4_ninfer, so the same 240k context / reasoning
-    # levels apply.
+    # Swift (abliterated) Qwen3.8-27B NVFP4 — community "abliterated" (safety training removed) checkpoint, served by the stock engine (ninfer-serve-swift, socket-activated front :8088); same template as qwen38_nvfp4_ninfer.
     qwen38_swift_abliterated_nvfp4_ninfer = {
       providerName = "ninfer_swift";
       id = "qwen3.8-27b";
@@ -368,15 +293,9 @@ let
       maxTok = 200000;
       reason = false;
       attachments = true;
-      # No reasoningEfforts: the A3B chat template does not support a
-      # reasoning-effort control (the engine rejects it), so the model is
-      # materialized as a plain non-reasoning model.
+      # No reasoningEfforts: the A3B chat template does not support a reasoning-effort control (the engine rejects it), so the model is a plain non-reasoning model.
     };
-    # Same Qwen3.8-27B NVFP4 checkpoint as the vLLM DFlash2 / NInfer entries,
-    # but served by the native SGLang engine (sglang-serve, socket-activated
-    # front :8086, no docker). A third engine on the same weights for
-    # comparison; mutually exclusive with the others in practice (one 32 GB
-    # card, all socket-activated on demand).
+    # Same Qwen3.8-27B NVFP4 checkpoint as the vLLM DFlash2 / NInfer entries, but served by the native SGLang engine (sglang-serve, socket-activated front :8086, no docker); a third engine on the same weights for comparison.
     qwen38_nvfp4_sglang = {
       providerName = "sglang";
       id = "qwen3.8-27b";
@@ -388,20 +307,14 @@ let
       reason = false;
       attachments = false;
     };
-    # K2-Horizon-MoVA-36B-A4B NVFP4: the IFM 36B MoE / 4B-active Mixture-of-
-    # Values model, served by the pinned vLLM nightly docker container
-    # (hosts/desktop/llm/vllm/k2horizon-nvfp4.nix). k2_horizon is not in a vLLM
-    # release yet, so the container pins the exact nightly the NVFP4 checkpoint
-    # was validated on. On its own host port (:8020, direct URL) so it no longer
-    # shares :8000 with the llama.cpp router or the Gemma containers; only one
-    # vLLM engine runs at a time (VRAM).
+    # K2-Horizon-MoVA-36B-A4B NVFP4: the IFM 36B MoE / 4B-active Mixture-of-Values model, served by the pinned vLLM nightly docker container (hosts/desktop/llm/vllm/k2horizon-nvfp4.nix) — k2_horizon is not in a vLLM release yet, so the container pins the exact nightly the checkpoint was validated on.
+    # On its own host port (:8020, direct URL) so it no longer shares :8000 with the llama.cpp router or the Gemma containers; only one vLLM engine runs at a time (VRAM).
     k2horizon_nvfp4 = {
       providerName = "vllm_k2horizon";
       id = "k2-horizon-mova-36b-a4b-nvfp4";
       name = "K2-Horizon-MoVA-36B-A4B NVFP4";
       url = "http://127.0.0.1:8020";
-      # Must match --max-model-len 32768 in
-      # hosts/desktop/llm/vllm/k2horizon-nvfp4.nix.
+      # Must match --max-model-len 32768 in hosts/desktop/llm/vllm/k2horizon-nvfp4.nix.
       context = 80000;
       maxTok = 80000;
       reason = true;
@@ -431,8 +344,7 @@ let
     };
   };
 
-  # Map providerName (from the catalog) to the label/style each tool config
-  # needs. Used only to render per-tool configs consistently.
+  # Map providerName (from the catalog) to the label/style each tool config needs; used only to render per-tool configs consistently.
   providerLabel = {
     llamacpp.name = "llama.cpp (local)";
     llamacpp.type = "openai-compat";
@@ -481,9 +393,7 @@ let
     deepseek.api_key = "sk-local";
   };
 
-  # LSP catalog, keyed by crush language name. Single source of truth for which
-  # language server each language uses, the package to mount (host copy, shared
-  # with home/packages.nix), and the file types / root markers for init.
+  # LSP catalog, keyed by crush language name: which language server each language uses, the package to mount (host copy, shared with home/packages.nix), and the file types / root markers for init.
   lsps = with pkgs; {
     nix = {
       pkg = nil;
@@ -491,8 +401,7 @@ let
       args = [ "--stdio" ];
       fileTypes = [ "nix" ];
       rootMarkers = [ "flake.nix" "shell.nix" "default.nix" ];
-      # probe.sh sits next to .nix files and crush opens it in this workspace;
-      # without this exclusion nil parses it as Nix and floods diagnostics.
+      # probe.sh sits next to .nix files and crush opens it in this workspace; without this exclusion nil parses it as Nix and floods diagnostics.
       initOptions = {
         nil = {
           diagnostics.excludedFiles = [ "hosts/desktop/hushmic/probe.sh" ];
@@ -580,12 +489,9 @@ let
     };
   };
 
-  # Mount the host-installed LSP copies (shared with home/packages.nix) inside
-  # every jail once, instead of bundling the full per-tool closure.
+  # Mount the host-installed LSP copies (shared with home/packages.nix) inside every jail once, instead of bundling the full per-tool closure.
   lspAdds = with jail.combinators; [ (add-pkg-deps (lib.unique (map (l: l.pkg) (lib.attrValues lsps)))) ];
-  # Version of the crush lsp map restricted to the languages a given tool
-  # actually needs. file_types + root_markers make crush start a server only
-  # when that language shows up in the mounted project.
+  # The crush lsp map restricted to the languages a given tool needs; file_types + root_markers make crush start a server only when that language shows up in the mounted project.
   crushLspFor = toolLsps: lib.mapAttrs'
     (lang: entry:
       lib.nameValuePair lang ({
@@ -600,9 +506,7 @@ let
   allModels = lib.attrValues models;
   byProvider = name: lib.filter (m: m.providerName == name) allModels;
 
-  # Render a catalog model into the per-model object crush's openai-compat
-  # providers expect. Optional fields (costs, attachments) are only included
-  # when the catalog model defines them, so cloud models stay lean.
+  # Render a catalog model into the per-model object crush's openai-compat providers expect; optional fields (costs, attachments) are only included when defined, so cloud models stay lean.
   crushModelEntry = m:
     {
       id = m.id;
@@ -618,9 +522,7 @@ let
       cost_per_1m_out_cached = m.costOutCached;
     };
 
-  # One crush provider per distinct upstream in the catalog, carrying that
-  # upstream's base_url, key and full model list. Drives providers.deepseek
-  # etc. so crush exposes exactly the catalog's models.
+  # One crush provider per distinct upstream in the catalog (base_url, key, full model list), so crush exposes exactly the catalog's models.
   crushProviders = builtins.foldl'
     (acc: m:
       let
@@ -640,8 +542,7 @@ let
     { }
     allModels;
 
-  # opencode nests providers under provider.<name> with each model keyed by id.
-  # Reuse the catalog so opencode carries the same models as crush and aider.
+  # opencode nests providers under provider.<name> with each model keyed by id; reuse the catalog so opencode carries the same models as crush and aider.
   opencodeProvider = pname:
     let nms = byProvider pname; in
     {
@@ -677,11 +578,9 @@ let
     small_model = "${models.gemma4awq.providerName}/${models.gemma4awq.id}";
   };
 
-  # dsh's user-settings document ($DSH_HOME/settings.yaml, hot-reloaded). Every
-  # route names DEEPSEEK_API_KEY: pi-ai's openai-completions insists on a
-  # credential even for local endpoints (which ignore the header).
-  dshSettings = builtins.toJSON {
-    "llm-pi-ai" = {
+  # dsh's home user layer ($DSH_HOME/cordis.patch.yml, hot-reloaded). rc.2 removed the standalone user-settings document ($DSH_HOME/settings.yaml): user settings now live in the profile patch layers, and this home-level layer applies above every profile (web/tui/headless), so one file serves them all. Every route names DEEPSEEK_API_KEY: pi-ai's openai-completions insists on a credential even for local endpoints.
+  dshHomePatch =
+    let
       providers = lib.mapAttrs'
         (pname: ms:
           lib.nameValuePair pname {
@@ -692,9 +591,7 @@ let
             models = map
               (m:
                 let
-                  # Base local-gateway compat pair (every non-deepseek route).
-                  # Reasoning models additionally select the deepseek wire format:
-                  # the only openai-completions shape that emits a top-level `reasoning_effort` (the field ninfer parses).
+                  # Base local-gateway compat pair (every non-deepseek route); reasoning models additionally select the deepseek wire format (the only openai-completions shape that emits a top-level `reasoning_effort`).
                   compat =
                     (if pname == "deepseek" then { } else {
                       supportsDeveloperRole = false;
@@ -713,36 +610,31 @@ let
                 }
                 // lib.optionalAttrs (compat != { }) { inherit compat; }
                 // lib.optionalAttrs (m ? reasoningEfforts) {
-                  # Expose the declared thinking levels so dsh materializes the
-                  # model as a reasoning model (the web UI's effort selector
-                  # reads this).
+                  # Expose the declared thinking levels so dsh materializes the model as a reasoning model (the web UI's effort selector reads this).
                   reasoningEfforts = m.reasoningEfforts;
                 }
               )
               ms;
           })
         (lib.groupBy (m: m.providerName) allModels);
-    };
-    # Default agent model (dsh-agent-default-model section). This user-settings
-    # layer is read live and wins over the built-in default, so new sessions
-    # start on the local NVFP4 route. reasoningEffort mirrors the live settings.yaml; without it the next activation would drop the field.
-    "agent-default-model" = {
-      provider = models.qwen38_nvfp4_ninfer.providerName;
-      model = models.qwen38_nvfp4_ninfer.id;
-      reasoningEffort = "low";
-    };
-    # No `agent-presets` section: the user preset root cannot shadow the shipped
-    # `standard` preset (first-root-wins, shipped root first), so the bundled
-    # composition is patched at build time instead.
-  };
+      # Default agent model: the home layer wins over the base bundle's built-in default (deepseek-official), so new sessions start on the local NVFP4 route.
+      defaultModel = models.qwen38_nvfp4_ninfer;
+    in
+    ''
+      # Managed by home-manager (writeDshHomePatch); do not edit by hand.
+      - id: llm-pi-ai
+        config:
+          providers: ${builtins.toJSON providers}
+      - id: agent-default-model
+        config:
+          provider: ${defaultModel.providerName}
+          model: ${defaultModel.id}
+          reasoningEffort: low
+    '';
 
-  # The dsh web profile's patch layer ($DSH_HOME/profiles/web/cordis.patch.yml)
-  # is a static dotfile - dotfiles/dsh/cordis.patch.yml, installed by
-  # home/llm/jail-home.nix (writeDshWebProfilePatch); see its header for the why.
+  # The dsh web profile's patch layer ($DSH_HOME/profiles/web/cordis.patch.yml) is a static dotfile (dotfiles/dsh/cordis.patch.yml), installed by home/llm/jail-home.nix (writeDshWebProfilePatch).
 
-  # Crush PreToolUse hook that rewrites bash commands to use rtk for token
-  # savings, transparently (the model still sees its original command). Requires
-  # rtk and jq, both in commonPkgs so they exist inside every jailed agent.
+  # Crush PreToolUse hook that rewrites bash commands to use rtk for token savings, transparently (the model still sees its original command); requires rtk and jq, both in commonPkgs.
   rtkRewriteHook = ''
     #!/usr/bin/env bash
     set -euo pipefail
@@ -772,29 +664,22 @@ let
     esac
   '';
 
-  # Identity of the llm agent user (single source of truth: home/users.nix).
-  # The "system" jail variants run as this user via `sudo -u llm` instead of as
-  # root, keeping their config + writable state in /home/llm and editing /etc/nixos.
+  # Identity of the llm agent user (single source of truth: home/users.nix); the "system" jail variants run as this user via `sudo -u llm` instead of root.
   agentHome = users.llm.homeDirectory;
   agentUsername = users.llm.username;
 
-  # Render the crush config for a given state root. The user variants live
-  # under $HOME (b); the system variants under the llm agent user's home.
-  # Both are produced from the same shared catalogs, so content stays identical.
+  # Render the crush config for a given state root (user variants under $HOME, system variants under the llm agent user's home); both from the same shared catalogs, so content stays identical.
   crushConfigFor = base: builtins.toJSON {
     "$schema" = "https://charm.land/crush.json";
 
-    # Force the per-project data dir out of the working directory: the system
-    # jail runs crush from /etc/nixos, so without this crush would mkdir
-    # /etc/nixos/.crush and the justfile's auto-stage would sweep the state into git.
+    # Force the per-project data dir out of the working directory: the system jail runs crush from /etc/nixos, so without this it would mkdir /etc/nixos/.crush and the justfile's auto-stage would sweep the state into git.
     options.data_directory = "${base}/.local/share/crush";
     options.context_paths = [ "AGENTS.md" ];
     options.tui.transparent = true;
     options.tui.compact_mode = true;
     options.tui.scrollbar = "never";
 
-    # Rewrite bash tool calls through rtk to compress token-heavy command
-    # output before it reaches the model.
+    # Rewrite bash tool calls through rtk to compress token-heavy command output before it reaches the model.
     hooks.PreToolUse = [
       {
         name = "rtk-rewrite";
@@ -804,28 +689,21 @@ let
       }
     ];
 
-    # Headroom MCP server: exposes headroom_retrieve (plus headroom_compress /
-    # headroom_stats) as callable tools so the model can turn the proxy's
-    # hash= compression markers back into original content.
+    # Headroom MCP server: exposes headroom_retrieve (plus headroom_compress / headroom_stats) as callable tools so the model can turn the proxy's hash= compression markers back into original content.
     mcp.headroom = {
       type = "stdio";
       command = "headroom";
       args = [ "mcp" "serve" "--proxy-url" "${headroomProxyUrl}" ];
     };
 
-    # Language servers derived from the shared LSP catalog. Each server is
-    # annotated with its file_types + root_markers, so crush only initializes a
-    # server when that language actually appears in the mounted project.
+    # Language servers derived from the shared LSP catalog; each is annotated with file_types + root_markers so crush only initializes a server when that language appears in the mounted project.
     lsp = crushLspFor [ "nix" "go" "python" "typescript" "rust" "lua" "c_cpp" "bash" "json" "yaml" "markdown" "toml" "sql" ];
 
-    # Providers derived from the shared model catalog (see `models` above), so
-    # crush exposes exactly the same models as opencode and aider.
+    # Providers derived from the shared model catalog, so crush exposes exactly the same models as opencode and aider.
     providers = crushProviders;
   };
 
-  # Claude Code user settings (settings.json). The env block routes the agent
-  # through the Claude-facing headroom proxy to the local llama.cpp, using the
-  # catalog's default local model.
+  # Claude Code user settings (settings.json); the env block routes the agent through the Claude-facing headroom proxy to the local llama.cpp, using the catalog's default local model.
   claudeConfig = builtins.toJSON {
     env = {
       ANTHROPIC_BASE_URL = headroomClaudeProxyUrl;
@@ -860,7 +738,7 @@ in
     crushProviders
     opencodeProvider
     opencodeProviders
-    dshSettings
+    dshHomePatch
     rtkRewriteHook
     agentHome
     agentUsername

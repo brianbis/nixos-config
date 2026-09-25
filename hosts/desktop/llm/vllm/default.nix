@@ -12,11 +12,11 @@
 #                           apple/LensVLM-9B repo, full-size weights)
 #
 # The Gemma and K2-Horizon checkpoints run as docker containers (docker
-# enable, nvidia-container-toolkit, the oci-containers backend). The DFlash2
-# engine is a native process (see ./qwen38-dflash2.nix + ./dflash2-package.nix)
-# and needs no container runtime. The shared /var/lib/vllm cache dirs and the
-# ephemeral HF_TOKEN env file live here; per-model checkpoints and services
-# live in the per-model files.
+# enable, nvidia-container-toolkit, the oci-containers backend); the DFlash2
+# engine is a native process (see ./qwen38-dflash2.nix +
+# ./dflash2-package.nix) and needs no container runtime. The shared
+# /var/lib/vllm cache dirs and the ephemeral HF_TOKEN env file live here;
+# per-model checkpoints and services live in the per-model files.
 { config, lib, pkgs, ... }:
 
 {

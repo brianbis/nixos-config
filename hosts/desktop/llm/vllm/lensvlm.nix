@@ -1,8 +1,6 @@
-# LensVLM-9B (RTX 5090 / Blackwell target).
-#
-# Manual start: `just vllm-lensvlm` (service docker-vllm-lensvlm). Never
-# started at boot; only ever run one vLLM container at a time (they fight over
-# VRAM).
+# LensVLM-9B (RTX 5090 / Blackwell target). Manual start: `just vllm-lensvlm`
+# (service docker-vllm-lensvlm). Never started at boot; only ever run one vLLM
+# container at a time (they fight over VRAM).
 #
 # LensVLM is Apple's 9B vision-language model (a finetune of Qwen3.5-9B,
 # qwen3_5 architecture) for selective context expansion over compressed
@@ -13,8 +11,8 @@
 # file) and assembled into a store dir the container mounts read-only — so the
 # source tree fully describes the input and there is no runtime HF download
 # inside the container (the same pattern as K2-Horizon / Bonsai). The image is
-# pinned by manifest digest (the cu130-nightly tag is a rolling tag; the
-# digest makes the pull reproducible).
+# pinned by manifest digest (the cu130-nightly tag is a rolling tag; the digest
+# makes the pull reproducible).
 #
 # VRAM math on the single 32 GB card: 18.8 GiB bf16 weights + ~1.5 GiB CUDA
 # context leaves ~10 GiB for the KV cache at 0.95 utilization. The KV is fp8

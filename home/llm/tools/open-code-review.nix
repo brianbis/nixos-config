@@ -1,21 +1,10 @@
-# open-code-review: Alibaba's AI-powered code review CLI
-# (alibaba/open-code-review), invoked as `ocr`.
-#
-# Reads git diffs, sends changed files to a configurable LLM service (OpenAI-
-# and Anthropic-compatible endpoints) through an agent with tool access, and
-# produces structured review comments with line-level precision, plus built-in
-# deterministic rulesets (NPE, thread-safety, XSS, SQL injection).
-#
-# Not in nixpkgs (checked nixpkgs master, NUR's full package index, and the
-# NixOS wiki), so it is built here with buildGoModule from the pinned v1.12.8
-# release tag. Unlike the sibling tools, this one is self-contained (no
-# flakeless input): the pin is a release tag, not a branch, so re-pinning is a
-# version bump here, not `nix flake update <name>`:
-#   1. bump `version`, `rev`, and the fetchFromGitHub `hash` (the NAR hash of
-#      the unpacked tag tree — `nix hash path` on the extracted tarball, per
-#      the fetchFromGitHub note in AGENTS.md);
-#   2. if go.mod/go.sum changed, re-fetch `vendorHash` (rebuild and copy the
-#      "got: sha256-…" value out of the go-modules hash mismatch).
+# open-code-review (alibaba): AI code review CLI, invoked as `ocr`. Reads git
+# diffs, reviews changed files via a configurable LLM agent (OpenAI/Anthropic
+# compatible), emits line-level comments + built-in rulesets (NPE, thread-
+# safety, XSS, SQLi). Not in nixpkgs/NUR, so built here with buildGoModule
+# from the pinned v1.12.8 tag. Re-pin (a version bump here, not `nix flake
+# update`): bump version/rev + fetchFromGitHub hash (NAR of the unpacked tag
+# tree), and vendorHash if go.mod/go.sum changed (copy "got: sha256-…").
 { buildGoModule
 , fetchFromGitHub
 , go_1_26
@@ -36,27 +25,20 @@ buildGoModule {
     hash = "sha256-EuX3wT3gIz3tsYtAlC8eZm7TgImCAt2Bjr+qS0epHCI=";
   };
 
-  # go.mod requires go >= 1.25.5; go_1_26 (1.26.7) is the only Go in this
-  # nixpkgs pin and matches the Go the upstream release workflow builds with
-  # (golang:1.26.x).
+  # go.mod needs go >= 1.25.5; go_1_26 matches the upstream release workflow.
   go = go_1_26;
 
-  # Pure Go: the upstream release workflow builds with CGO_ENABLED=0, and no
-  # dependency in the module graph imports "C". No C toolchain needed.
+  # Pure Go (upstream builds with CGO_ENABLED=0; no dep imports "C").
   env.CGO_ENABLED = 0;
 
-  # Build exactly what the upstream release workflow builds
-  # (go build ./cmd/opencodereview). This also sidesteps the builder's
-  # find-based package discovery, which would otherwise trip over pages/ —
-  # the docs site is a separate Go module (pages/go.mod) — and would attempt
-  # scripts/ (whose only .go file is `//go:build ignore`).
+  # Build exactly what the upstream release workflow builds; sidesteps the
+  # builder's find-based discovery, which trips over pages/ (a separate Go
+  # module) and scripts/ (a `//go:build ignore` file).
   subPackages = [ "cmd/opencodereview" ];
 
-  # The upstream release injects version info via ldflags (see
-  # .github/workflows/release.yml). BuildDate is deliberately left unset:
-  # upstream sets it to the build time, which would be impure here; `ocr
-  # version` simply shows an empty build date. `-buildid=` (reproducibility)
-  # is appended by buildGoModule itself.
+  # Version info mirrors the upstream release workflow's ldflags. BuildDate is
+  # left unset (upstream uses build time, which would be impure). buildGoModule
+  # appends `-buildid=` itself.
   ldflags = [
     "-s"
     "-w"
@@ -64,21 +46,14 @@ buildGoModule {
     "-X" "main.GitCommit=5c7b383"
   ];
 
-  # The source ships no vendor/ directory, so buildGoModule's go-modules
-  # derivation runs `go mod vendor` (fetched from the Go module proxy) and
-  # verifies the result against this hash. If go.mod/go.sum change on a
-  # re-pin, rebuild and copy the "got: sha256-…" value from the hash-mismatch
-  # error into vendorHash.
+  # No vendor/ in source, so buildGoModule runs `go mod vendor` and verifies
+  # the result against this hash (see the re-pin note at the top).
   vendorHash = "sha256-f5Ty22wicf1J8+RKnHYcEO7flWn9gkWQODlfunn23EA=";
 
-  # doCheck is false to keep the build lean; the upstream CI (go test -race
-  # with a 90% coverage floor) exercises the tests, mirroring the
-  # knife/difftastic doCheck = false precedent.
+  # doCheck = false to keep the build lean (upstream CI covers it).
   doCheck = false;
 
-  # The Go main package (cmd/opencodereview) installs as `opencodereview`, but
-  # the canonical command is `ocr` (the npm bin name and what upstream's
-  # install.sh installs).
+  # The Go main package installs as `opencodereview`; the canonical command is `ocr`.
   postInstall = ''
     mv "$out/bin/opencodereview" "$out/bin/ocr"
   '';

@@ -1,46 +1,25 @@
 { pkgs, lib, ... }:
 
-# PopTracker — universal, scriptable randomizer tracker ("Powerful Open
-# Progress Tracker"). Connects to the Archipelago multiworld and the local
-# game and auto-updates the map.
-#
-# The ubuntu-22.04 x86_64 release is a PyInstaller ELF. It bundles libc/ssl/
-# zlib, but the SDL2 stack (libSDL2-2.0, libSDL2_ttf, libSDL2_image) remains
-# NEEDED, so the wrapper supplies it via LD_LIBRARY_PATH. The data tree
-# (assets, api, schema, packs, key) is installed to
-# ~/.local/share/poptracker; the `poptracker` wrapper lands on the home
-# profile PATH.
-#
-# The release asset (poptracker_*_ubuntu-22-04-x86_64.tar.xz) is a compiled
-# C++ binary, so it's pinned as a fixed-output fetchurl of the release asset.
-# Re-pin on a new release: update the tag in the URL + the sha256.
+# PopTracker: universal, scriptable randomizer tracker (Archipelago multiworld + local game).
+# The ubuntu-22.04 release is a PyInstaller ELF bundling libc/ssl/zlib; the SDL2 stack stays
+# NEEDED (supplied via LD_LIBRARY_PATH). Data tree installs to ~/.local/share/poptracker.
+# Pinned as a fixed-output fetchurl; re-pin on new release: update tag in URL + sha256.
 let
   poptrackerRelease = pkgs.fetchurl {
     url = "https://github.com/black-sliver/PopTracker/releases/download/v0.35.4/poptracker_0-35-4_ubuntu-22-04-x86_64.tar.xz";
     hash = "sha256-LUasSWvEzyvqiEQwm69Dnj9TjMyiSCOR3E59vOPh9SI=";
   };
 
-  # NEEDED libraries that are NOT bundled in the PyInstaller archive.
-  # libstdc++.so.6 comes from the base compiler (standalone libstdcpp/
-  # libstdcxx5 packages are gone in current nixpkgs).
+  # NEEDED libs not bundled in the PyInstaller archive (libstdc++.so.6 via the base compiler).
   runtimeLibs = with pkgs; [ SDL2 SDL2_ttf SDL2_image openssl_3 zlib (stdenv.cc.cc.lib) ];
 
   # The shell fragment ${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}, built by
   # concatenation so Nix' ${ interpolation never sees the literal.
   ldAppend = "$" + "{LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}";
 
-  # tinyfiledialogs spawns `kdialog` as a child (via popen), so it inherits
-  # the LD_LIBRARY_PATH exported above. That path contains poptracker's own
-  # openssl (3.0.x); kdialog's libcurl (built against openssl 3.4+) picks it
-  # up and dies on a missing symbol version (OPENSSL_3.2.0 / OPENSSL_3.5.0)
-  # at load. On KDE the window manager then closes the transient-for main
-  # window and the app quits. kdialog is a store binary that resolves its own
-  # libraries via RPATH, so unsetting LD_LIBRARY_PATH before exec is safe.
-  #
-  # kdialog's .desktop file lives in the store, outside the XDG data dirs, so
-  # the desktop portal can't resolve its app id (org.kde.kdialog) and logs a
-  # "Failed to register with host portal" warning. Pointing DESKTOP_FILE at
-  # the store copy lets the portal find the app info.
+  # kdialog inherits LD_LIBRARY_PATH (poptracker's openssl 3.0.x) and dies on
+  # missing symbol versions; unset it (kdialog resolves via RPATH). Also point
+  # DESKTOP_FILE at the store copy so the portal can resolve its app id.
   kdialogClean = pkgs.writeShellScriptBin "kdialog" ''
     unset LD_LIBRARY_PATH
     export DESKTOP_FILE="${pkgs.kdePackages.kdialog}/share/applications/org.kde.kdialog.desktop"
@@ -51,16 +30,11 @@ in
   home.packages = [
     (pkgs.writeShellScriptBin "poptracker" ''
       export LD_LIBRARY_PATH="${lib.makeLibraryPath runtimeLibs}${ldAppend}"
-      # NixOS' /lib64/ld-linux-x86-64.so.2 is a stub that rejects non-store
-      # binaries, so exec the real glibc loader directly (it resolves the
-      # binary's NEEDED entries from LD_LIBRARY_PATH).
-      # The app loads assets/ and packs/ relative to CWD.
+      # NixOS' /lib64/ld-linux-x86-64.so.2 rejects non-store binaries, so exec
+      # the real glibc loader; assets/ and packs/ load relative to CWD.
       cd "$HOME/.local/share/poptracker"
-      # tinyfiledialogs (the AP settings dialog) probes PATH for a GUI
-      # dialog backend and falls back to console input without one;
-      # kdialog is the KDE-native choice. The wrapper unsets the
-      # LD_LIBRARY_PATH exported above before exec'ing the real kdialog,
-      # so the dialog doesn't load poptracker's openssl and crash.
+      # tinyfiledialogs needs a GUI dialog backend on PATH; the kdialog
+      # wrapper unsets LD_LIBRARY_PATH so it doesn't load poptracker's openssl.
       export PATH="${kdialogClean}/bin:$PATH"
       exec ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 --library-path "$LD_LIBRARY_PATH" ./poptracker "$@"
     '')
@@ -84,10 +58,8 @@ in
       tmp="$(${pkgs.coreutils}/bin/mktemp -d)"
       trap 'rm -rf "$tmp"' EXIT
 
-      # The release tarball carries read-only mode bits, so a previous
-      # activation leaves read-only subdirs under $dest that a plain `rm -rf`
-      # cannot unlink ("Permission denied"). Make the tree owner-writable
-      # first. `|| true` keeps a missing dir (first run) from tripping `set -e`.
+      # The tarball carries read-only mode bits, so make the tree owner-writable
+      # before rm -rf (a plain rm would fail on stale read-only subdirs).
       rm_rw() { chmod -R u+w "$1" 2>/dev/null || true; rm -rf "$1"; }
 
       rm_rw "$dest"
@@ -95,11 +67,8 @@ in
       mv "$tmp/poptracker" "$dest"
     '';
 
-  # The desktop portal builds its app registry from .desktop files in the XDG
-  # data dirs, which the store is not part of. kdialog registers as
-  # org.kde.kdialog, so without a discoverable .desktop file the portal logs
-  # "Failed to register with host portal ... App info not found". Symlink the
-  # store copy into the user's applications dir so the portal can resolve it.
+  # kdialog registers as org.kde.kdialog but its .desktop file is in the store
+  # (outside XDG data dirs), so symlink it for the portal's app registry.
   home.activation.linkKdialogDesktop =
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       mkdir -p "$HOME/.local/share/applications"

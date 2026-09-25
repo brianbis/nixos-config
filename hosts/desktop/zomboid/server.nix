@@ -25,13 +25,12 @@
 #     this x86_64-only flake with no runtime download.
 #   * The settings file is $HOME/Zomboid/Server/<SERVERNAME>.ini; the
 #     -servername flag selects which .ini is used and the save folder, and
-#     the server auto-generates it with defaults if absent (pzwiki
-#     "Dedicated server"). Mods/saves/logs live under $HOME/Zomboid/{mods,
-#     Saves,Logs}.
+#     the server auto-generates it with defaults if absent (pzwiki "Dedicated
+#     server"). Mods/saves/logs live under $HOME/Zomboid/{mods,Saves,Logs}.
 #   * WorkshopItems= (semicolon-separated numeric Workshop IDs) tells the
 #     server which items to download; Mods= (semicolon-separated text Mod
-#     IDs, the `name` field of each mod.info) is the actual enable list.
-#     The server downloads + loads Workshop mods itself at boot.
+#     IDs, the `name` field of each mod.info) is the actual enable list. The
+#     server downloads + loads Workshop mods itself at boot.
 
 { config, lib, pkgs, ... }:
 
@@ -79,11 +78,11 @@ let
   # flake — no runtime download, no 32-bit glibc LD_LIBRARY_PATH hacks.
   #
   # steamcmd is known to exit 0 even when the depot download never starts
-  # ("Timed out waiting for update to start, bailing" -> "Success! App
-  # fully installed"), typically because a stale app manifest makes it think
-  # the app is already installed. So the script wipes the stale Steam state
-  # when the binary is missing, verifies the binary actually exists, retries
-  # a few times, and fails loudly if it still fails — so the zomboid.service
+  # ("Timed out waiting for update to start, bailing" -> "Success! App fully
+  # installed"), typically because a stale app manifest makes it think the app
+  # is already installed. So the script wipes the stale Steam state when the
+  # binary is missing, verifies the binary actually exists, retries a few
+  # times, and fails loudly if it still fails — so the zomboid.service
   # `requires=` stops the restart loop instead of looping on a missing binary.
   installScript = pkgs.writeShellScript "zomboid-install" ''
     set -euo pipefail

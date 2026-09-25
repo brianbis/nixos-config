@@ -28,14 +28,14 @@ headroomSrc: knifeSrc: graphifySrc: graphloreSrc: echartsSrc: bendSrc: difftasti
       src = headroomSrc;
     };
 
-  # knife: reverse engineer's binary Swiss-army knife (pure Rust) that ships a
-  # built-in stdio MCP server (`knife mcp`). The crate is `reknife` but installs
-  # as `knife` (see ./knife.nix).
+  # knife: reverse engineer's binary Swiss-army knife (pure Rust) with a
+  # built-in stdio MCP server; the crate is `reknife` but installs as `knife`.
   knife = final.callPackage ./knife.nix { src = knifeSrc; };
 
-  # graphify: codebase -> knowledge graph (Graphify-Labs/graphify). A Claude Code
-  # skill + CLI (pip `graphifyy`) that ships a built-in `graphify-mcp` stdio MCP
-  # server. Built from the flakeless `graphify` input (see ./graphify.nix).
+  # graphify: codebase -> knowledge graph (Graphify-Labs/graphify). A Claude
+  # Code skill + CLI (pip `graphifyy`) that ships a built-in `graphify-mcp`
+  # stdio MCP server. Built from the flakeless `graphify` input
+  # (see ./graphify.nix).
   graphify =
     final.python3.pkgs.callPackage ./graphify.nix {
       python = final.python3;
@@ -44,14 +44,12 @@ headroomSrc: knifeSrc: graphifySrc: graphloreSrc: echartsSrc: bendSrc: difftasti
     };
 
   # graphlore: richer third-party MCP server (28 tools) that wraps graphify's
-  # knowledge graph (span engine, semantic locate, impact/blast-radius). Built
-  # from the flakeless `graphlore` input (see ./graphlore.nix).
-  # graphlore: richer third-party MCP server (28 tools) that wraps graphify's
-  # graph (see ./graphlore.nix). Built on python314 explicitly: mcp 2.2.0's
-  # floors (anyio>=4.10, starlette>=0.48.0, pydantic>=2.12.0) are only met by
-  # the python3.14 package set, and pinning the interpreter keeps the isolated
-  # build identical to the system build (whose `python3` alias resolves to
-  # 3.14).
+  # knowledge graph (span engine, semantic locate, impact/blast-radius).
+  # Built on python314 explicitly: mcp 2.2.0's floors (anyio>=4.10,
+  # starlette>=0.48.0, pydantic>=2.12.0) are only met by the python3.14
+  # package set, and pinning the interpreter keeps the isolated build identical
+  # to the system build (whose `python3` alias resolves to 3.14).
+  # (see ./graphlore.nix).
   graphlore =
     final.python314.pkgs.callPackage ./graphlore.nix {
       python = final.python314;
@@ -59,36 +57,29 @@ headroomSrc: knifeSrc: graphifySrc: graphloreSrc: echartsSrc: bendSrc: difftasti
       fetchurl = final.fetchurl;
     };
 
-  # echarts: rich interactive chart library (Apache-2.0). npm-only (not a ready
-  # nixpkgs attr in this pin), so ./echarts.nix reads the version from the
-  # flakeless `echarts` source input and fetches the matching pre-built npm
-  # dist, then bundles a CLI that renders an ECharts option (JSON) to a
-  # self-contained HTML file — the "simple HTML, refreshable from datasets"
-  # chart counterpart to vega-cli. `nix flake update echarts` re-pins the source.
+  # echarts: interactive chart library (Apache-2.0), npm-only in this pin.
+  # ./echarts.nix reads the version from the flakeless `echarts` input, fetches
+  # the matching pre-built npm dist, and bundles a CLI rendering an ECharts
+  # option (JSON) to self-contained HTML — the simple-HTML counterpart to
+  # vega-cli. `nix flake update echarts` re-pins the source.
   echarts = final.callPackage ./echarts.nix { src = echartsSrc; };
 
-  # bend: dependently typed affine language (bendlang/bend). TypeScript
-  # compiler/interpreter/checker run by bun; `bend <f> -o` emits C compiled
-  # by clang. Built from the flakeless `bend` input (see ./bend.nix);
-  # `nix flake update bend` re-pins the source.
+  # bend: dependently typed affine language (bendlang/bend); the TypeScript
+  # compiler/interpreter/checker runs under bun, and `bend <f> -o` emits C
+  # compiled by clang. Built from the flakeless `bend` input.
   bend = final.callPackage ./bend.nix { src = bendSrc; };
 
-  # difftastic: a structural diff that understands syntax (Wilfred/difftastic).
-  # Pure Rust (tree-sitter + four vendored C parsers); built from the flakeless
-  # `difftastic` input (see ./difftastic.nix); `nix flake update difftastic`
-  # re-pins the source.
+  # difftastic: syntax-aware structural diff (Wilfred/difftastic); pure Rust
+  # (tree-sitter + four vendored C parsers), built from the flakeless input.
   difftastic = final.callPackage ./difftastic.nix { src = difftasticSrc; };
 
-  # open-code-review: Alibaba's AI code review CLI, invoked as `ocr`
-  # (alibaba/open-code-review). Not in nixpkgs, so ./open-code-review.nix
-  # builds it with buildGoModule from the pinned v1.12.8 release tag
-  # (self-contained fetchFromGitHub; see the file for the re-pin notes).
+  # openCodeReview: Alibaba's AI code review CLI, invoked as `ocr`
+  # (alibaba/open-code-review). Not in nixpkgs; built with buildGoModule from
+  # the pinned v1.12.8 release tag (self-contained fetchFromGitHub).
   openCodeReview = final.callPackage ./open-code-review.nix { };
 
-  # ripwire: "the ripgrep of AI context" (redhat-et/ripwire): a
-  # zero-dependency C++23 CLI + MCP server that gives coding agents a ranked,
-  # deterministic map of a repo (signatures, blast radius, tests-to-run,
-  # quality deltas). Built from the flakeless `ripwire` input (see
-  # ./ripwire.nix); `nix flake update ripwire` re-pins the source.
+  # ripwire: "the ripgrep of AI context" (redhat-et/ripwire) — a zero-dependency
+  # C++23 CLI + MCP server giving coding agents a ranked, deterministic repo
+  # map (signatures, blast radius, tests-to-run, quality deltas).
   ripwire = final.callPackage ./ripwire.nix { src = ripwireSrc; };
 }

@@ -1,6 +1,4 @@
-# Builds the (user, system) jail pair for each jailed agent (crush, opencode,
-# aider, claude, dsh). System jails run as the llm agent user (via `sudo -u llm`)
-# so they can edit /etc/nixos without being root.
+# Builds the (user, system) jail pair for each jailed agent (crush, opencode, aider, claude, dsh). System jails run as the llm agent user (via `sudo -u llm`) so they can edit /etc/nixos without being root.
 { lib, pkgs, jail-nix, llm-agents, deepseekSecret, shared, userHome, dshSrc }:
 
 let
@@ -16,8 +14,7 @@ let
 
   jail = jail-nix.lib.init pkgs;
 
-  # Headroom context-compression proxy for DeepSeek (cloud). Reads the API key
-  # from the agenix secret at runtime.
+  # Headroom context-compression proxy for DeepSeek (cloud); reads the API key from the agenix secret at runtime.
   headroomDeepseekWrapper = pkgs.writeShellScriptBin "headroom-deepseek" ''
     KEY="''$(cat ${deepseekSecret} | tr -d '\n')"
     HEADER="{\"Authorization\":\"Bearer $KEY\"}"
@@ -34,15 +31,7 @@ let
       exec ${pkg}/bin/${name} "$@"
     '';
 
-  # Like withDeepSeekKey but exports a NON-secret placeholder instead of the real
-  # key. The real DeepSeek key is injected host-side by the headroom-proxy-deepseek
-  # service (port 8788, which runs OUTSIDE the jail) via --openai-extra-headers, so
-  # dsh only needs *a* credential: pi-ai's openai-completions insists on one even
-  # for local endpoints (see catalog.nix dshSettings). Exporting the placeholder
-  # (not the real key) keeps the key out of dsh's environ (/proc/2/environ) and out
-  # of any bwrap --setenv argv (/proc/1/cmdline), both of which the same-uid agent
-  # can read. The placeholder is a non-secret constant, so baking it into the store
-  # is harmless.
+  # Like withDeepSeekKey but exports a non-secret placeholder: the real key is injected host-side by the headroom-proxy-deepseek service (8788, outside the jail), so dsh only needs *a* credential. The placeholder keeps the real key out of dsh's environ and bwrap argv (both readable by the same-uid agent).
   withDummyKey = pkg: name:
     pkgs.writeShellScriptBin name ''
       export DEEPSEEK_API_KEY="managed-by-headroom-proxy-8788"
@@ -50,17 +39,10 @@ let
       exec ${pkg}/bin/${name} "$@"
     '';
 
-  # Empty file used to shadow the agenix secret in the dsh system jail (see the
-  # dsh entry in jailsByTool): bound over /run/agenix/deepseek-api-key so the
-  # same-uid agent cannot read the real key from the path baseJailOptions ro-binds.
-  # Pinned into the jail closure via add-pkg-deps (systemExtraPkgs) so a
-  # nix-collect-garbage cannot orphan the store path bwrap binds.
+  # Empty file bound over /run/agenix/deepseek-api-key in the dsh system jail so the same-uid agent can't read the real key; pinned via add-pkg-deps so GC can't orphan the store path bwrap binds.
   emptySecretFile = pkgs.writeText "empty-secret" "";
 
-  # Shadow only the system-mutating/activating CLIs with stubs that refuse to run,
-  # rather than parsing command strings: deterministic and robust against quoting /
-  # `sudo` / `env` prefixes. The `nix` CLI remains available for evaluation, flake
-  # checks, and builds; the agent can edit /etc/nixos but never activate.
+  # Stubs that refuse the system-mutating/activating CLIs (robust vs quoting/sudo/env prefixes); `nix` stays available so the agent can build but never activate.
   forbiddenNixCmds = {
     "nixos-rebuild" = "building or switching a NixOS system is not allowed inside a jailed agent";
     "nixos-install" = "installing a NixOS system is not allowed inside a jailed agent";
@@ -80,17 +62,11 @@ let
       forbiddenNixCmds;
   };
 
-  # Blender with a headless software-GL environment. EEVEE rendering needs a
-  # GL context; in the headless jail that comes from EGL + the mesa llvmpipe
-  # software renderer. The wrapper points libglvnd at mesa's EGL ICD (vendor
-  # json) and forces the swrast (llvmpipe) DRI driver, so `blender -b` renders
-  # without a display or GPU.
+  # Blender with a headless software-GL env: points libglvnd at mesa's EGL ICD and forces the swrast (llvmpipe) DRI driver so `blender -b` renders without a display/GPU.
   blenderHeadless = pkgs.writeShellApplication {
     name = "blender";
     runtimeInputs = [ pkgs.mesa pkgs.blender ];
-    # The ${"$"} in the LD_LIBRARY_PATH line below emits a literal `$` (Nix has
-    # no dollar-doubled escape in indented strings), yielding the shell
-    # ${LD_LIBRARY_PATH-} default so `set -u` is safe.
+    # ${"$"} below emits a literal `$` (Nix has no dollar-doubled escape in indented strings), giving the ${LD_LIBRARY_PATH-} default so `set -u` is safe.
     text = ''
       export LD_LIBRARY_PATH="${pkgs.mesa}/lib:${pkgs.mesa}/lib/dri:${"$"}{LD_LIBRARY_PATH-}"
       export __EGL_VENDOR_LIBRARY_FILENAMES="${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json"
@@ -101,22 +77,10 @@ let
     '';
   };
 
-  # graphify: point its default LLM backend at the local NInfer endpoint.
-  # graphify auto-detects the backend from API keys (precedence: gemini -> kimi
-  # -> claude -> openai -> deepseek -> ...). The dsh jail already exports a dummy
-  # OPENAI_API_KEY (withDummyKey) and no gemini/kimi/claude key, so the openai
-  # backend wins; setting OPENAI_BASE_URL + OPENAI_MODEL routes it to the
-  # socket-activated NInfer serve (the DSH default model) instead of
-  # api.openai.com. Wrapped (not a global jail env var) so the OPENAI_* vars do
-  # not leak into the other jailed tools (aider/crush/opencode/dsh) that read
-  # them. `graphify-mcp` is a passthrough: it only serves a built graph and
-  # never calls the LLM, so it needs no env.
-  #
-  # OPENAI_BASE_URL carries the /v1 suffix: the openai Python client (which
-  # graphify's openai backend uses) appends /chat/completions to the base URL,
-  # and NInfer serves its OpenAI-compatible API under /v1/ (the catalog's
-  # headroomNinferUpstreamUrl is the bare server root the DSH tools handle
-  # themselves).
+  # graphify: route its default LLM backend at the local NInfer endpoint. The dsh
+  # jail's dummy OPENAI_API_KEY (no gemini/kimi/claude key) makes the openai backend
+  # win; OPENAI_BASE_URL carries /v1 since the client appends /chat/completions. Wrapped
+  # (not a global env var) so OPENAI_* doesn't leak into the other jailed tools; graphify-mcp is a passthrough.
   graphifyNinfer = pkgs.symlinkJoin {
     name = "graphify";
     paths = [
@@ -133,9 +97,7 @@ let
     ];
   };
 
-  # Single source of truth for packages injected into every jail. Each spec
-  # carries a stable doc name and a resolver so the doc generator can list
-  # names without evaluating any package (no overlay at doc-build time).
+  # Packages injected into every jail. Each spec carries a stable doc name + a resolver so the doc generator can list names without evaluating any package.
   commonPkgSpecs = [
     { name = "bashInteractive"; pkg = pkgs.bashInteractive; }
     { name = "curl"; pkg = pkgs.curl; }
@@ -153,19 +115,14 @@ let
     { name = "unzip"; pkg = pkgs.unzip; }
     # xz: decompress .xz archives (Nix binary-cache NARs, tarballs, etc.).
     { name = "xz"; pkg = pkgs.xz; }
-    # Read-only host journal access for system jails: unit states, linger
-    # activation, core-pin guard warnings. The binary is present in all
-    # jails but only works in system jails (user jails lack /run/systemd).
+    # systemd: read-only host journal access for system jails (unit states, linger, core-pin guard warnings); only works in system jails.
     { name = "systemd"; pkg = pkgs.systemd; }
     { name = "gnutar"; pkg = pkgs.gnutar; }
     { name = "diffutils"; pkg = pkgs.diffutils; }
-    # GNU patch: apply/verify source and preset patches in-jail (e.g. re-syncing
-    # the dsh standard-preset delta against a fresh dsh).
+    # gnupatch: apply/verify source and preset patches in-jail (e.g. re-syncing the dsh standard-preset delta).
     { name = "gnupatch"; pkg = pkgs.gnupatch; }
     { name = "strace"; pkg = pkgs.strace; }
-    # unshare (from util-linux): create isolated namespaces — e.g. `unshare -n`
-    # for a network-less netns — so untrusted binaries can be dynamic-analyzed
-    # in-jail without real network egress.
+    # unshare (util-linux): create isolated namespaces (e.g. `unshare -n`) so untrusted binaries can be dynamic-analyzed in-jail without network egress.
     { name = "unshare"; pkg = pkgs.util-linux; }
     { name = "openssl"; pkg = pkgs.openssl; }
     { name = "cfr"; pkg = pkgs.cfr; }
@@ -173,49 +130,25 @@ let
     { name = "mitmproxy"; pkg = pkgs.mitmproxy; }
     { name = "jdk21"; pkg = pkgs.jdk21; }
 
-    # rtk: Rust Token Killer, compresses noisy command output before it hits
-    # the context window, usable by any jailed agent (in nixpkgs).
+    # rtk: Rust Token Killer, compresses noisy command output before it hits the context window.
     { name = "rtk"; pkg = pkgs.rtk; }
-    # headroom: context optimization layer that compresses everything an agent
-    # reads. Not in nixpkgs / llm-agents; built from
-    # ./home/llm/tools/headroom.nix.
+    # headroom: context optimization layer that compresses everything an agent reads (built from ./home/llm/tools/headroom.nix).
     { name = "headroom"; pkg = pkgs.headroom; }
 
-    # graphify: codebase -> knowledge graph (Graphify-Labs/graphify). A Claude
-    # Code skill + CLI (pip `graphifyy`) that ships a built-in `graphify-mcp`
-    # stdio MCP server. Not in nixpkgs; built from ./home/llm/tools/graphify.nix.
-    # graphifyNinfer wraps the `graphify` CLI so its default LLM backend is the
-    # local NInfer endpoint (see the wrapper above); `graphify-mcp` passes
-    # through unchanged.
+    # graphify: codebase -> knowledge graph + stdio MCP server (built from ./home/llm/tools/graphify.nix); graphifyNinfer wraps the CLI so its LLM backend is the local NInfer endpoint.
     { name = "graphify"; pkg = graphifyNinfer; }
-    # graphlore: richer third-party MCP server (28 tools) that wraps graphify's
-    # knowledge graph (span engine, semantic locate, impact/blast-radius). Not on
-    # PyPI; built from ./home/llm/tools/graphlore.nix.
+    # graphlore: richer MCP server (28 tools) wrapping graphify's knowledge graph (built from ./home/llm/tools/graphlore.nix).
     { name = "graphlore"; pkg = pkgs.graphlore; }
-    # bend: dependently typed affine language that blocks AI mistakes via proof
-    # (bendlang/bend). The `bend` CLI checks, runs and compiles .bend programs;
-    # `bend <f> -o` emits C (clang) and JS (bun) backends. Built from
-    # ./home/llm/tools/bend.nix (the flakeless `bend` input).
+    # bend: dependently typed affine language (the `bend` CLI checks/runs/compiles .bend; built from ./home/llm/tools/bend.nix).
     { name = "bend"; pkg = pkgs.bend; }
-    # difftastic: structural diff that understands syntax (Wilfred/difftastic).
-    # The `difft` binary (built from ./home/llm/tools/difftastic.nix, the
-    # flakeless `difftastic` input) renders syntax-aware diffs; a drop-in for
-    # `diff`/`git diff` output.
+    # difftastic: structural diff that understands syntax (the `difft` binary, built from ./home/llm/tools/difftastic.nix).
     { name = "difftastic"; pkg = pkgs.difftastic; }
-    # ripwire: "the ripgrep of AI context" (redhat-et/ripwire): a
-    # zero-dependency C++23 CLI + MCP server that gives agents a ranked,
-    # deterministic map of a repo — signatures, blast radius, tests-to-run,
-    # quality deltas. nixpkgs carries 0.5.0; built from
-    # ./home/llm/tools/ripwire.nix (the flakeless `ripwire` input) so
-    # `nix flake update ripwire` tracks upstream.
+    # ripwire: "the ripgrep of AI context" CLI + MCP server (built from ./home/llm/tools/ripwire.nix so `nix flake update ripwire` tracks upstream).
     { name = "ripwire"; pkg = pkgs.ripwire; }
-    # open-code-review: Alibaba's AI code review CLI (alibaba/open-code-review).
-    # The `ocr` binary (built from ./home/llm/tools/open-code-review.nix, pinned
-    # to the v1.12.8 release tag) runs LLM-powered code reviews.
+    # openCodeReview: Alibaba's AI code review CLI, invoked as `ocr` (built from ./home/llm/tools/open-code-review.nix).
     { name = "openCodeReview"; pkg = pkgs.openCodeReview; }
 
-    # Nix CLI so jailed agents can search nixpkgs (`nix search nixpkgs <term>`)
-    # and eval packages against the source mounted read-only below.
+    # nix: so jailed agents can search nixpkgs and eval packages against the read-only-mounted source.
     { name = "nix"; pkg = pkgs.nix; }
 
     { name = "nixGuard"; pkg = nixGuard; }
@@ -227,11 +160,7 @@ let
 
     {
       name = "python3";
-      # Data-analysis stack on top of the agent essentials: the jupyter
-      # metapackage (lab + classic notebook, kernels, nbconvert), polars
-      # dataframes, seaborn plotting, and the duckdb python bindings (polars
-      # reads/writes duckdb through it). One env so the notebook kernel sees
-      # the same modules as the `python3` on PATH.
+      # Data-analysis stack: jupyter metapackage, polars, seaborn, duckdb bindings — one env so the notebook kernel sees the same modules as `python3` on PATH.
       pkg = pkgs.python3.withPackages (ps: [
         ps.cryptography
         ps.dnslib
@@ -245,30 +174,58 @@ let
       ]);
     }
 
-    # Blender: headless 3D rendering for the code-tree generator
-    # (projects/code-tree/). Binary distribution (large download). The
-    # blenderHeadless wrapper supplies the software GL (EGL + mesa llvmpipe)
-    # that EEVEE needs in a headless jail — see its definition above.
+    # blender: headless 3D rendering for the code-tree generator (the blenderHeadless wrapper supplies the software GL).
     { name = "blender"; pkg = blenderHeadless; }
 
-    # Security audit tooling: multi-language static analysis for bug bounty
-    # work (Discord audit, etc.). semgrep covers C++/JS/TS/Python with
-    # security-focused rulesets; nodejs runs JS/TS linters; cppcheck is an
-    # additional C++ analyzer alongside clang-tidy; bandit is the Python
-    # security linter.
+    # Security audit tooling: multi-language static analysis (semgrep C++/JS/TS/Python, nodejs JS/TS linters, cppcheck C++, bandit Python).
     { name = "semgrep"; pkg = pkgs.semgrep; }
     { name = "nodejs"; pkg = pkgs.nodejs; }
     { name = "cppcheck"; pkg = pkgs.cppcheck; }
     { name = "bandit"; pkg = pkgs.bandit; }
 
-    # ---------------------------------------------------------------------------
-    # Red/blue team software-security toolkit (added for the jail red-team
-    # assessment). Every package is a nixpkgs attr verified present at the
-    # pinned nixpkgs rev. Grouped by phase so the doc list stays readable.
-    # The jail's real boundary is bwrap (mount/uid/activation), so these are
-    # convenience coverage: an agent can always `nix run` more, but having the
-    # standard toolkit on PATH makes red/blue work first-class.
-    # ---------------------------------------------------------------------------
+    # --- Compilers / language toolchains (Rust, GCC, Go, Zig, C#/.NET, Julia, OCaml, GHC, Kotlin, Scala). ---
+    { name = "rustc"; pkg = pkgs.rustc; }
+    { name = "cargo"; pkg = pkgs.cargo; }
+    { name = "clippy"; pkg = pkgs.rustPackages.clippy; }
+    { name = "rustfmt"; pkg = pkgs.rustPackages.rustfmt; }
+    { name = "rust-analyzer"; pkg = pkgs.rust-analyzer; }
+    { name = "gcc"; pkg = pkgs.gcc; }
+    { name = "go"; pkg = pkgs.go; }
+    { name = "zig"; pkg = pkgs.zig; }
+    { name = "dotnet-sdk"; pkg = pkgs.dotnet-sdk; }
+    { name = "julia"; pkg = pkgs.julia; }
+    { name = "ocaml"; pkg = pkgs.ocaml; }
+    { name = "ghc"; pkg = pkgs.ghc; }
+    { name = "kotlin"; pkg = pkgs.kotlin; }
+    { name = "scala"; pkg = pkgs.scala; }
+
+    # --- Web: JS/TS runtimes + package managers, headless browsers, web servers, interpreters, Wasm. ---
+
+    # --- JS/TS runtimes & package managers. ---
+    { name = "bun"; pkg = pkgs.bun; }
+    { name = "deno"; pkg = pkgs.deno; }
+    { name = "pnpm"; pkg = pkgs.pnpm; }
+    { name = "yarn"; pkg = pkgs.yarn; }
+
+    # --- Headless browsers + automation (testing / scraping / E2E). ---
+    { name = "firefox"; pkg = pkgs.firefox; }
+    { name = "playwright"; pkg = pkgs.python3Packages.playwright; }
+    { name = "selenium"; pkg = pkgs.python3Packages.selenium; }
+
+    # --- Web servers. ---
+    { name = "nginx"; pkg = pkgs.nginx; }
+    { name = "caddy"; pkg = pkgs.caddy; }
+    { name = "apacheHttpd"; pkg = pkgs.apacheHttpd; }
+
+    # --- Web-language interpreters. ---
+    { name = "ruby"; pkg = pkgs.ruby; }
+    { name = "php"; pkg = pkgs.php; }
+
+    # --- Web infra + Wasm. ---
+    { name = "redis"; pkg = pkgs.redis; }
+    { name = "wasmtime"; pkg = pkgs.wasmtime; }
+
+    # --- Red/blue team software-security toolkit (nixpkgs attrs; the jail's real boundary is bwrap, these are convenience coverage). ---
 
     # --- Network / recon (red team): port & service discovery, socket state. ---
     { name = "nmap"; pkg = pkgs.nmap; }
@@ -311,10 +268,11 @@ let
     # --- Binary / reverse engineering (red team): debug, disasm, exploit dev. ---
     { name = "gdb"; pkg = pkgs.gdb; }
     { name = "radare2"; pkg = pkgs.radare2; }
-    # angr is dropped: its nixpkgs recipe fails on python 3.14 (needs
-    # setuptools-rust, undeclared). radare2 + gdb + pwntools cover RE/exploit dev.
+    # angr dropped: its nixpkgs recipe fails on python 3.14 (needs setuptools-rust, undeclared); radare2 + gdb + pwntools cover RE.
     { name = "pwntools"; pkg = pkgs.python3Packages.pwntools; }
     { name = "binutils"; pkg = pkgs.binutils; }
+    # ldd (glibc's bin output): resolve a binary's dynamic-link closure in-jail.
+    { name = "ldd"; pkg = pkgs.glibc.bin; }
     { name = "file"; pkg = pkgs.file; }
     { name = "hexedit"; pkg = pkgs.hexedit; }
     { name = "upx"; pkg = pkgs.upx; }
@@ -348,16 +306,14 @@ let
     { name = "safety"; pkg = pkgs.python3Packages.safety; }
 
     # --- Integrity / system audit (blue team): FIM, audit, observability. ---
-    # (chkrootkit is removed in the pinned nixpkgs and rkhunter is absent, so
-    # rootkit detection is covered by aide FIM + osquery + lynis.)
+    # (chkrootkit removed + rkhunter absent in the pinned nixpkgs; rootkit detection is covered by aide FIM + osquery + lynis.)
     { name = "aide"; pkg = pkgs.aide; }
     { name = "audit"; pkg = pkgs.audit; }
     { name = "osquery"; pkg = pkgs.osquery; }
     { name = "lynis"; pkg = pkgs.lynis; }
 
     # --- OSINT / recon (red team): social/email, subdomains, web history, DNS. ---
-    # (theharvester is dropped: it bundles playwright, whose pinned source hash
-    # is stale in this nixpkgs rev and fails the fixed-output build.)
+    # (theharvester dropped: it bundles playwright, whose pinned source hash is stale in this nixpkgs rev.)
     { name = "maigret"; pkg = pkgs.maigret; }
     { name = "snscrape"; pkg = pkgs.snscrape; }
     { name = "amass"; pkg = pkgs.amass; }
@@ -384,8 +340,7 @@ let
     { name = "commix"; pkg = pkgs.commix; }
 
     # --- CTF: pwn / crypto / stego / packets. ---
-    # Math & crypto: z3 (SMT), sympy (symbolic), gmpy2 (bignum), pycryptodome,
-    # and sage (SageMath — heavy, the flagship crypto-CTF tool).
+    # Math & crypto: z3 (SMT), sympy (symbolic), gmpy2 (bignum), pycryptodome, sage (SageMath).
     { name = "z3"; pkg = pkgs.z3; }
     { name = "sympy"; pkg = pkgs.python3Packages.sympy; }
     { name = "gmpy2"; pkg = pkgs.python3Packages.gmpy2; }
@@ -404,26 +359,9 @@ let
     { name = "scapy"; pkg = pkgs.python3Packages.scapy; }
     { name = "tcpflow"; pkg = pkgs.tcpflow; }
 
-    # ---------------------------------------------------------------------------
-    # Storytelling / data-viz (storyboarding setups). Chosen after surveying the
-    # 2025-26 slides-as-code + data-viz space: Quarto is the only single
-    # nixpkgs-native system covering all four requirements (static HTML,
-    # declarative dataset fetching, native slides, expressive data storytelling).
-    #   - Quarto: Markdown + Python/R + reveal.js native slides + data execution
-    #     + Plotly/Vega/ggplot charts -> static HTML.
-    #   - Vega-Lite + vega-cli: declarative grammar-of-graphics; specs use
-    #     data:{url} so charts fetch datasets at runtime (refreshable), and
-    #     vega-cli compiles specs to standalone static HTML. Quarto embeds
-    #     Vega-Lite natively.
-    #   - Marp (marp-cli): minimal Markdown -> HTML/PDF/PPTX decks (low-ceremony,
-    #     CI-friendly, near-zero LLM error rate) as a lightweight alternative.
-    #   - pandoc: universal conversion (Quarto's backend + standalone).
-    #   - Plotly + Altair (python): interactive (Plotly) and declarative
-    #     Vega-Lite (Altair) charts inside Quarto.
-    #   - Hugo: static-site generator for multi-page storyboards.
-    # (Slidev is Vue/Vite-standalone and Reveal.js is manual HTML; both lose to
-    # Quarto's authoring layer for this spec. d3/echarts/observable are npm-only.)
-    # ---------------------------------------------------------------------------
+    # --- Storytelling / data-viz: Quarto (Markdown + Python/R slides + data execution + Plotly/Vega/ggplot -> static HTML),
+    #     Vega-Lite + vega-cli (declarative grammar-of-graphics, runtime data fetch), Marp (minimal Markdown decks),
+    #     pandoc (universal conversion), Plotly + Altair (charts inside Quarto), Hugo (static-site storyboards).
     { name = "quarto"; pkg = pkgs.quarto; }
     { name = "vega-lite"; pkg = pkgs.vega-lite; }
     { name = "vega-cli"; pkg = pkgs.vega-cli; }
@@ -433,12 +371,7 @@ let
     { name = "altair"; pkg = pkgs.python3Packages.altair; }
     { name = "hugo"; pkg = pkgs.hugo; }
 
-    # --- Data analytics / self-contained "Tableau-feel" (FOSS). ---
-    # In-process analytics (no server) + declarative/interactive rendering, so a
-    # deck stays a self-contained, refreshable file: DuckDB queries CSV/Parquet/
-    # SQL directly; pandas/polars/manipulate frames; sqlglot parses/transpiles
-    # SQL; arrow is the interchange format; echarts renders an option (JSON) to
-    # standalone HTML (the FOSS interactive-chart counterpart to vega-cli).
+    # --- Data analytics / self-contained "Tableau-feel" (FOSS): in-process analytics + declarative/interactive rendering so a deck stays a self-contained, refreshable file. ---
     { name = "duckdb"; pkg = pkgs.duckdb; }
     { name = "pandas"; pkg = pkgs.python3Packages.pandas; }
     { name = "polars"; pkg = pkgs.python3Packages.polars; }
@@ -450,33 +383,22 @@ let
   commonPkgs = map (spec: spec.pkg) commonPkgSpecs;
   commonPkgNames = map (spec: spec.name) commonPkgSpecs;
 
-  # baseMounts is a pure mount-list builder (separate from the baseJailOptions
-  # wrapper) so agents-manifest.nix can render the readonly mounts into
-  # AGENTS.md without calling into jail-nix.
-  # /etc/machine-id (system jails): the jail's /etc is a fresh tmpfs, so the
-  # host's machine-id is invisible unless bound in. journalctl resolves the
-  # journal dir as /var/log/journal/<machine-id>/ via this file; without it
-  # it reports "No journal files were found" even though /var/log/journal is
-  # mounted.
+  # Pure mount-list builder (separate from baseJailOptions) so agents-manifest.nix can render the readonly mounts into AGENTS.md without calling into jail-nix.
+  # /etc/machine-id (system jails): the jail's /etc is a fresh tmpfs, so the host's machine-id is invisible unless bound in (journalctl resolves the journal dir via it).
   baseMounts = system: (lib.optional (!system) "/etc/nixos") ++ [ "/var/log" ]
     ++ (if system then [ "/var/log/journal" "/run/systemd" "/etc/machine-id" ] else [ ])
     ++ (if system then [ "/sys" "/run/user" ] else [ ])
     ++ [ "/nix/store" ];
 
-  # agenix secret file(s) mounted read-only into every jail. Kept out of
-  # baseMounts on purpose: naming the secret path in AGENTS.md would leak
-  # the secret name into the doc. Rendered separately by the justfile.
+  # agenix secret(s) mounted read-only into every jail; kept out of baseMounts so naming the secret path in AGENTS.md doesn't leak the secret name.
   secretMounts = [ deepseekSecret ];
 
   readonlyMounts = system: baseMounts system ++ secretMounts;
 
-  # Extra writable paths for system jails (beyond the read-only overlay). User
-  # jails' $PWD is a runtime path (not statically knowable), so it's handled
-  # via mount-cwd rather than listed here.
+  # Extra writable paths for system jails (user jails' $PWD is a runtime path, handled via mount-cwd).
   writablePathsSystem = [ "/etc/nixos" agentHome ];
 
-  # The shared LSP set is mounted once per jail (not per tool) so we don't
-  # bundle a fresh per-tool closure.
+  # The shared LSP set is mounted once per jail (not per tool) so we don't bundle a fresh per-tool closure.
   baseJailOptions = system: with jail.combinators; [
     network
     time-zone
@@ -499,9 +421,7 @@ let
       [ (add-pkg-deps (commonPkgs ++ (if system then systemExtraPkgs else [ ]))) ]
       ++ (if system then systemExtraMounts else [ ]));
 
-  # Per-tool read/write dirs, relative to the owning home (user: userHome,
-  # system: agentHome). Paths are absolute so user and system mounts stay
-  # statically identical; a runtime ~ would diverge (sudo resets $HOME).
+  # Per-tool read/write dirs, relative to the owning home (user: userHome, system: agentHome); absolute paths so user and system mounts stay statically identical.
   mkDirSpecs = base: paths: map (with jail.combinators; p: readwrite "${base}/${p}") paths;
   userDirSpecs = paths: mkDirSpecs userHome paths;
   agentDirSpecs = paths: mkDirSpecs agentHome paths;
@@ -524,18 +444,14 @@ let
     ".claude"
     ".claude.json"
   ];
-  # dsh (DeepSeek Harness) keeps all user data under a single root (~/.dsh,
-  # overridable via $DSH_HOME); the jail pins HOME, so the default root is
-  # what gets mounted.
+  # dsh keeps all user data under a single root (~/.dsh, overridable via $DSH_HOME); the jail pins HOME, so the default root is what gets mounted.
   dshDirPaths = [
     ".dsh"
   ];
 
   agent = n: llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.${n};
 
-  # Jailed crush is already sandboxed by bubblewrap, so strip the hardcoded
-  # network/download + network-config command bans from bash.go: the jail is the
-  # real security boundary, and the blocklist blocks legitimate local work.
+  # Jailed crush is already sandboxed by bubblewrap, so strip the hardcoded network/download + network-config command bans from bash.go: the jail is the real security boundary.
   crushUnbanned = (agent "crush").overrideAttrs (old: {
     postPatch = (old.postPatch or "") + ''
       sed -i \
@@ -549,18 +465,14 @@ let
         -e '/"pfctl",/d' -e '/"route",/d' -e '/"ufw",/d' \
         -e '/"systemctl",/d' \
         internal/agent/tools/bash.go
-      # Hardcoded in the system prompt template (tool_usage), separate from the
-      # bash.go blocklist. Remove the stale "never use curl in bash" instruction
-      # too, since the jail is the real boundary and we allow curl.
+      # Also drop the stale "never use curl in bash" instruction from the system prompt template (the jail is the real boundary).
       sed -i \
         -e '/Never use `curl` through the bash tool/d' \
         internal/agent/templates/coder.md.tpl
     '';
   });
 
-  # The dsh system jail is headless with no real xdg-open, so dsh's host-side
-  # opener fails with `spawn xdg-open ENOENT`. This wrapper forwards the path to
-  # the dsh-open handler (runs as b) over /run/dsh-open/open.sock instead.
+  # The dsh system jail is headless with no real xdg-open, so dsh's host-side opener fails with `spawn xdg-open ENOENT`; this wrapper forwards the path to the dsh-open handler (runs as b) over /run/dsh-open/open.sock.
   dshOpenXdgOpen = pkgs.writeShellApplication {
     name = "xdg-open";
     runtimeInputs = [ pkgs.socat pkgs.coreutils ];
@@ -571,10 +483,7 @@ let
       path="$1"
       # Open regular files only (a URL is not a regular file — kills the vector).
       [ -f "$path" ] || { echo "xdg-open: not a regular file: $path" >&2; exit 1; }
-      # Make the file (and every llm-owned ancestor dir) group-readable+writable
-      # so b (in the llm group) can read it and save edits back. This wrapper
-      # runs as llm (the owner), so it can chmod its own files — no root needed.
-      # Root-owned dirs (/etc, /home, /) are skipped.
+      # Make the file (and every llm-owned ancestor dir) group-readable+writable so b (in the llm group) can read it and save edits back; root-owned dirs are skipped.
       me=$(id -u)
       if [ "$(stat -c %u -- "$path" 2>/dev/null)" = "$me" ]; then
         chgrp -- ${agentUsername} "$path" 2>/dev/null || true
@@ -588,8 +497,7 @@ let
         fi
         d=$(dirname -- "$d")
       done
-      # Forward the path to the dsh-open handler (runs as b) over the agent-only
-      # Unix socket. One line in (the path), one line out (the status).
+      # Forward the path to the dsh-open handler (runs as b) over the agent-only Unix socket (one line in, one line out).
       resp=$(printf '%s\n' "$path" | socat - UNIX-CONNECT:"$SOCK" 2>/dev/null) || {
         echo "xdg-open: dsh-open service unavailable ($SOCK)" >&2; exit 1;
       }
@@ -601,54 +509,23 @@ let
     '';
   };
 
-  # Patch the shipped `standard` preset at build time: the user preset root
-  # can't shadow the shipped one (first-root-wins). writeText makes the patch a
-  # derivation input (a bare repo path is invisible to the sandboxed builder).
-  #
-  # Since dsh 0.1.2 the shipped presets live in the @deepseek-ai/dsh-agent-
-  # presets package (resolved at runtime via SHIPPED_PRESET_ROOT), not in the
-  # CLI tarball's config/ dir. The preset is patched in place inside
-  # node_modules so the discovery root picks up the patched composition.
-  #
-  # dsh is built from source (the flakeless `dsh` input, pinned in flake.nix):
-  # dsh-source.nix replicates the upstream release pipeline to produce the
-  # @deepseek-ai/dsh npm tarball, and dsh-package.nix runs the usual
-  # buildNpmPackage recipe on it. This replaces `agent "dsh"` from the
-  # llm-agents flake input, which pins the npm `latest` dist-tag (0.1.1-rc.2).
-  # The version follows the pinned tree's root package.json, so
-  # `nix flake update dsh` re-pins both commit and version together.
-  dshVersion =
-    (builtins.fromJSON (builtins.readFile (dshSrc + "/package.json"))).version;
-
-  dshTarball = (import ./dsh-source.nix) {
+  # dsh is built from source (the flakeless `dsh` input): home/llm/dsh/ replicates the upstream release pipeline to produce the @deepseek-ai/dsh npm tarball (tarball.nix) and installs it without running npm (package.nix: node_modules unpacked from per-package fetchurl FODs, since `npm ci` OOMs on this tree). The version follows the pinned tree's root package.json; `just dsh-repin` re-pins it.
+  # The shipped `standard` preset is patched in place at build time (the user preset root can't shadow the shipped one, first-root-wins); writeText makes the patch a derivation input (a bare repo path is invisible to the sandboxed builder).
+  dshPkg = (import ./dsh/default.nix) {
     inherit pkgs;
     src = dshSrc;
-    commit = dshSrc.rev;
-    version = dshVersion;
+    versionCheckHomeHook = agent "versionCheckHomeHook";
   };
 
-  # The official Node.js binary dsh runs on (home/llm/node-official.nix): the
-  # node-addon-require-builtin probe dsh 0.1.6-alpha.2+ runs on every profile
-  # boot only matches the official node build, so the nixpkgs node build
-  # cannot be the runtime node.
-  nodeOfficial = (import ./node-official.nix) { inherit pkgs; };
-
-  dshPatched = (pkgs.callPackage ./dsh-package.nix {
-    versionCheckHomeHook = agent "versionCheckHomeHook";
-    src = dshTarball;
-    version = dshVersion;
-    nodejs = nodeOfficial;
-  }).overrideAttrs (old: {
+  dshPatched = dshPkg.package.overrideAttrs (old: {
     nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ pkgs.gnupatch ];
     postInstall = (old.postInstall or "") + ''
-      patch -p1 -d $out/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-agent-presets/presets/standard \
+      patch -p1 -d $out/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/dsh-web-app/presets \
         < ${pkgs.writeText "dsh-standard-preset.patch" (builtins.readFile ../../dotfiles/dsh/standard-preset.patch)}
     '';
   });
 
-  # Build a (user, system) jail pair for a tool. systemExtra* apply only to the
-  # system variant; systemDirs replaces the default agent-home dirs when a system
-  # variant needs a different mount set (e.g. aider: secret read-only, no dirs).
+  # Build a (user, system) jail pair for a tool. systemExtra* apply only to the system variant; systemDirs replaces the default agent-home dirs when a system variant needs a different mount set.
   makeTool = { name, pkg, dirPaths, systemDirs ? (agentDirSpecs dirPaths), systemExtraPkgs ? [ ], systemExtraMounts ? [ ] }:
     let
       userJail = mkToolJail { inherit name pkg; dirs = userDirSpecs dirPaths; system = false; };
@@ -670,9 +547,7 @@ let
       name = "crush";
       pkg = withDeepSeekKey crushUnbanned "crush";
       dirPaths = crushDirPaths;
-      # Debug tooling for the system jail: PipeWire/WirePlumber CLIs for audio
-      # stream state, plus read-only /sys (cpufreq) and /run/user (session
-      # sockets). b's /run/user session dir is mode 700, so llm can't inspect it.
+      # Debug tooling for the system jail: PipeWire/WirePlumber CLIs for audio stream state, plus read-only /sys (cpufreq) and /run/user (session sockets).
       systemExtraPkgs = with pkgs; [ procps pipewire wireplumber ];
       systemExtraMounts = with jail.combinators; [
         (readonly "/sys")
@@ -683,23 +558,15 @@ let
     // (makeTool { name = "claude"; pkg = agent "claude-code"; dirPaths = claudeDirPaths; })
     // (makeTool {
       name = "dsh";
-      # Dummy key: the real DeepSeek key is injected host-side by the
-      # headroom-proxy-deepseek service (8788, outside the jail); see withDummyKey.
+      # Dummy key: the real DeepSeek key is injected host-side by the headroom-proxy-deepseek service (8788, outside the jail); see withDummyKey.
       pkg = withDummyKey dshPatched "dsh";
       dirPaths = dshDirPaths;
-      # The jail's /run is a fresh tmpfs, so the dsh-open socket must be
-      # bind-mounted in. Mount the DIRECTORY (not the socket) so a switch
-      # that recreates it leaves no stale inode (ENXIO); rw for socket connect.
-      # openssh client: the dsh agent reaches LAN hosts (e.g. the user's Home
-      # Assistant server) to explore device cloud Api / MQTT from the owner
-      # account. The jail already allows network; this only adds the binaries.
+      # The jail's /run is a fresh tmpfs, so the dsh-open socket must be bind-mounted in; mount the DIRECTORY (not the socket) so a switch that recreates it leaves no stale inode (ENXIO).
+      # openssh client: the dsh agent reaches LAN hosts (e.g. the Home Assistant server) to explore device cloud Api / MQTT; the jail already allows network, this only adds the binaries.
       systemExtraPkgs = [ dshOpenXdgOpen emptySecretFile pkgs.openssh pkgs.discord ];
       systemExtraMounts = with jail.combinators; [
         (readwrite "/run/dsh-open")
-        # Shadow the agenix secret that baseJailOptions ro-binds into every jail:
-        # bind the empty store file over it so the same-uid agent cannot read the
-        # real key from /run/agenix/deepseek-api-key. systemExtraMounts is appended
-        # after baseJailOptions in mkToolJail, so this later --ro-bind wins.
+        # Shadow the agenix secret that baseJailOptions ro-binds into every jail: bind the empty store file over it so the same-uid agent can't read the real key. systemExtraMounts is appended after baseJailOptions, so this later --ro-bind wins.
         (unsafe-add-raw-args
           "--ro-bind ${emptySecretFile} /run/agenix/deepseek-api-key")
       ];
@@ -708,9 +575,7 @@ let
   # Flat list of all jail packages (home.packages expects a list).
   jails = builtins.attrValues jailsByTool;
 
-  # Short aliases for the crush jail pair: `jc` (user) and `jcs` (system, run as
-  # llm via `sudo -u llm` to read/write /etc/nixos). The wrappers exec the real
-  # jail binaries from `jailsByTool`, so they track the real packages.
+  # Short aliases for the crush jail pair: `jc` (user) and `jcs` (system, as llm); the wrappers exec the real jail binaries from jailsByTool.
   jc = pkgs.writeShellScriptBin "jc" ''
     exec ${jailsByTool."crush-jail"}/bin/jailed-crush "$@"
   '';
@@ -730,13 +595,9 @@ in
 {
   inherit
     jails
-    # Per-tool (user, system) jail pair attrset. Exported so the NixOS system
-    # module can run a specific jail directly (dsh-web.service runs
-    # "dsh-jail-system") without re-deriving the jail pair.
+    # Per-tool (user, system) jail pair attrset; exported so the NixOS system module can run a specific jail directly (dsh-web.service runs "dsh-jail-system").
     jailsByTool
-    # The raw dsh npm package (before jail wrapping). Exported so the npm
-    # closure re-pin (home/llm/dsh-package-lock.json + npmDepsHash) can be
-    # verified in isolation instead of rebuilding the whole system.
+    # The raw dsh npm package (before jail wrapping); exported so the npm closure re-pin can be verified in isolation.
     dshPatched
     headroomDeepseekWrapper
     commonPkgs

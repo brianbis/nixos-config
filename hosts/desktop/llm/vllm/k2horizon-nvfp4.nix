@@ -1,8 +1,7 @@
-# K2-Horizon-MoVA-36B-A4B NVFP4 (RTX 5090 / Blackwell target).
-#
-# Manual start: `just vllm-k2horizon-nvfp4` (service docker-vllm-k2horizon-nvfp4).
-# Never started at boot; only ever run one vLLM container at a time (they fight
-# over VRAM).
+# K2-Horizon-MoVA-36B-A4B NVFP4 (RTX 5090 / Blackwell target). Manual start:
+# `just vllm-k2horizon-nvfp4` (service docker-vllm-k2horizon-nvfp4). Never
+# started at boot; only ever run one vLLM container at a time (they fight over
+# VRAM).
 #
 # The k2_horizon architecture (K2HorizonForCausalLM) merged into vLLM main on
 # 2026-09-03 (PR #55063) but is not in a release yet, so this pins the exact

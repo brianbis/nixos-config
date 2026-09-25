@@ -9,12 +9,10 @@ let
   # The newer Pro pair — preferred when the two pairs tie (better sound).
   preferredMac = "74:77:86:25:E5:18";
 
-  # Rank the two pairs from librepods state.json (the flat last-known record
-  # the patched daemon maintains): out-of-case (advertising) first, then the
-  # preferred (newer Pro) pair, then higher effective battery (min of L/R).
-  # "Out of case" means the daemon's state field is one of the advertising
-  # states and the record was seen within 60s. Falls back to Pro-first when
-  # state.json is absent or stale. Prints the MACs space-separated, best first.
+  # Rank the two pairs from librepods state.json (the patched daemon's flat
+  # last-known record): out-of-case (advertising state, seen within 60s) first,
+  # then the preferred Pro pair, then higher effective battery (min of L/R).
+  # Falls back to Pro-first when state.json is absent/stale. Prints MACs best-first.
   orderScript = pkgs.writeText "librepods-order.py" ''
     import json, os, time
     pro = "74:77:86:25:E5:18"
@@ -31,24 +29,18 @@ let
         return min(v) if v else -1
     def key(mac):
         e = data.get(mac, {})
-        # Out of case (a connect candidate) only when the daemon's state is an
-        # advertising state AND the record is fresh; the daemon owns the state.
+        # Out of case only when the daemon's state is advertising AND fresh.
         fresh = 1 if (e.get("state") in active_states
                       and 0 <= now - int(e.get("last_seen", 0)) < 60) else 0
         return (-fresh, 0 if mac == pro else 1, -eff(e))
     print(" ".join(sorted(macs, key=key)))
   '';
 
-  # Connect to the AirPods. Ctrl+Shift+C (and the boot/resume services) call
-  # this. Behaviour:
-  #   * flock-guarded so concurrent presses don't double-connect (a second
-  #     press while one is in flight exits 0 immediately);
-  #   * fast path: if either pair is already connected, exit 0;
-  #   * order the pairs from state.json (out-of-case first, then Pro, then
-  #     battery) and round-robin `timeout 15 bluetoothctl connect` until the
-  #     60s window expires;
-  #   * notify on success; on expiry notify and exit 1.
-  # Optional 1st arg overrides the window (default 60s).
+  # Connect to the AirPods (Ctrl+Shift+C and the boot/resume services call
+  # this). flock-guarded against double-connect; exits 0 if either pair is
+  # already connected; otherwise round-robins `timeout 15 bluetoothctl connect`
+  # in state.json order until the window expires (default 60s; 1st arg
+  # overrides). Notifies on success or expiry.
   bluetoothConnectScript = pkgs.writeShellScriptBin "bt-connect-headphones" ''
     #!${pkgs.bash}/bin/bash
     set -u
@@ -105,8 +97,8 @@ let
   '';
 in
 {
-  # Expose the connect script so other modules (e.g. librepods's tray Reconnect
-  # action and the KDE global-shortcut installer) can reference it by path.
+  # Exposed so other modules (librepods tray Reconnect, the KDE shortcut
+  # installer) can reference the connect script by path.
   options.bluetooth.connectScript = lib.mkOption {
     internal = true;
     default = bluetoothConnectScript;
@@ -120,27 +112,22 @@ in
 
       settings = {
         General = {
-          # Do NOT set ControllerMode = "bredr" here. It is a machine-wide
-          # controller setting, not a per-device one: "bredr" restricts every
-          # controller to BR/EDR and disables LE entirely (BlueZ refuses to
-          # create any LE bearer), which makes ANCS notification mirroring
-          # from the iPhone impossible. The default "dual" is required.
+          # Do NOT set ControllerMode = "bredr": it is machine-wide, disables LE
+          # entirely (BlueZ refuses to create any LE bearer), and makes ANCS
+          # notification mirroring from the iPhone impossible. "dual" is required.
           Experimental = true;
           FastConnectable = true;
           JustWorksRepairing = "always";
 
-          # Present the controller as Apple hardware (Apple's Bluetooth vendor
-          # id, 004C). BlueZ then reports Adapter1.Modalias as
-          # bluetooth:v004Cp0000d0000, which tether's presents_as_apple() reads
-          # and publishes as apple_device_id in bt_status. Without it the AirPods
-          # offer no AAP ownership to this machine, so a call hands them to the
-          # iPhone by disconnecting them instead of using Apple's own handoff.
-          #
-          # This is a machine-wide controller setting, not a per-device one: once
-          # the firmware believes it is talking to Apple it applies Apple
-          # expectations (session watchdogs, ownership arbitration, intolerance
-          # of rapid profile changes). Both of this machine's headphone pairs are
-          # AirPods, so that is the intended peer here.
+          # Present the controller as Apple hardware (vendor id 004C) so BlueZ
+          # reports Modalias bluetooth:v004Cp0000d0000, which tether's
+          # presents_as_apple() publishes as apple_device_id in bt_status.
+          # Without it the AirPods offer no AAP ownership here, so a call hands
+          # them to the iPhone by disconnecting instead of using Apple's
+          # handoff. Machine-wide: once the firmware believes it talks to Apple
+          # it applies Apple expectations (session watchdogs, ownership
+          # arbitration, intolerance of rapid profile changes) — intended here,
+          # since both pairs are AirPods.
           DeviceID = "bluetooth:004C:0000:0000";
         };
 
@@ -152,8 +139,8 @@ in
       };
     };
 
-    # Exposed on the system PATH so the KDE global shortcut (Ctrl+Shift+C)
-    # and the .desktop-based command shortcut can both call it by name.
+    # On the system PATH so the KDE global shortcut (Ctrl+Shift+C) and the
+    # .desktop command shortcut can both call it by name.
     environment.systemPackages = [ bluetoothConnectScript ];
 
     services.blueman.enable = false;

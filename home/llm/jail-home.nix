@@ -65,27 +65,34 @@ in
         > $HOME/.claude/settings.json
     '';
 
-  # dsh watches this file at runtime and publishes empty settings while it is
-  # missing, so the cmp guard keeps an unchanged activation a filesystem no-op
-  # instead of a delete/add swap that would churn dsh's settings state.
-  home.activation.writeDshSettings =
+  # dsh's home user layer ($DSH_HOME/cordis.patch.yml): rc.2 removed the
+  # standalone settings document, so user settings live in the profile patch
+  # layers; the home-level layer applies to every profile. dsh watches the file
+  # at runtime and publishes empty settings while it is missing, so the cmp
+  # guard keeps an unchanged activation a filesystem no-op instead of a
+  # delete/add swap that would churn dsh's settings state. The legacy
+  # $DSH_HOME/settings.yaml is removed: rc.2 renames it to .imported at startup
+  # and re-imports its sections into the profile layer, double-managing the
+  # same settings.
+  home.activation.writeDshHomePatch =
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD mkdir -p $HOME/.dsh
 
-      $DRY_RUN_CMD printf '%s\n' '${shared.dshSettings}' \
-        > $HOME/.dsh/settings.yaml.tmp
-      $DRY_RUN_CMD chmod 600 $HOME/.dsh/settings.yaml.tmp
-      if [ -f $HOME/.dsh/settings.yaml ] \
-        && cmp -s $HOME/.dsh/settings.yaml.tmp $HOME/.dsh/settings.yaml; then
-        $DRY_RUN_CMD rm -f $HOME/.dsh/settings.yaml.tmp
+      $DRY_RUN_CMD printf '%s' ${shellQuote shared.dshHomePatch} \
+        > $HOME/.dsh/cordis.patch.yml.tmp
+      $DRY_RUN_CMD chmod 600 $HOME/.dsh/cordis.patch.yml.tmp
+      if [ -f $HOME/.dsh/cordis.patch.yml ] \
+        && cmp -s $HOME/.dsh/cordis.patch.yml.tmp $HOME/.dsh/cordis.patch.yml; then
+        $DRY_RUN_CMD rm -f $HOME/.dsh/cordis.patch.yml.tmp
       else
-        $DRY_RUN_CMD mv -f $HOME/.dsh/settings.yaml.tmp $HOME/.dsh/settings.yaml
+        $DRY_RUN_CMD mv -f $HOME/.dsh/cordis.patch.yml.tmp $HOME/.dsh/cordis.patch.yml
       fi
+      $DRY_RUN_CMD rm -f $HOME/.dsh/settings.yaml
     '';
 
   # dsh's web-profile patch layer: watched at runtime, and dsh creates the file
   # only when missing (this activation owns it outright). Plain-file + cmp-guard
-  # write (as in writeDshSettings) keeps unchanged activations a filesystem no-op.
+  # write (as in writeDshHomePatch) keeps unchanged activations a filesystem no-op.
   home.activation.writeDshWebProfilePatch =
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD mkdir -p $HOME/.dsh/profiles/web

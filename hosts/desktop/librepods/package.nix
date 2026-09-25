@@ -37,28 +37,30 @@
 #      eviction guard), B-field (A/B) tracking + transition logging, early
 #      CLAIM on FEATURES_ACK, the keep-alive silence stream, CLAIM-storm rate
 #      limiting, firmware guards (config watchdog + CA reset), ghost-session
-#      detection + UI, BlueZ corruption diagnostic, raw-volume snapshot/restore,
-#      codec warm-up, MPRIS playback cache, the startup contention gate, the
-#      polite-peer fixes (gated early CLAIM, libpulse default-sink, robust pactl
-#      path, silence-stream Ready+backoff, zero-MAC AUDIO_SOURCE guard), downgraded
-#      logging of unrecognized (benign) AACP control-command ids, and a forced
-#      BR/EDR connect on reclaim when the A2DP card is missing (so the PC can grab
-#      the AirPods back from the iPhone when the user starts playing on the PC).
-#      These are local git commits on the linux/rust branch (rendered as a patch
-#      because they are not pushed upstream); the patch is the diff from the
-#      pinned rev below to the handoff HEAD (731c406).
+#      detection + UI, BlueZ corruption diagnostic, raw-volume
+#      snapshot/restore, codec warm-up, MPRIS playback cache, the startup
+#      contention gate, the polite-peer fixes (gated early CLAIM, libpulse
+#      default-sink, robust pactl path, silence-stream Ready+backoff, zero-MAC
+#      AUDIO_SOURCE guard), downgraded logging of unrecognized (benign) AACP
+#      control-command ids, and a forced BR/EDR connect on reclaim when the
+#      A2DP card is missing (so the PC can grab the AirPods back from the
+#      iPhone when the user starts playing on the PC). These are local git
+#      commits on the linux/rust branch (rendered as a patch because they are
+#      not pushed upstream); the patch is the diff from the pinned rev below to
+#      the handoff HEAD (731c406).
 #
-#   2. patches/persist-state.patch — persists a thin "last known" record per MAC
-#      to $XDG_STATE_HOME/librepods/state.json. Each record is a flat set of the
-#      last REAL values observed: a null/0xFF observation never overwrites a
-#      stored value, and case metrics are only written by a source actually
-#      reading the case (AACP: case connected; PPM: case is the advertiser).
-#      Both the PPM (advertising) and AACP (connected) handlers merge into the
-#      same flat record, so readers (tray, notification watcher, the
-#      Ctrl+Shift+C connect order) are dumb renderers with no freshness/source
-#      heuristics. Written unconditionally, so it works headless. It is rebased
-#      onto the post-handoff tree: its battery-status mapping now uses the
-#      bitmask BatteryStatus struct (spec 3.6) introduced by handoff.patch.
+#   2. patches/persist-state.patch — persists a thin "last known" record per
+#      MAC to $XDG_STATE_HOME/librepods/state.json. Each record is a flat set
+#      of the last REAL values observed: a null/0xFF observation never
+#      overwrites a stored value, and case metrics are only written by a source
+#      actually reading the case (AACP: case connected; PPM: case is the
+#      advertiser). Both the PPM (advertising) and AACP (connected) handlers
+#      merge into the same flat record, so readers (tray, notification watcher,
+#      the Ctrl+Shift+C connect order) are dumb renderers with no
+#      freshness/source heuristics. Written unconditionally, so it works
+#      headless. It is rebased onto the post-handoff tree: its battery-status
+#      mapping now uses the bitmask BatteryStatus struct (spec 3.6) introduced
+#      by handoff.patch.
 #
 # Pinned to the linux/rust branch base (in-PR, not yet tagged):
 #   rev 672e65ad36eebf21ff1c1a508066f9197ee56d17 (2026-05-15)
@@ -96,11 +98,10 @@ rustPlatform.buildRustPackage rec {
   # `nix flake update librepods` re-pins it.
   inherit src;
 
-  # Cargo workspace lives in a subdirectory.
-  # cargoRoot: tells the setup hook where Cargo.lock / the vendor dir are.
-  # buildAndTestSubdir: tells the build hook to `pushd` into the crate dir
-  # before running `cargo build` (otherwise it looks for Cargo.toml at the
-  # source root and fails).
+  # Cargo workspace lives in a subdirectory. cargoRoot: tells the setup hook
+  # where Cargo.lock / the vendor dir are. buildAndTestSubdir: tells the build
+  # hook to `pushd` into the crate dir before running `cargo build`
+  # (otherwise it looks for Cargo.toml at the source root and fails).
   cargoRoot = "linux-rust";
   buildAndTestSubdir = "linux-rust";
   # Vendored cargo deps from the source's Cargo.lock (in the linux-rust

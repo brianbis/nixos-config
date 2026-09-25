@@ -1,23 +1,17 @@
-# Archipelago WebHost service.
-#
-# One process serves the whole local stack:
-#   * the web UI (seed generation, option pages, supported games, tracker)
-#   * in-process room hosting (game servers on the GAME_PORTS pool)
-#   * the web tracker (WebHostLib/tracker.py)
-#
-# State:
-#   /var/lib/archipelago/            config.yaml, ap.db3, uploads/, logs/, Players/
-#   ~/.local/share/Archipelago/      user_path fallback (custom worlds load from
-#                                    ~/.local/share/Archipelago/worlds/)
+# Archipelago WebHost service. One process serves the whole local stack: web
+# UI (seed generation, option pages, tracker), in-process room hosting
+# (GAME_PORTS pool), and the web tracker.
+# State: /var/lib/archipelago/ (config.yaml, ap.db3, uploads/, logs/, Players/)
+# and ~/.local/share/Archipelago/ (user_path fallback; custom worlds load from
+# ~/.local/share/Archipelago/worlds/).
 { config, pkgs, lib, ... }:
 
 let
   cfg = config.services.archipelago;
 
   configTemplate = pkgs.writeText "archipelago-config.yaml" ''
-    # Archipelago WebHost configuration.
-    # Seeded by archipelago-init.service only when missing; edit freely.
-    # See docs/webhost configuration sample.yaml upstream for all options.
+    # WebHost config; seeded by archipelago-init only when missing, edit freely.
+    # See the upstream docs/webhost sample.yaml for all options.
 
     # Web hosting port (Caddy fronts it at https://archipelago.local).
     PORT: ${toString cfg.port}
@@ -75,17 +69,15 @@ in
   config = lib.mkIf cfg.enable {
     # First-run seeding: config.yaml, the skeleton world, and the data tree
     # (sprites, lua connectors, Players, manifest.json). The cp steps are
-    # idempotent (guarded by existence checks) so user edits survive
-    # restarts and rebuilds; the final chmod re-asserts owner write bits on
-    # every boot.
+    # idempotent (existence-guarded) so user edits survive; the final chmod
+    # re-asserts owner write bits on every boot.
     #
-    # Why the chmod: Nix strips all write bits when importing a derivation
-    # into the store, so WebHost's one-time home copy (shutil.copytree with
-    # copy2, see Utils.user_path) would produce a read-only home tree, and a
-    # re-copy — triggered when the manifest content changes, e.g. a version
-    # bump — would crash overwriting it. Seeding here with write bits (and
-    # re-asserting them) keeps the home tree writable, makes the custom world
-    # user-editable, and lets any re-copy overwrite cleanly.
+    # Why the chmod: Nix strips write bits on store import, so WebHost's
+    # one-time home copy (shutil.copytree/copy2, Utils.user_path) would
+    # produce a read-only home tree, and a re-copy (triggered when the
+    # manifest content changes, e.g. a version bump) would crash overwriting
+    # it. Seeding with write bits keeps the home tree writable, makes the
+    # custom world user-editable, and lets any re-copy overwrite cleanly.
     systemd.services.archipelago-init = {
       description = "Archipelago first-run state seeding (config.yaml, skeleton world, data tree)";
       wantedBy = [ "multi-user.target" ];
@@ -112,8 +104,7 @@ in
           echo "archipelago-init: seeded $home_ap/worlds/skeleton"
         fi
 
-        # Data tree that user_path() would otherwise copytree from the
-        # (read-only) store.
+        # Data tree that user_path() would otherwise copytree from the read-only store.
         for dn in data/sprites data/lua Players; do
           if [ ! -d "$home_ap/$dn" ]; then
             install -d -m 0755 "$home_ap/$(dirname "$dn")"
@@ -122,8 +113,8 @@ in
           fi
         done
 
-        # Marks a "proper install": present (with identical content) in the
-        # home dir, user_path() skips its one-time home copy.
+        # Marks a "proper install": present in the home dir, so user_path()
+        # skips its one-time home copy.
         if [ ! -f "$home_ap/manifest.json" ]; then
           install -m 0644 ${cfg.package}/lib/archipelago/manifest.json "$home_ap/manifest.json"
           echo "archipelago-init: seeded $home_ap/manifest.json"

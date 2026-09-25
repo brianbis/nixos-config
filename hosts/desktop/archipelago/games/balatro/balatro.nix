@@ -1,36 +1,23 @@
 { pkgs, lib, archipelagoSources, ... }:
 
-# Balatro (Steam, app 2379780) Archipelago setup, mirroring sts.nix:
-#   * client side — Balatro runs via Proton, so the mod loader chain lives in
-#     two places: Lovely's version.dll next to the game binary (game dir) and
-#     the smods + BalatroAP mod folders inside the Proton prefix (save dir).
-#     Steam is installed at ~/.steam/steam on this host (same root as sts.nix).
-#   * server side — balatro.apworld installed into the Archipelago WebHost's
-#     custom-worlds dir (~/.local/share/Archipelago/worlds/), where the
-#     archipelago service (running as this user) loads custom worlds from.
-#
-# Steam launch options (WINEDLLOVERRIDES="version=n,b" %command%) are set
-# declaratively by upserting the LaunchOptions entry in steamapps/config.xml.
-# Without the override the prefix loads wine's builtin version.dll and the
-# mod loader never starts. The upsert skips while Steam is running: Steam
-# holds config.xml in memory and rewrites it on exit, which would clobber
-# the edit (close Steam, then re-apply home-manager to land it).
+# Balatro (Steam 2379780) Archipelago setup, mirroring sts.nix: client side
+# (Proton: Lovely's version.dll next to the game binary + smods/BalatroAP mods
+# in the prefix save dir) and server side (balatro.apworld into the WebHost's
+# custom-worlds dir). Launch options (WINEDLLOVERRIDES="version=n,b") are
+# upserted into steamapps/config.xml declaratively; skipped while Steam runs
+# (it rewrites config.xml from memory on exit and would clobber the edit).
 let
   zipFromSource = import ../../zip-from-source.nix;
 
-  # Server-side world (game "Balatro"). The Python apworld source is NOT
-  # published — the BalatroAP repo's single main branch carries only the Lua
-  # client mod — so this is pinned as a fixed-output fetchurl of the release
-  # asset. Re-pin on a new release: update the tag in the URL + the sha256.
+  # Server-side world; source not published, so pinned as a fixed-output
+  # fetchurl of the release asset (re-pin: update tag in URL + sha256).
   balatroWorld = pkgs.fetchurl {
     url = "https://github.com/BurndiL/BalatroAP/releases/download/v0.1.9f/balatro.apworld";
     hash = "sha256-WnZ7qjpbWSt2skK5QIBWGpwJc8L8I1HXiseBd5SYXuA=";
   };
 
-  # Client mod (smods mod folder "BalatroAP"). Built from the pinned BalatroAP
-  # source (the main branch IS the mod): zip the tree under a `BalatroAP/`
-  # prefix (the release wraps it that way). `nix flake update archipelago`
-  # re-pins the source; the zip follows (no manual re-pin).
+  # Client mod (smods folder "BalatroAP"): built from the pinned BalatroAP
+  # source (the main branch IS the mod), zipped under a `BalatroAP/` prefix.
   balatroAPMod = zipFromSource {
     inherit pkgs;
     src = archipelagoSources.balatroap.outPath;
@@ -39,15 +26,13 @@ let
     name = "balatro-mod";
   };
 
-  # Lovely injector: the Windows version.dll that hooks the game and loads
-  # smods. The Windows build is used on Linux too (it runs inside Proton).
+  # Lovely injector: the Windows version.dll that hooks the game and loads smods.
   lovely = pkgs.fetchurl {
     url = "https://github.com/ethangreen-dev/lovely-injector/releases/download/v0.9.0/lovely-x86_64-pc-windows-msvc.zip";
     hash = "sha256-QLmUoFXudeXyq6geeuBvLBdGDhjMNGSDCJkhiZ+t0fc=";
   };
 
-  # smods mod framework. Releases carry no binary asset; the official Linux
-  # install guide uses the tag's source zip.
+  # smods framework; no binary release asset, so the tag's source zip.
   smods = pkgs.fetchurl {
     url = "https://github.com/Steamodded/smods/archive/refs/tags/26.829.0.zip";
     hash = "sha256-HstwFaKcKe9Qf1FQdsnop67/rxja4AlkX42ntEgzIs8=";
@@ -61,11 +46,8 @@ in
             tmp="$(${pkgs.coreutils}/bin/mktemp -d)"
             trap 'rm -rf "$tmp"' EXIT
 
-            # The zips store the source's read-only mode bits and unzip/cp preserve
-            # them, so a previous activation can leave these dirs with read-only
-            # subdirs that a plain `rm -rf` cannot unlink ("Permission denied").
-            # Make the tree owner-writable before removing it. `|| true` keeps a
-            # missing dir (first run) from tripping `set -e`.
+            # The zips preserve the source's read-only mode bits, so make the
+            # tree owner-writable before rm -rf (stale read-only subdirs).
             rm_rw() { chmod -R u+w "$1" 2>/dev/null || true; rm -rf "$1"; }
 
             game_dir="$HOME/.steam/steam/steamapps/common/Balatro"
@@ -73,14 +55,12 @@ in
             mods_dir="$save_dir/Mods"
             mkdir -p "$game_dir" "$mods_dir"
 
-            # Lovely injector: version.dll next to the game binary. If Balatro is
-            # not installed yet the dir is created early; Steam's install keeps
-            # foreign files, so the dll is in place when the game lands.
+            # Lovely's version.dll next to the game binary; Steam keeps foreign
+            # files, so it is in place when the game lands if not installed yet.
             $unzip -q -o "${lovely}" -d "$tmp/lovely"
             cp -f "$tmp/lovely/version.dll" "$game_dir/version.dll"
 
-            # smods framework: the source zip's top folder must end up as
-            # Mods/smods/<files> (not Mods/smods/smods-.../<files>).
+            # smods: the source zip's top folder must end up as Mods/smods/<files>.
             rm_rw "$mods_dir/smods"
             $unzip -q -o "${smods}" -d "$tmp/smods"
             mv "$tmp/smods/smods-26.829.0" "$mods_dir/smods"
@@ -96,11 +76,9 @@ in
             rm_rw "$worlds_dir/balatro"
             $unzip -q -o "${balatroWorld}" -d "$worlds_dir"
 
-            # Balatro launch options, declaratively. Steam keeps per-app launch
-            # options in steamapps/config.xml under <item name="apps"> as
-            #   <item name="2379780"> ... <item name="LaunchOptions" value="..."/>
-            # Steam rewrites config.xml from memory on exit, so only touch it
-            # while Steam is not running.
+            # Balatro launch options: Steam keeps per-app options in config.xml
+            # under <item name="apps">; it rewrites the file from memory on exit,
+            # so only touch it while Steam is not running.
             if pgrep -x steam >/dev/null 2>&1; then
               echo "installBalatroAP: Steam is running; skipping config.xml launch-options upsert (close Steam and re-apply)"
             else

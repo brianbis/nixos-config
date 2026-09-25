@@ -20,7 +20,7 @@ in
   # flag), and it is the 24-way rustc fan-out of the heavy local Rust build
   # (librepods: iced/wgpu/winit + bluer) that would OOM this 64 GB box. The
   # `--cores` cap in the justfile (build-flags) is the client-side fix that
-  # applies to the very next build. This line is kept only as a persistent
+  # applies to the very next build; this line is kept only as a persistent
   # default so builds outside the justfile stay bounded.
   nix.settings.max-jobs = 4;
 
@@ -30,9 +30,8 @@ in
   # after 128 GB total is exhausted. The file is fallocated (hole-free —
   # swapon rejects sparse files with holes), so it consumes 64 GB of NVMe up
   # front but only pages in as swap is actually used. btrfs swap files need
-  # kernel >= 6.8 (this box runs a 26.05-era kernel). Enabled by
-  # swapDevices; the file itself is created by the ordered mk-swapfile
-  # oneshot below.
+  # kernel >= 6.8 (this box runs a 26.05-era kernel). Enabled by swapDevices;
+  # the file itself is created by the ordered mk-swapfile oneshot below.
   swapDevices = [{ device = "/swapfile"; }];
 
   # Ordering guarantee for the swap file. The fstab entry above makes
@@ -42,8 +41,8 @@ in
   # oneshot creates the file. wantedBy pulls it into swapfile.swap's
   # transaction; before is the actual ordering edge — a pull-in alone leaves
   # the units parallel, so swapon's open() can land between the script's rm
-  # and fallocate. It is a no-op once a hole-free file is on disk, which
-  # persists across reboots.
+  # and fallocate. It is a no-op once a hole-free file is on disk (persists
+  # across reboots).
   systemd.services.mk-swapfile = {
     description = "Create /swapfile (64 GB, hole-free) before swap is activated";
 
@@ -79,14 +78,14 @@ in
   };
 
   # pre-commit's git (cloning hook repos) and the `nix` client run in an
-  # environment whose /nix/store view may not include the system store, so
-  # the default /etc/ssl/certs CA *symlinks* (into the system store) dangle
-  # and TLS verification fails. Install the system's final CA bundle
+  # environment whose /nix/store view may not include the system store, so the
+  # default /etc/ssl/certs CA *symlinks* (into the system store) dangle and TLS
+  # verification fails. Install the system's final CA bundle
   # (security.pki.caBundle — same file the system symlinks into
-  # /etc/ssl/certs) as a REAL file at a stable path: `mode = "0644"` makes
-  # the /etc installer copy it instead of symlinking it, so it resolves
-  # regardless of which store view the environment sees. Point git at it
-  # via the system gitconfig.
+  # /etc/ssl/certs) as a REAL file at a stable path: `mode = "0644"` makes the
+  # /etc installer copy it instead of symlinking it, so it resolves regardless
+  # of which store view the environment sees. Point git at it via the system
+  # gitconfig.
   environment.etc."ca-bundle/git-ca.crt" = {
     source = config.security.pki.caBundle;
     mode = "0644";
@@ -95,15 +94,6 @@ in
     text = ''
       [http]
         sslCAInfo = /etc/ca-bundle/git-ca.crt
-
-      [safe]
-        # nix's libgit2 fetcher refuses to open a repo not owned by the
-        # calling user ("repository path ... is not owned by current user",
-        # NixOS/nix#10202). The crystal-forge server (user crystal-forge)
-        # evaluates this repo via builtins.getFlake "git+file:///etc/nixos?rev=..."
-        # while the repo is owned by llm. safe.directory is the documented
-        # exception; the system config covers every user (daemon, services).
-        directory = /etc/nixos
     '';
     mode = "0644";
   };
@@ -112,8 +102,7 @@ in
   # pinned to $NIXPKGS — the system's nixpkgs source — so their versions track
   # the flake's lock instead of a floating registry default. The jails set it
   # per session (home/llm/jails.nix); declare it system-wide as well so
-  # `just fmt` also works in host shells, where no jail environment exists.
-  environment.sessionVariables.NIXPKGS = pkgs.path;
+  # `just fmt` also works in host shells, where no jail environment exists.  environment.sessionVariables.NIXPKGS = pkgs.path;
 
   i18n.defaultLocale = "en_US.UTF-8";
   services.lact.enable = true;
@@ -168,15 +157,15 @@ in
   # No password or SSH keys — unreachable except via `sudo -u llm`.
   #
   # b owns the agent's permissions: the home is group-`llm` 0770 and b is in
-  # the `llm` group, so b can read and write the whole agent home without
-  # sudo. `homeMode` is re-asserted by the users module on every activation
-  # (every switch AND at boot) — a tmpfiles `z` rule would only run at boot
-  # and be clobbered on the next switch, so it is not used. The primary group
-  # is `llm` (not the isNormalUser default `users`) so the home and every file
-  # the agent creates are group-`llm`; `users` stays an extra group so nothing
-  # that expects it regresses. The agent runs umask 0002 (dsh-web `UMask=`;
-  # sudoers `Defaults>llm` in security.nix) so the subdirs/files it creates
-  # are group-writable, not just group-readable.
+  # the `llm` group, so b can read and write the whole agent home without sudo.
+  # `homeMode` is re-asserted by the users module on every activation (every
+  # switch AND at boot) — a tmpfiles `z` rule would only run at boot and be
+  # clobbered on the next switch, so it is not used. The primary group is
+  # `llm` (not the isNormalUser default `users`) so the home and every file the
+  # agent creates are group-`llm`; `users` stays an extra group so nothing that
+  # expects it regresses. The agent runs umask 0002 (dsh-web `UMask=`; sudoers
+  # `Defaults>llm` in security.nix) so the subdirs/files it creates are
+  # group-writable, not just group-readable.
   users.users."${users.llm.username}" = {
     isNormalUser = true;
     description = "Jailed LLM agent (system jail)";

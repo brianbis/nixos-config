@@ -1,27 +1,11 @@
-# The sglang runtime, assembled as a self-contained Python venv.
-#
-# This is the "curated assembly" build: the heavy CUDA pieces (torch cu130,
-# sgl-kernel, the nvidia-* CUDA runtime wheels) and the sglang package itself
-# are hash-pinned binary wheels fetched hermetically (fetchurl, sha256), NOT
-# compiled from source. The pure-Python long tail is the same pinned set.
-#
-# Why a venv rather than a from-source build:
-#   - sglang 0.5.19 ships no cp314 wheel and its CUDA dep graph (torch 2.13.0
-#     + ~30 nvidia-* wheels + sgl-kernel) is a multi-GB binary stack that is
-#     not in nixpkgs. Rebuilding any of it from source is hours of CUDA
-#     compilation with real version-mismatch risk.
-#   - A digest-pinned wheel assembly is the same "pinned binary" stance the
-#     repo already takes for the vLLM docker image, minus the container
-#     runtime: the result is a native process, not a docker container.
-#
-# The venv's interpreter is a symlink into the nixpkgs python312 store; the
-# CUDA libraries live inside the venv (the nvidia-* wheels). The host only
-# needs the NVIDIA driver (libcuda.so.1), exactly like the ninfer services.
-#
-# Reproducibility: every wheel is pinned by sha256 in ./wheelhouse.nix and
-# every package version is pinned in ./requirements.txt (generated from
-# `uv pip compile` of the three top-level pins). Re-running the build yields
-# the identical venv.
+# SGLang runtime as a self-contained python312 venv assembled from
+# hash-pinned binary wheels (torch 2.13.0 cu130, sgl-kernel, the nvidia-*
+# CUDA runtime, sglang 0.5.19), fetched hermetically (fetchurl, sha256) and
+# never compiled: the CUDA dep graph is a multi-GB binary stack not in
+# nixpkgs. Same pinned-binary stance as the vLLM docker image, minus the
+# container runtime. Wheels pinned in ./wheelhouse.nix; package versions in
+# ./requirements.txt (uv pip compile of the three top-level pins). The host
+# only needs the NVIDIA driver (libcuda.so.1), as with the ninfer services.
 
 { stdenv
 , lib
@@ -29,36 +13,28 @@
 , uv
 , fetchurl
 , patchelf
-  # Host shared libraries the venv's compiled (manylinux) extensions expect from
-  # a standard /usr/lib. Nix has no /usr/lib and the venv interpreter's rpath only
-  # covers its own C runtime, so we bundle these into $out/lib and the service adds
-  # it to LD_LIBRARY_PATH. (The CUDA runtime ships inside the nvidia-* wheels; the
-  # host supplies only libcuda.so.1 via the driver.)
+  # Host shared libs the venv's compiled (manylinux) extensions expect from a
+  # standard /usr/lib; bundled into $out/lib (the service adds it to
+  # LD_LIBRARY_PATH). CUDA runtime ships inside the nvidia-* wheels; the host
+  # supplies only libcuda.so.1 via the driver.
 , zlib              # libz.so.1 — numpy's bundled OpenBLAS
-, libsndfile        # libsndfile.so — audio I/O, loaded via ctypes by sglang.srt
-, flac              # libFLAC.so.14 — libsndfile dep
-, lame              # libmp3lame.so  — libsndfile dep
-, libmpg123         # libmpg123.so   — libsndfile dep
-, libogg            # libogg.so      — libsndfile dep
-, libopus           # libopus.so     — libsndfile dep
-, libvorbis         # libvorbis*.so  — libsndfile dep
-, alsa-lib          # libasound.so   — libsndfile dep (Linux)
-  # torchcodec (a video-decode dep sglang imports at startup) links against
-  # FFmpeg. The wheel ships prebuilt variants for FFmpeg 4-8 and loads the
-  # highest whose libs resolve; the default nixpkgs ffmpeg is 9.x (unsupported),
-  # so pin ffmpeg_8 (libavutil.so.60 / libavcodec.so.62 / ... = the "core8" set).
-  # Only the 7 core FFmpeg libs are bundled; each carries a store RUNPATH to its
-  # own transitive codecs (x264, vpx, dav1d, ...), so they resolve at runtime.
-, ffmpeg_8          # libav*/libsw* — torchcodec's FFmpeg 8 ABI
-  # A full, self-consistent CUDA toolkit (nvcc + headers + cicc/nvvm) for the
-  # FlashInfer JIT. The JIT's CCCL (libcu++) cuda_toolkit.h check aborts the
-  # build when the nvcc compiler's version disagrees with the toolkit headers'
-  # CUDART_VERSION. The venv's own nvidia/cu13 cannot serve as the JIT home:
-  # the pip nvidia-cuda-nvcc wheel (13.4.59) and the nvidia-cuda-runtime
-  # wheel's headers (13.0.96) disagree, so the check fails. The nixpkgs
-  # toolkit is one self-consistent version, so it passes. It is unfree (CUDA
-  # EULA) — enabled narrowly by the flake for this input alone, exactly as the
-  # vLLM DFlash2 runtime does.
+, libsndfile        # libsndfile.so — audio I/O via ctypes (sglang.srt)
+, flac              # libsndfile codec deps
+, lame
+, libmpg123
+, libogg
+, libopus
+, libvorbis
+, alsa-lib
+  # torchcodec (a video-decode dep imported at startup) links FFmpeg 4-8 and
+  # loads the highest whose libs resolve; nixpkgs ffmpeg is 9.x (unsupported),
+  # so pin ffmpeg_8. Only the 7 core libs bundled; transitive codecs resolve
+  # via each lib's own store RUNPATH.
+, ffmpeg_8
+  # Self-consistent CUDA toolkit (nvcc + headers + cicc/nvvm) for the
+  # FlashInfer JIT: the venv's pip wheels disagree on version (nvcc 13.4.59 vs
+  # runtime headers 13.0.96), failing the CCCL cuda_toolkit.h check. Unfree
+  # (CUDA EULA) — enabled narrowly by the flake, as for the vLLM DFlash2 runtime.
 , cudaToolkit
 }:
 
@@ -66,14 +42,10 @@ let
   # name -> { url, sha256, filename } for every pinned wheel/sdist.
   wheelSpecs = import ./wheelhouse.nix;
 
-  # The C/C++ runtime plus the host libs above, bundled into $out/lib so the
-  # venv is self-contained. stdenv.cc.cc.lib provides libstdc++.so.6 and
-  # libgcc_s.so.1 (needed by every C++ extension: numpy, torch, sgl-kernel).
-  #
-  # Several of these packages list "bin" (or a header-only "out") first in
-  # their `outputs`, so the default attr is NOT the one that ships the shared
-  # library. Reference the output that actually contains the .so: `.out` for
-  # most, `.lib` for lame.
+  # C/C++ runtime + the host libs above, bundled into $out/lib so the venv is
+  # self-contained. Several packages list "bin" (or header-only "out") first in
+  # `outputs`, so reference the output that ships the .so (.out for most, .lib
+  # for lame).
   runtimeLibs = [
     stdenv.cc.cc.lib
     zlib
@@ -85,9 +57,8 @@ let
     libopus.out
     libvorbis.out
     alsa-lib
-    # The FFmpeg 8 core libs (libav*/libsw*) for torchcodec; only the `.lib`
-    # output holds the shared objects. Their transitive codecs resolve via
-    # each lib's own store RUNPATH, so no external codec packages are bundled.
+    # Only the `.lib` output holds the FFmpeg 8 core libs (libav*/libsw*);
+    # their transitive codecs resolve via each lib's own store RUNPATH.
     ffmpeg_8.lib
   ];
 
@@ -104,17 +75,15 @@ let
     )
     wheelSpecs;
 
-  # A single directory holding every wheel/sdist, so `uv` can resolve the
-  # whole pinned graph offline (--no-index --find-links).
+  # One dir holding every wheel/sdist, so uv resolves the pinned graph offline
+  # (--no-index --find-links).
   wheelhouse = stdenv.mkDerivation {
     pname = "sglang-wheelhouse";
     version = "1";
 
     # The wheels are referenced directly in installPhase below (${wheels.n}),
-    # which registers them as derivation inputs WITHOUT putting them in
-    # buildInputs. Putting the raw .whl files in buildInputs makes stdenv try
-    # to `source` them (they are binary zip archives) and the build aborts
-    # with "cannot execute binary file".
+    # which registers them as derivation inputs WITHOUT buildInputs (raw .whl
+    # files in buildInputs make stdenv try to `source` them and abort).
     dontUnpack = true;
     dontConfigure = true;
     dontBuild = true;
@@ -135,11 +104,10 @@ stdenv.mkDerivation {
   pname = "sglang";
   version = "0.5.19";
 
-  # uv assembles the venv. Every artifact in the set is a prebuilt wheel
-  # (cuda-tile included — it is pinned as its pypi.nvidia.com cp312 wheel, not
-  # the wheel-stub sdist), so uv installs purely from wheels and never
-  # compiles anything; no C toolchain is needed. patchelf repoints the CUDA
-  # toolkit's generic-Linux executables (nvcc & friends) at the NixOS loader.
+  # uv assembles the venv purely from prebuilt wheels (cuda-tile included —
+  # pinned as its pypi.nvidia.com cp312 wheel, not the sdist stub), so nothing
+  # compiles; patchelf repoints the CUDA toolkit's generic-Linux executables
+  # (nvcc & friends) at the NixOS loader.
   nativeBuildInputs = [ uv patchelf ];
 
   buildInputs = [ python312 wheelhouse ] ++ runtimeLibs;
@@ -149,8 +117,7 @@ stdenv.mkDerivation {
   dontBuild = true;
 
   installPhase = ''
-    # uv wants a writable cache; the Nix build HOME is read-only, so point
-    # it at a build-local directory.
+    # uv needs a writable cache; the Nix build HOME is read-only.
     export UV_CACHE_DIR="$(mktemp -d)"
 
     # A venv rooted in $out, backed by the nixpkgs python312 interpreter.
@@ -168,15 +135,9 @@ stdenv.mkDerivation {
     ln -s $out/venv/bin/sglang $out/bin/sglang
     ln -s $out/venv/bin/python $out/bin/python
 
-    # Bundle the host shared libraries the venv's compiled extensions need.
-    # The manylinux wheels expect a standard /usr/lib (libstdc++, libz, the
-    # audio stack); Nix has none, and the venv interpreter's rpath only covers
-    # its own C runtime, so these would otherwise fail to load at import time
-    # (e.g. numpy's _multiarray_umath needs libstdc++.so.6 / libz.so.1). Copy
-    # every .so* from the C/C++ runtime, zlib, and the audio stack into
-    # $out/lib so the venv is self-contained; the service adds $out/lib to
-    # LD_LIBRARY_PATH. (The CUDA runtime ships in the nvidia-* wheels; the
-    # host supplies only libcuda.so.1 via the driver.)
+    # Bundle the host shared libs the venv's compiled extensions need
+    # (manylinux wheels expect a standard /usr/lib); the service adds $out/lib
+    # to LD_LIBRARY_PATH. CUDA runtime ships in the nvidia-* wheels.
     mkdir -p $out/lib
     for p in ${lib.concatStringsSep " " runtimeLibs}; do
       for d in "$p/lib" "$p/lib64"; do
@@ -190,19 +151,17 @@ stdenv.mkDerivation {
     test -e "$out/lib/libavutil.so.60"
 
     # The CUDA toolkit (nvidia/cu13) ships generic-Linux ELF executables
-    # (nvcc, ptxas, cicc, cudafe++, ...) whose interpreter is
-    # /lib64/ld-linux-x86-64.so.2 — a path NixOS's stub ld-linux refuses
-    # ("cannot run dynamically linked executables intended for generic
-    # linux"). deep_ep JIT-compiles its kernels at import by invoking nvcc,
-    # which in turn drives cudafe++/cicc/ptxas, so they must actually run.
-    # Repoint each at the NixOS glibc loader and give them an rpath covering
-    # the C runtime + the toolkit's own libs.
+    # (nvcc, ptxas, cicc, cudafe++, ...) with PT_INTERP=/lib64/ld-linux-x86-64.so.2,
+    # which NixOS's stub ld-linux refuses. deep_ep JIT-compiles its kernels at
+    # import by invoking nvcc (which drives cudafe++/cicc/ptxas), so repoint
+    # each at the NixOS glibc loader with an rpath covering the C runtime +
+    # the toolkit's own libs.
     cudaHome=$out/venv/lib/python3.12/site-packages/nvidia/cu13
     for dir in "$cudaHome/bin" "$cudaHome/nvvm/bin"; do
       for f in "$dir"/*; do
         [ -f "$f" ] || continue
-        # Only dynamically-linked executables carry a program interpreter;
-        # skip scripts, the crt/ dir, and the nvcc.profile text file.
+        # Only dynamic executables carry a program interpreter; skip scripts,
+        # the crt/ dir, and the nvcc.profile text file.
         interp=$(patchelf --print-interpreter "$f" 2>/dev/null || true)
         [ -n "$interp" ] || continue
         patchelf --set-interpreter ${stdenv.cc.libc}/lib64/ld-linux-x86-64.so.2 \
@@ -215,14 +174,13 @@ stdenv.mkDerivation {
       = "${stdenv.cc.libc}/lib64/ld-linux-x86-64.so.2"
 
     # The triton wheel bundles the NVIDIA tools (ptxas, ptxas-blackwell,
-    # cuobjdump, nvdisasm) under triton/backends/nvidia/bin with
-    # PT_INTERP=/lib64/ld-linux-x86-64.so.2. NixOS has no /lib64 symlink, so
-    # the kernel returns ENOEXEC when triton probes them (`--version`) and
-    # reports "Cannot find ptxas-blackwell" on the first kernel compile
-    # (triton selects ptxas-blackwell for the RTX 5090, arch >= 100). Make
-    # each one self-contained: point the interpreter at the glibc loader and
-    # the RUNPATH at the glibc and libstdc++ store dirs (both already in this
-    # derivation's closure, so no new runtime deps).
+    # cuobjdump, nvdisasm) under triton/backends/nvidia/bin with the same
+    # generic PT_INTERP. NixOS has no /lib64 symlink, so the kernel returns
+    # ENOEXEC when triton probes them and reports "Cannot find
+    # ptxas-blackwell" on the first kernel compile (triton selects
+    # ptxas-blackwell for the RTX 5090, arch >= 100). Same patchelf fix:
+    # interpreter at the glibc loader, RUNPATH at the glibc + libstdc++ store
+    # dirs (already in this derivation's closure).
     TRITON_BIN=$out/venv/lib/python3.12/site-packages/triton/backends/nvidia/bin
     for tool in ptxas ptxas-blackwell cuobjdump nvdisasm; do
       [ -f "$TRITON_BIN/$tool" ] || {
@@ -233,15 +191,15 @@ stdenv.mkDerivation {
         --set-rpath ${stdenv.cc.libc}/lib:${stdenv.cc.libc}/lib64:${stdenv.cc.cc.lib}/lib \
         "$TRITON_BIN/$tool"
     done
-    # Sanity: the Blackwell ptxas must now request the NixOS loader — it is
-    # the one triton probes first on this GPU.
+    # Sanity: ptxas-blackwell (triton's first probe on this GPU) must now
+    # request the NixOS loader.
     test "$(patchelf --print-interpreter "$TRITON_BIN/ptxas-blackwell")" \
       = "${stdenv.cc.libc}/lib64/ld-linux-x86-64.so.2"
 
-    # The ninja wheel (ninja==1.13.2) installs a manylinux ELF at
-    # venv/bin/ninja with the same PT_INTERP. flashinfer's run_ninja() invokes
-    # bare `ninja` on the unit's PATH (the service prepends the venv bin) to
-    # drive its XQA JIT build, so it must exec: same patchelf fix.
+    # The ninja wheel (ninja==1.13.2) installs a manylinux ELF at venv/bin/ninja
+    # with the same PT_INTERP. flashinfer's run_ninja() invokes bare `ninja`
+    # on the unit's PATH (the service prepends the venv bin) to drive its XQA
+    # JIT build, so same patchelf fix.
     NINJA=$out/venv/bin/ninja
     [ -f "$NINJA" ] || {
       echo "error: $NINJA not found (ninja wheel layout changed?)" >&2
@@ -254,25 +212,18 @@ stdenv.mkDerivation {
       = "${stdenv.cc.libc}/lib64/ld-linux-x86-64.so.2"
 
     # Assemble the FlashInfer-JIT CUDA home ($out/cuda-home). flashinfer's
-    # get_cuda_path() returns $CUDA_HOME verbatim (short-circuiting its
-    # `which nvcc` probe), then its ninja build needs:
-    #   - $CUDA_HOME/bin/nvcc  (nvcc self-locates nvvm/bin/cicc via
-    #     /proc/self/exe, so bin + nvvm must sit side by side)
-    #   - $CUDA_HOME/include   (the CUDA headers)
-    #   - -L$CUDA_HOME/lib64 -L$CUDA_HOME/lib64/stubs -lcudart -lcuda
-    # The venv's own nvidia/cu13 cannot serve as this home: the pip
-    # nvidia-cuda-nvcc wheel (13.4.59) and the nvidia-cuda-runtime wheel's
-    # headers (13.0.96) disagree, so the CCCL (libcu++) cuda_toolkit.h
-    # compatibility check ("CUDA compiler and CUDA toolkit headers are
-    # incompatible") aborts every JIT compile. The nixpkgs toolkit is one
-    # self-consistent version (nvcc + headers + cicc/nvvm), so the check
-    # passes. bin/include/nvvm are NixOS-native (store glibc loader — no
-    # patchelf needed); lib64 is a real dir holding the venv's own libcudart
-    # (the same nvidia-cuda-runtime wheel copy torch links, so the JIT'd
-    # module and torch share one cudart) plus a libcuda.so link stub with
-    # SONAME libcuda.so.1 (the real driver lib is supplied by the host at
-    # /run/opengl-driver/lib at runtime). This mirrors the vLLM DFlash2
-    # runtime's $out/cuda-home exactly.
+    # get_cuda_path() returns $CUDA_HOME verbatim (short-circuiting its `which
+    # nvcc` probe); its ninja build needs bin/nvcc + nvvm side by side (nvcc
+    # self-locates nvvm/bin/cicc via /proc/self/exe), include/, and
+    # -L$CUDA_HOME/lib64 -L$CUDA_HOME/lib64/stubs -lcudart -lcuda. The venv's
+    # own nvidia/cu13 cannot serve: the pip nvcc wheel (13.4.59) and runtime
+    # headers (13.0.96) disagree, failing the CCCL (libcu++) compatibility
+    # check; the nixpkgs toolkit is one self-consistent version. bin/include/
+    # nvvm are NixOS-native (store glibc loader, no patchelf needed); lib64
+    # holds the venv's own libcudart (the same nvidia-cuda-runtime wheel copy
+    # torch links, so the JIT'd module and torch share one cudart) plus a
+    # libcuda.so.1 link stub (the real driver lib is at /run/opengl-driver/lib
+    # at runtime). Mirrors the vLLM DFlash2 runtime's $out/cuda-home exactly.
     CUDA_HOME_DIR=$out/cuda-home
     VENV_CUDART=$out/venv/lib/python3.12/site-packages/nvidia/cu13/lib
     [ -f "$VENV_CUDART/libcudart.so.13" ] || {
@@ -280,19 +231,16 @@ stdenv.mkDerivation {
       exit 1
     }
     mkdir -p "$CUDA_HOME_DIR/lib64/stubs" "$CUDA_HOME_DIR/bin"
-    # The nixpkgs cuda_nvcc package's nvcc.profile points INCLUDES at the
-    # cuda_nvcc package's own include dir, which ships ONLY fatbinary_section.h
-    # (the cuda_nvcc redist does not bundle the CUDA runtime headers).
-    # cuda_runtime.h lives in the cuda_cudart redist, merged into
-    # ${cudaToolkit}/include. nvcc reads its nvcc.profile from the directory of
-    # the (real) nvcc executable via /proc/self/exe, so a symlinked bin/nvcc
-    # still resolves to the cuda_nvcc package's header-less profile and every
-    # JIT compile (sgl_kernel, flashinfer) fails with
-    # "cuda_runtime.h: No such file or directory". Copy the nvcc binary
-    # (following the symlink) into a real bin/ dir and install a custom
-    # nvcc.profile whose INCLUDES point at the merged toolkit include (which
-    # has cuda_runtime.h). The other nvcc tools are located via the profile's
-    # PATH (pointed at the merged toolkit bin), so no other copies are needed.
+    # The nixpkgs cuda_nvcc package's nvcc.profile points INCLUDES at a dir
+    # shipping ONLY fatbinary_section.h (the cuda_nvcc redist does not bundle
+    # the CUDA runtime headers; cuda_runtime.h lives in the cuda_cudart redist,
+    # merged into ${cudaToolkit}/include). nvcc reads its profile from the
+    # directory of the (real) nvcc executable via /proc/self/exe, so a
+    # symlinked bin/nvcc still resolves to the header-less profile and every
+    # JIT compile (sgl_kernel, flashinfer) fails with "cuda_runtime.h: No such
+    # file or directory". Copy the real nvcc (following the symlink) and
+    # install a custom profile whose INCLUDES point at the merged include;
+    # the other nvcc tools are located via the profile's PATH.
     cp -L ${cudaToolkit}/bin/nvcc "$CUDA_HOME_DIR/bin/nvcc"
     printf '%s\n' \
       'TOP = $(_HERE_)/..' \
@@ -312,17 +260,15 @@ stdenv.mkDerivation {
     ln -s "$VENV_CUDART/libcudart.so.13" "$CUDA_HOME_DIR/lib64/libcudart.so.13"
     ln -s libcudart.so.13 "$CUDA_HOME_DIR/lib64/libcudart.so"
     # A printf pipe, not a heredoc: a column-0 terminator would confuse
-    # nixfmt's string-indent heuristic and the re-indent would break it.
+    # nixfmt's string-indent heuristic.
     printf 'int __flashinfer_libcuda_link_stub;\n' \
       | ${stdenv.cc}/bin/c++ -shared -Wl,-soname,libcuda.so.1 \
         -o "$CUDA_HOME_DIR/lib64/stubs/libcuda.so" -x c -
   '';
 
-  # The venv is self-contained: interpreter symlink, the CUDA runtime (the
-  # nvidia-* wheels, with the toolkit's nvcc/ptxas/cicc executables repointed
-  # at the NixOS loader), and the host C/C++ + audio libs bundled under /lib.
-  # The host supplies only the NVIDIA driver (libcuda.so.1) at runtime, exactly
-  # like the ninfer services.
+  # Self-contained venv: interpreter symlink, the CUDA runtime (toolkit
+  # executables repointed at the NixOS loader), and the host C/C++ + audio libs
+  # bundled under /lib. The host supplies only the NVIDIA driver (libcuda.so.1).
 
   meta = with lib; {
     description = "SGLang fast serving framework (pinned CUDA wheel assembly, python312)";

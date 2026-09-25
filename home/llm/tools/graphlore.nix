@@ -1,25 +1,20 @@
-# graphlore: a richer third-party MCP server (28 tools) that wraps a Graphify
-# codebase knowledge graph (yasinyaman/graphlore). Adds a span engine (real
-# start..end symbol ranges), semantic locate, impact/blast-radius, structural
-# diff & freshness, and duplication scan on top of graphify's graph.
-#
-# Not on PyPI, so built here from the flakeless `graphlore` input (see
-# flake.nix); `nix flake update graphlore` re-pins the source.
-#
-# Core dep is the mcp v2 SDK (>=2.1,<3.0). nixpkgs ships mcp 1.29.0 (a
-# different major), so mcp 2.2.0 and its type package mcp-types 2.2.0 (absent
-# from nixpkgs) are fetched as prebuilt wheels. Every OTHER entry in mcp 2.2.0's
-# Requires-Dist is already satisfied by nixpkgs's python3.14 packages at a
-# version meeting the floor (verified against the wheel's metadata), so those
-# are referenced directly via `py.` — they track nixpkgs across `nix flake
-# update` instead of colliding with it. (A hand-fetched duplicate of a package
-# nixpkgs already ships trips pythonCatchConflictsPhase the moment the two
-# versions line up.)
-#
-# The [semble] extra (semantic locate via model2vec/vicinity, a torch-scale
-# dep) is NOT included; graphlore degrades gracefully without it. graphlore
-# shells out to the `graphify` CLI (found on the jail PATH via commonPkgSpecs),
-# so it does not depend on the graphifyy package.
+# graphlore (yasinyaman): a richer third-party MCP server (28 tools) wrapping a
+# Graphify codebase knowledge graph — adds a span engine (real start..end
+# symbol ranges), semantic locate, impact/blast-radius, structural diff &
+# freshness, and duplication scan on top of graphify's graph. Not on PyPI, so
+# built here from the flakeless `graphlore` input (`nix flake update graphlore`
+# re-pins). Core dep is the mcp v2 SDK (>=2.1,<3.0); nixpkgs ships mcp 1.29.0
+# (a different major), so mcp 2.2.0 + its type package mcp-types 2.2.0 (absent
+# from nixpkgs) are fetched as prebuilt wheels. Every other mcp 2.2.0
+# Requires-Dist is already satisfied by nixpkgs python3.14 at a version
+# meeting the floor (verified against the wheel's metadata), so those are
+# referenced directly via `py.` — they track nixpkgs across `nix flake update`
+# instead of colliding with it (a hand-fetched duplicate trips
+# pythonCatchConflictsPhase the moment the two versions line up). The [semble]
+# extra (semantic locate via model2vec/vicinity, a torch-scale dep) is NOT
+# included; graphlore degrades gracefully without it. It shells out to the
+# `graphify` CLI (on the jail PATH via commonPkgSpecs), so it does not depend
+# on the graphify package.
 { lib
 , python
 , src
@@ -31,7 +26,7 @@ let
 
   # A prebuilt wheel genuinely absent from (or a newer major than) nixpkgs:
   # fetch the exact wheel by URL and unpack it (no build). `deps` are the
-  # wheel's runtime deps (declared so the pythonRuntimeDepsCheckHook passes and
+  # wheel's runtime deps (declared so pythonRuntimeDepsCheckHook passes and
   # the package is self-contained).
   pyWheel = { pname, version, hash, url, deps ? [ ] }: py.buildPythonPackage {
     inherit pname version;
@@ -41,8 +36,7 @@ let
     propagatedBuildInputs = deps;
   };
 
-  # mcp-types 2.2.0 (absent from nixpkgs). Requires-Dist: pydantic>=2.12.0,
-  # typing-extensions>=4.13.0 — both satisfied by nixpkgs python3.14.
+  # mcp-types 2.2.0 (absent from nixpkgs); its Requires-Dist is satisfied by nixpkgs.
   mcp-types = pyWheel {
     pname = "mcp-types";
     version = "2.2.0";
@@ -53,7 +47,7 @@ let
 
   # mcp 2.2.0 (nixpkgs ships 1.29.0, a different major). Requires-Dist
   # (python >= 3.14), each satisfied by nixpkgs python3.14 at a version meeting
-  # the floor; mcp-types is the only hand-fetched dep.
+  # the floor; mcp-types is the only hand-fetched dep. Per-dep floors below.
   mcp = pyWheel {
     pname = "mcp";
     version = "2.2.0";
@@ -82,7 +76,7 @@ py.buildPythonApplication (finalAttrs: {
   version = "0.2.0";
   pyproject = true;
 
-  # Source from the flakeless `graphlore` input (see flake.nix).
+  # Source from the flakeless `graphlore` input.
   src = src;
 
   # PEP 517 build backend (the source declares `hatchling`).

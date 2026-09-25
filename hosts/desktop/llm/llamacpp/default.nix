@@ -1,9 +1,8 @@
-# llama.cpp: NixOS module for the router server.
-#
-# Consumes pkgs.llama-cpp (built by the flake from the flakeless `llama-cpp`
-# source input, with CUDA + the sleep-exit patch — see ./package.nix) and
-# configures the systemd router service, model downloads, and presets.
-# `nix flake update llama-cpp` re-pins the source to the newest master commit.
+# llama.cpp: NixOS module for the router server. Consumes pkgs.llama-cpp
+# (built by the flake from the flakeless `llama-cpp` source input, with CUDA +
+# the sleep-exit patch — see ./package.nix) and configures the systemd router
+# service, model downloads, and presets. `nix flake update llama-cpp` re-pins
+# the source to the newest master commit.
 
 { config, options, lib, pkgs, ... }:
 
@@ -33,10 +32,10 @@ let
   ];
 
   # MiMo-V2.6-Distill-Qwen-9B (bartowski bf16 GGUF): a 9B agentic distill of
-  # Qwen3.5-9B, served by the stock router alongside Muse / Qwen / Heretic. The
-  # bf16 weights (17.9 GiB) leave ample VRAM headroom on the 32 GB card, so the
-  # KV cache stays on the card (kv-offload, no offload). The bf16 mmproj is the
-  # vision tower (image input).
+  # Qwen3.5-9B, served by the stock router alongside Muse / Qwen / Heretic.
+  # bf16 weights (17.9 GiB) leave ample VRAM headroom on the 32 GB card, so
+  # the KV cache stays on the card (kv-offload, no offload); the bf16 mmproj is
+  # the vision tower (image input).
   mimoRepo = "bartowski/MiMo-V2.6-Distill-Qwen-9B-GGUF";
   mimoIncludes = [
     "MiMo-V2.6-Distill-Qwen-9B-bf16.gguf"
@@ -45,12 +44,12 @@ let
 
   # Ternary-Bonsai-2-27B: fetched declaratively by pinned sha256 (immutable
   # store inputs) and assembled into a store dir the Bonsai router reads, so
-  # there is no runtime activation download for this model. The PQ2_0 language
-  # model (7.2 GB) is resident; the Q8_0 mmproj (0.63 GB) is the optional
-  # vision tower. Hashes are the HF LFS sha256 for each file.
+  # there is no runtime activation download. The PQ2_0 language model (7.2 GB)
+  # is resident; the Q8_0 mmproj (0.63 GB) is the optional vision tower.
+  # Hashes are the HF LFS sha256 for each file.
   bonsaiRepo = "prism-ml/Ternary-Bonsai-2-27B-gguf";
   # pkgs.fetchurl (a fixed-output derivation), not builtins.fetchURL (a builtin
-  # that needs the `fetchers` experimental feature / --impure, which `just
+  # needing the `fetchers` experimental feature / --impure, which `just
   # switch`'s nix invocation does not enable).
   bonsaiPQ2 = pkgs.fetchurl {
     url = "https://huggingface.co/${bonsaiRepo}/resolve/main/Ternary-Bonsai-2-27B-PQ2_0.gguf";
@@ -101,17 +100,17 @@ let
   # Router model presets (--models-preset). The --models-dir scan auto-derives
   # ids from directory / file basenames. Precedence is command-line (highest) >
   # model section > [*] global section, so per-model launch options live here,
-  # NOT on the ExecStart line. The [*] block sets shared per-model defaults; the
-  # model sections override them and wire their special launch options.
+  # NOT on the ExecStart line. [*] sets shared defaults; model sections
+  # override them and wire their special launch options.
   modelsPreset = pkgs.writeText "llamacpp-models-preset.ini" ''
     version = 1
 
     [*]
-    ; Sampling + generation defaults are per-model (overrideable in each
-    ; model's section), so they live here rather than on the router's ExecStart
-    ; line, which the llama.cpp router overlays onto EVERY model and cannot be
-    ; overridden (preset.merge overwrites existing keys). Override here only
-    ; settings that genuinely apply to both backends.
+    ; Per-model defaults live here (not on the router's ExecStart line, which
+    ; the router overlays onto EVERY model and cannot be overridden —
+    ; preset.merge overwrites existing keys). Only settings that genuinely
+    ; apply to both backends belong here; each model's section overrides the
+    ; rest.
     ctx-size = 262144
     n-gpu-layers = 99
     flash-attn = true
@@ -163,11 +162,11 @@ let
     chat-template-kwargs = {"reasoning_effort":"xhigh"}
 
     ; MiMo-V2.6-Distill-Qwen-9B bf16: a 9B agentic distill of Qwen3.5-9B.
-    ; Thinking is a boolean (enable_thinking) in this model's chat template,
-    ; not a reasoning_effort level, so it's enabled by default here and the
-    ; catalog entry is a plain reasoning model (no effort selector). The 18 GiB
-    ; bf16 weights leave ample VRAM headroom, so the KV cache stays on the card
-    ; (kv-offload inherited from [*], no offload).
+    ; Thinking is a boolean (enable_thinking), not a reasoning_effort level, so
+    ; it's enabled by default here and the catalog entry is a plain reasoning
+    ; model (no effort selector). 18 GiB bf16 weights leave ample VRAM
+    ; headroom, so the KV cache stays on the card (kv-offload from [*], no
+    ; offload).
     [mimo-v2.6-9b-bf16]
     model = ${cfg.modelsDir}/MiMo-V2.6-Distill-Qwen-9B-bf16.gguf
     mmproj = ${cfg.modelsDir}/mmproj-MiMo-V2.6-Distill-Qwen-9B-bf16.gguf
@@ -179,15 +178,14 @@ let
 
   # Bonsai router presets. One entry per mode (thinking / instruct); both load
   # the same PQ2_0 gguf (and its mmproj) and differ only in sampling + the
-  # chat-template reasoning_effort. The chat-template-kwargs reasoning_effort is
-  # the DEFAULT for requests that omit it; a per-request reasoning_effort (the
-  # dsh effort selector) always wins, since the server merges the request field
-  # over the preset kwarg. Sampling values are the model card's recommended
-  # sets: thinking mode (temp 1.0 / top-p 0.95 / presence 0.0) and instruct mode
-  # (temp 0.7 / top-p 0.8 / presence 1.5). The model's template supports
-  # xhigh/medium (low behaves like xhigh; there is no none). The 7.2 GB weights
-  # leave ample VRAM headroom, so the KV cache stays on the card (kv-offload,
-  # no offload).
+  # chat-template reasoning_effort (the DEFAULT for requests that omit it; a
+  # per-request reasoning_effort (the dsh effort selector) always wins, since
+  # the server merges the request field over the preset kwarg). Sampling values
+  # are the model card's recommended sets: thinking (temp 1.0 / top-p 0.95 /
+  # presence 0.0), instruct (temp 0.7 / top-p 0.8 / presence 1.5). The template
+  # supports xhigh/medium (low behaves like xhigh; there is no none). The 7.2 GB
+  # weights leave ample VRAM headroom, so the KV cache stays on the card
+  # (kv-offload, no offload).
   bonsaiPreset = pkgs.writeText "llamacpp-bonsai-models-preset.ini" ''
     version = 1
 
@@ -248,9 +246,9 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    # pkgs.llama-cpp is provided by the flake's nixpkgs.overlays: it is built
-    # from the flakeless `llama-cpp` source input (CUDA + the sleep-exit patch,
-    # see ./package.nix), so `nix flake update llama-cpp` re-pins the source.
+    # pkgs.llama-cpp comes from the flake's nixpkgs.overlays (built from the
+    # flakeless `llama-cpp` source input, CUDA + the sleep-exit patch, see
+    # ./package.nix); `nix flake update llama-cpp` re-pins the source.
     environment.systemPackages = [ pkgs.llama-cpp ];
 
     system.activationScripts.museModels.text = download "llamacpp-muse" museRepo cfg.museDir museIncludes;
@@ -307,8 +305,8 @@ in
     };
 
     # Bonsai router on :8010. Runs the PrismML-Eng fork (the only binary that
-    # loads the ternary PQ2_0 weights) over the declarative store models dir.
-    # Kept separate from the stock llamacpp-muse router so the fork's build and
+    # loads the ternary PQ2_0 weights) over the declarative store models dir;
+    # kept separate from the stock llamacpp-muse router so the fork's build and
     # the ternary model don't touch the Muse / Qwen / Heretic fleet.
     systemd.services.llamacpp-bonsai = {
       description = "llama.cpp Bonsai fork router (Ternary-Bonsai-2-27B)";

@@ -27,7 +27,6 @@
 # and captures the LE keys (IRK + enc_key) into devices.json. After that the
 # LE monitor matches the RPA and auto-connects on case-open. A service restart
 # (or next login) makes the LE monitor pick up the freshly captured keys.
-
 let
   cfg = config.librepods;
 
@@ -139,9 +138,9 @@ let
   '';
 
   # Re-assert the LibrePods connect global shortcut into the user's
-  # kglobalshortcutsrc at graphical session start. Merges only the
-  # "Connect AirPods" key under the [Custom Commands] group, preserving every
-  # other shortcut. (Plasma rewrites this file when shortcuts are edited, so a
+  # kglobalshortcutsrc at graphical session start. Merges only the "Connect
+  # AirPods" key under the [Custom Commands] group, preserving every other
+  # shortcut. (Plasma rewrites this file when shortcuts are edited, so a
   # session-start writer that re-asserts the key is the robust, declarative
   # choice.) The shortcut + command are passed via the service's Environment.
   #
@@ -233,22 +232,23 @@ in
         RestartSec = "5";
         Environment = [
           "RUST_LOG=info"
-          # The daemon shells out to `pactl` for the A2DP card-profile switch (spec 6.2).
-          # `pactl` is not on the default user-service PATH, so point it at the store
-          # path explicitly. `pactl` talks to PipeWire's PulseAudio-compatible server.
+          # The daemon shells out to `pactl` for the A2DP card-profile switch
+          # (spec 6.2). `pactl` is not on the default user-service PATH, so
+          # point it at the store path explicitly (it talks to PipeWire's
+          # PulseAudio-compatible server).
           "LIBREPODS_PACTL=${pkgs.pulseaudio}/bin/pactl"
         ];
-        # The daemon is a multi-threaded tokio runtime (a worker thread per core)
-        # at default priority, doing bursty work (battery notifications ->
-        # parse + log + state.json write, plus a 1s D-Bus poll). The A2DP audio
-        # output path (bluetoothd -> PipeWire -> speaker) also runs at default
-        # priority, so the daemon's bursts can delay the audio decode/write
-        # thread on a shared core -> sink underrun -> choppy audio. Back the
-        # daemon off so it yields to the audio pipeline. It is a control daemon
-        # (battery/ear readings, auto-connect) NOT on the audio data path and
-        # needs no latency, so this is safe. (audio.nix's priority.driver=2000
-        # is WirePlumber node-selection, not CPU priority, so it does not
-        # protect the A2DP threads on its own.)
+        # The daemon is a multi-threaded tokio runtime (a worker thread per
+        # core) at default priority, doing bursty work (battery notifications
+        # -> parse + log + state.json write, plus a 1s D-Bus poll). The A2DP
+        # audio output path (bluetoothd -> PipeWire -> speaker) also runs at
+        # default priority, so the daemon's bursts can delay the audio
+        # decode/write thread on a shared core -> sink underrun -> choppy
+        # audio. Back the daemon off so it yields to the audio pipeline. It is
+        # a control daemon (battery/ear readings, auto-connect) NOT on the
+        # audio data path and needs no latency, so this is safe. (audio.nix's
+        # priority.driver=2000 is WirePlumber node-selection, not CPU
+        # priority, so it does not protect the A2DP threads on its own.)
         Nice = 10;
         CPUWeight = 50;
       };
@@ -260,8 +260,8 @@ in
     # click menu is a flat, emoji-labelled status list plus a Reconnect action
     # and Quit. Reads state.json; runs in the user's graphical session (needs
     # the session bus to register with org.kde.StatusNotifierWatcher); the app
-    # retries registration until the watcher is up, so it tolerates
-    # plasmashell starting after this unit.
+    # retries registration until the watcher is up, so it tolerates plasmashell
+    # starting after this unit.
     systemd.user.services.librepods-tray = {
       description = "LibrePods battery system-tray indicator (SNI)";
       wantedBy = [ "default.target" ];

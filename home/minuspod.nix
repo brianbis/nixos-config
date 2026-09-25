@@ -1,37 +1,31 @@
 { pkgs, lib, inputs, nvidiaDriver ? null, ... }:
 let
-  # Source from the flakeless `minuspod` input (see flake.nix);
-  # `nix flake update minuspod` re-pins it.
+  # Source from the flakeless `minuspod` input; `nix flake update minuspod` re-pins it.
   src = inputs.minuspod;
 
-  # Offline npm dependency cache for the frontend (tsc + vite run offline via
-  # npmConfigHook); copying the cache into node_modules by hand fails because
-  # store paths are read-only.
+  # Offline npm cache for the frontend (tsc + vite run offline via npmConfigHook).
   npmDeps = pkgs.fetchNpmDeps {
     src = src + "/frontend";
     hash = "sha256-k0XfJSBbVU8lfh+Td2kHDus7dWZHLLZV7sRbznEVT5A=";
   };
 
-  # faster-whisper needs a CUDA-enabled CTranslate2 for GPU: nixpkgs' core is
-  # CPU-only unless withCUDA, and the python binding hardwires the top-level
-  # ctranslate2, so build a CUDA core and re-point the binding at it.
+  # faster-whisper needs a CUDA CTranslate2 (nixpkgs' core is CPU-only unless
+  # withCUDA; the python binding hardwires the top-level ctranslate2).
   cudaCT2 = pkgs.ctranslate2.override {
     withCUDA = true;
     withCuDNN = true;
     cudaPackages = pkgs.cudaPackages;
   };
 
-  # cuDNN/cuBLAS are dlopened by CTranslate2 at runtime; expose their lib dirs
-  # via LD_LIBRARY_PATH.
+  # cuDNN/cuBLAS are dlopened by CTranslate2 at runtime; expose them via LD_LIBRARY_PATH.
   cudaLibPath = with pkgs.cudaPackages; lib.makeLibraryPath [
     cudnn
     libcublas
     cuda_cudart
   ];
 
-  # Backend runtime, resolved hermetically by nixpkgs: pip cannot reach the
-  # network inside the Nix build sandbox, so the repo's requirements.txt
-  # (pip-compiled for the container) is not used.
+  # Backend runtime, resolved hermetically by nixpkgs (pip can't reach the
+  # network in the sandbox, so the repo's pip-compiled requirements.txt is not used).
   minuspodPython = pkgs.python312.override {
     packageOverrides = self: super: {
       ctranslate2 = super.ctranslate2.override {
@@ -43,8 +37,7 @@ let
           "tests/test_docs.py"
         ];
       });
-      # test chain is broken on python 3.12 at this pin; MinusPod only needs
-      # the library, so skip its tests
+      # MinusPod only needs the library; the test chain is broken on python 3.12 at this pin.
       anthropic = super.anthropic.overridePythonAttrs (old: {
         doCheck = false;
         nativeCheckInputs = [ ];
@@ -81,8 +74,7 @@ let
     ps.cryptography
     ps.pyjwt
     ps.defusedxml
-    # flask-limiter storage backend (RATE_LIMIT_STORAGE_URI=redis://…);
-    # declared direct dep upstream, lazy-imported only when configured.
+    # flask-limiter storage backend (RATE_LIMIT_STORAGE_URI=redis://…).
     ps.redis
   ]);
 
@@ -104,9 +96,8 @@ let
     ];
 
     # The container hardcodes /app paths; resolve them relative to this
-    # derivation's output instead. (The data-dir default needed no patch as
-    # of 2.97.4: upstream Database() falls back to utils.paths.resolve_data_dir(),
-    # which reads MINUSPOD_DATA_DIR at call time.)
+    # derivation's output. (Data-dir default needed no patch: upstream
+    # Database() falls back to resolve_data_dir(), which reads MINUSPOD_DATA_DIR.)
     postPatch = ''
       substituteInPlace gunicorn.conf.py \
         --replace-fail 'src_dir = "/app/src"' \
@@ -131,8 +122,7 @@ let
       # Copy builtin assets for ad replacement
       mkdir -p $out/assets_builtin
       cp -r assets/. $out/assets_builtin/
-      # Vite writes the built UI to static/ui (see frontend/vite.config.ts);
-      # routes.py serves it from <repo root>/static/ui.
+      # Vite writes the built UI to static/ui, which routes.py serves from <repo root>.
       mkdir -p $out/static
       cp -r static/ui $out/static/ui
       install -Dm644 gunicorn.conf.py $out/gunicorn.conf.py
@@ -152,14 +142,12 @@ let
     };
   };
 
-  # LLM/transcription runtime config. Shared by the interactive session
-  # (home.sessionVariables) and the systemd user service so the two never
-  # drift.
+  # LLM/transcription runtime config, shared by the interactive session and
+  # the systemd user service so the two never drift.
   minuspodEnv = {
     MINUSPOD_LLM_PROVIDER = "openai";
     MINUSPOD_LLM_BASE_URL = "http://127.0.0.1:8787/v1";
-    # Consolidated thinking mode; the router preset's default reasoning_effort
-    # is xhigh (MinusPod sends no per-request effort, so it uses the default).
+    # Consolidated thinking mode; the router preset's default reasoning_effort is xhigh.
     MINUSPOD_LLM_MODEL = "qwen3-8-27b-q8_0-thinking";
     MINUSPOD_TRANSCRIBE_PROVIDER = "local";
     MINUSPOD_MASTER_PASSPHRASE = "change-me";
@@ -171,13 +159,11 @@ in
   # Runtime configuration for the local LLM proxy (see home/llm).
   home.sessionVariables = minuspodEnv;
 
-  # Always-on user service. MinusPod is a resident gunicorn web server (not a
-  # socket-activated idle service like whisper-service), so it stays up and
-  # restarts on failure. The binary wrapper (makeWrapper) already sets the data
-  # dir, MINUSPOD_PORT, WHISPER_DEVICE=cuda, the CUDA *runtime* lib path and
-  # PYTHONPATH; the service adds the LLM/transcription config above and, when an
-  # NVIDIA driver package is supplied, its lib dir so ctranslate2 can dlopen
-  # libcuda.so.1 (not in the ldconfig cache — see whisper-service).
+  # Always-on user service (resident gunicorn, not a socket-activated idle
+  # service). The wrapper already sets data dir, port, WHISPER_DEVICE=cuda, the
+  # CUDA runtime lib path and PYTHONPATH; the service adds the LLM config and,
+  # when an NVIDIA driver package is supplied, its lib dir so ctranslate2 can
+  # dlopen libcuda.so.1 (not in the ldconfig cache — see whisper-service).
   systemd.user.services.minuspod = {
     Unit = {
       Description = "MinusPod ad-free podcast server";
