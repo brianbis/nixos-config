@@ -82,21 +82,12 @@ let
         configPath
       ]
     else
-      # sglang: the engine binary + the recipe's args.
-      # Override the --port to use the recipe's childPort.
-      let
-        portIdx = lib.findIndex (a: a == "--port") recipe.sglangArgs;
-        # Remove the existing --port value if present.
-        noPortArgs =
-          if portIdx != null
-          then (lib.take portIdx recipe.sglangArgs) ++ (lib.drop (portIdx + 2) recipe.sglangArgs)
-          else recipe.sglangArgs;
-      in
+      # sglang: the engine binary + the recipe's args + our child port.
       [
         "${pkgs.sglang}/bin/sglang"
         "serve"
       ]
-      ++ noPortArgs
+      ++ recipe.sglangArgs
       ++ [
         "--port" (toString recipe.childPort)
       ];
