@@ -111,6 +111,7 @@ let
     if engine == "tabbyapi"
     then [
       "CUDA_VISIBLE_DEVICES=0"
+      "TABBYAPI_PORT=${toString recipe.childPort}"
       "LD_LIBRARY_PATH=${pkgs.tabbyapi}/lib:/run/opengl-driver/lib"
       "HF_HOME=${modelDir}"
       "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True"

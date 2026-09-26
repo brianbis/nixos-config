@@ -87,15 +87,20 @@ stdenv.mkDerivation {
     ln -s $out/venv/bin/python $out/bin/python
 
     # Placeholder main.py: the real one comes from the tabbyapi wheel.
-    # For now, create a stub that prints the config and exits (so the
-    # service unit can be tested end-to-end before the venv is complete).
+    # Serves a minimal HTTP server on TABBYAPI_PORT (default 5000) so the
+    # idle wrapper's probe_health (/health) succeeds and the full
+    # socket-activation → relay → idle-unload cycle can be tested.
     cat > $out/main.py << 'PYEOF'
 #!/usr/bin/env python3
 """Placeholder tabbyapi entry point.
 
 TODO: replace with the real tabbyapi main.py (from the tabbyapi wheel).
-This stub exists so the socket-activated service can be tested.
+This stub serves a minimal HTTP server so the idle wrapper can test the
+full lifecycle: socket activation, health probe, request relay, idle unload.
 """
+import http.server
+import json
+import os
 import sys
 
 if "--config" in sys.argv:
@@ -103,11 +108,45 @@ if "--config" in sys.argv:
     print(f"tabbyapi (placeholder): would load config {config_path}", file=sys.stderr)
     print("tabbyapi (placeholder): engine not yet installed", file=sys.stderr)
 
-# Keep the process alive (the idle wrapper expects a long-running child).
-import time
+PORT = int(os.environ.get("TABBYAPI_PORT", "5000"))
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/health":
+            body = json.dumps({"status": "ok"}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            body = json.dumps({"error": "placeholder: no engine installed"}).encode()
+            self.send_response(501)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(body)
+
+    def do_POST(self):
+        body = json.dumps({"error": "placeholder: no engine installed"}).encode()
+        self.send_response(501)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format, *args):
+        print(f"tabbyapi (placeholder): {format % args}", file=sys.stderr)
+
+
+print(f"tabbyapi (placeholder): listening on 0.0.0.0:{PORT}", file=sys.stderr)
+server = http.server.HTTPServer(("0.0.0.0", PORT), Handler)
 try:
-    while True:
-        time.sleep(60)
+    server.serve_forever()
 except KeyboardInterrupt:
     pass
 PYEOF
