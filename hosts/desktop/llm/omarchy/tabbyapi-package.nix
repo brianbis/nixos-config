@@ -86,7 +86,9 @@ let
 
   # The pinned set with the exllamav3 version label substituted in.
   requirements = writeText "tabbyapi-requirements.txt" (
-    builtins.replace "@exllamav3VersionLabel@" wheelSpecs.exllamav3.versionLabel
+    lib.replaceStrings
+      ["@exllamav3VersionLabel@"]
+      [wheelSpecs.exllamav3.versionLabel]
       (builtins.readFile ./requirements.txt)
   );
 

@@ -17,7 +17,8 @@
 
 exllamav3Version:
 
-# name -> { url, sha256, filename }
+# name -> { url, sha256, filename } (the exllamav3 entry also carries
+# versionLabel — the pip/uv version string substituted into requirements.txt)
 {
   # exllamav3: release wheel for the flake-input version (cu132/torch2.13.0/cp312).
   exllamav3 =
@@ -37,7 +38,7 @@ exllamav3Version:
     in
     {
       url = "https://github.com/turboderp-org/exllamav3/releases/download/v${exllamav3Version}/${pin.filename}";
-      inherit (pin) sha256 filename;
+      inherit (pin) sha256 filename versionLabel;
     };
 
   aiofiles = { url = "https://files.pythonhosted.org/packages/bc/8a/340a1555ae33d7354dbca4faa54948d76d89a27ceef032c8c3bc661d003e/aiofiles-25.1.0-py3-none-any.whl"; sha256 = "abe311e527c862958650f9438e859c1fa7568a141b22abcd015e120e86a85695"; filename = "aiofiles-25.1.0-py3-none-any.whl"; };
