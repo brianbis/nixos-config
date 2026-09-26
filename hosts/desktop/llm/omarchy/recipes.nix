@@ -128,8 +128,14 @@
       "--reasoning-parser" "gemma4"
       "--tool-call-parser" "gemma4"
     ];
-    # The gemma4 engine patch (applied at runtime to the sglang venv's model file).
+    # The gemma4 engine patch (NVFP4 republished config compat), applied to a
+    # hardlink copy of the sglang venv at build time. The omarchy-pinned
+    # hashes (the container launch's verification group) gate both the patch
+    # and the result.
     enginePatch = ./assets/gemma4-engine-patch.diff;
+    enginePatchSha256 = "dede8848dbcbfcfc6507da963a65d120add93101b6ff5fb54a03f19e86233d11";
+    engineFilePreSha256 = "d5498b253f35e83ab0aaf219a2c2bf2f42c6bbd3f95ffce02760e78b2e38a4e9";
+    engineFilePostSha256 = "b0614b99a0d7fe654ed102fb5db04c578e3be6042896f73f9418965e6672c737";
   };
 
   lfm25-26b-bf16 = {

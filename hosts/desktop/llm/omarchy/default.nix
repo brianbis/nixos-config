@@ -8,9 +8,13 @@
 # idle wrapper. Model weights are downloaded on-demand by oneshot services
 # (revision-gated: re-downloads only when the pinned revision changes).
 #
-# Updatable:
+# Updatable (binaries sourced from their true bases on GitHub via flake
+# inputs; `nix flake update <input>` re-pins):
 #   - Model weights: change `revision` in ./recipes.nix
-#   - EXL3 engine: `nix flake update exllamav3`
+#   - EXL3 engine: `nix flake update exllamav3` (the release wheel is selected
+#     by the input's version; a new version needs its sha256 added to
+#     ./wheelhouse.nix — the build failure prints the wheel URL)
+#   - TabbyAPI server: `nix flake update tabbyapi`
 #   - SGLang engine: update the wheelhouse in ../sglang/
 
 { config, lib, pkgs, ... }:

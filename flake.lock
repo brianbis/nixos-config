@@ -809,6 +809,7 @@
         "ripwire": "ripwire",
         "serein": "serein",
         "sidra": "sidra",
+        "tabbyapi": "tabbyapi",
         "tether": "tether",
         "uv2nix": "uv2nix",
         "wezurrect": "wezurrect",
@@ -911,6 +912,22 @@
       "original": {
         "owner": "nix-systems",
         "repo": "default",
+        "type": "github"
+      }
+    },
+    "tabbyapi": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1790041607,
+        "narHash": "sha256-ClMKySngQibacFS9vaDYmAQJo3rUznMIBLH35VdbZe8=",
+        "owner": "theroyallab",
+        "repo": "tabbyAPI",
+        "rev": "f07131cd8fe34e449fe87cdd3a066b52b96d3cac",
+        "type": "github"
+      },
+      "original": {
+        "owner": "theroyallab",
+        "repo": "tabbyAPI",
         "type": "github"
       }
     },

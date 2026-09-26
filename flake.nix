@@ -133,6 +133,12 @@
       url = "github:turboderp-org/exllamav3";
       flake = false;
     };
+    # tabbyAPI: the OpenAI-compatible EXL3 API server (the omarchy tabbyapi
+    # recipes' frontend). `nix flake update tabbyapi` re-pins to the latest commit.
+    tabbyapi = {
+      url = "github:theroyallab/tabbyAPI";
+      flake = false;
+    };
     # archipelago meta-flake: bundles main source + PopTracker/apworld as nested inputs (read via outputs.archipelagoInputs.<name>).
     archipelago = {
       url = "path:hosts/desktop/archipelago";
@@ -299,10 +305,12 @@
         };
 
       # tabbyapiPkg: TabbyAPI + EXL3 (exllamav3) runtime for EXL3-quantized models.
-      # The exllamav3 source is tracked via the flake input; `nix flake update exllamav3` re-pins it.
+      # Both binaries are tracked via flake inputs (their true bases on GitHub):
+      # `nix flake update tabbyapi exllamav3` re-pins them.
       tabbyapiPkg =
         pkgs.callPackage ./hosts/desktop/llm/omarchy/tabbyapi-package.nix {
           exllamav3Src = inputs.exllamav3;
+          tabbyapiSrc = inputs.tabbyapi;
         };
 
       # llama-cppPkg: llama.cpp router server (pinned source + CUDA + sleep-exit patch), built against the unfree-enabled pkgs.
