@@ -30,10 +30,11 @@
       repository = "turboderp/Qwen3.8-27B-exl3";
       revision = "f33f26d929e2b20ef21361145d582f5239e3831f";
       layout = "dir";
-      dir = "Qwen3.8-27B-EXL3-SC5bpw-H6-V6";
+      # The repo lays config.json / model-*.safetensors at its ROOT (no per-model
+      # subdir), so they land directly in the download dir.
       # Sentinel files that must exist for the download to be considered complete.
       sentinels = [
-        "Qwen3.8-27B-EXL3-SC5bpw-H6-V6/model.safetensors.index.json"
+        "model.safetensors.index.json"
       ];
     };
     serving = {
@@ -66,9 +67,10 @@
       repository = "turboderp/Qwen3.8-27B-exl3";
       revision = "113cf7ab958054860e43fb7f3063b1af19171095";
       layout = "dir";
-      dir = "Qwen3.8-27B-EXL3-4bpw";
+      # The repo lays config.json / model-*.safetensors at its ROOT (no per-model
+      # subdir), so they land directly in the download dir.
       sentinels = [
-        "Qwen3.8-27B-EXL3-4bpw/model.safetensors.index.json"
+        "model.safetensors.index.json"
       ];
     };
     serving = {

@@ -335,7 +335,10 @@ let
     # All socket-activated (on-demand VRAM); ports 18091–18100.
     qwen3827b_exl3_sc5bpw = {
       providerName = "tabbyapi_sc5bpw";
-      id = "qwen3.8-27b-exl3-sc5bpw";
+      # Must equal the tabbyapi config's model_name (the served OpenAI model id);
+      # the engine resolves weights at model_dir/model_name, so this also names
+      # the download subdir under /var/lib/omarchy/.
+      id = "qwen3827b-exl3-sc5bpw";
       name = "Qwen3.8-27B EXL3 SC5bpw (TabbyAPI)";
       url = "http://127.0.0.1:18091";
       context = 262144;
@@ -349,7 +352,10 @@ let
     };
     qwen3827b_exl3_4bpw = {
       providerName = "tabbyapi_4bpw";
-      id = "qwen3.8-27b-exl3-4bpw";
+      # Must equal the tabbyapi config's model_name (the served OpenAI model id);
+      # the engine resolves weights at model_dir/model_name, so this also names
+      # the download subdir under /var/lib/omarchy/.
+      id = "qwen3827b-exl3-4bpw";
       name = "Qwen3.8-27B EXL3 4bpw (TabbyAPI)";
       url = "http://127.0.0.1:18093";
       context = 262144;

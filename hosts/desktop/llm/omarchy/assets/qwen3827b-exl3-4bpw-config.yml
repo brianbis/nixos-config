@@ -14,10 +14,14 @@ logging:
   log_chat_completion_requests: false
 
 model:
-  model_dir: /var/lib/omarchy/qwen3827b-exl3-4bpw
+  # tabbyAPI resolves the model at model_dir/model_name; the repo's files
+  # (config.json, model-*.safetensors) land at the ROOT of the download dir,
+  # so model_dir is the base and model_name is the per-model subdir.
+  # model_name is also the served OpenAI model id (must match the catalog).
+  model_dir: /var/lib/omarchy
   inline_model_loading: false
   use_dummy_models: false
-  model_name: Qwen3.8-27B-EXL3-4bpw
+  model_name: qwen3827b-exl3-4bpw
   backend: exllamav3
   max_seq_len: 262144
   cache_size: 262144
