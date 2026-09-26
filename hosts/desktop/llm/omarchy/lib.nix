@@ -91,9 +91,10 @@ let
             # container launch checks): the engine patch must match before it
             # is applied.
             echo '${recipe.enginePatchSha256}  ${enginePatch}' | sha256sum -c -
-            # Hardlink-copy the sglang runtime and apply the patch to the copy
-            # (the store is read-only; the copy breaks the one hardlink).
-            cp -al ${pkgs.sglang}/. $out
+            # Copy the sglang runtime and apply the patch to the copy. A
+            # plain copy (not cp -al): in a sandboxed build $out lives on a
+            # different filesystem from the store, so hardlinks are EXDEV.
+            cp -a ${pkgs.sglang}/. $out
             target="$out/venv/lib/python3.12/site-packages/sglang/srt/models/gemma4_unified.py"
             echo '${recipe.engineFilePreSha256}  $target' | sha256sum -c -
             # The diff is repo-root relative (python/sglang/srt/models/...);
