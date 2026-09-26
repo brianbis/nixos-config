@@ -101,7 +101,7 @@ import sys
 if "--config" in sys.argv:
     config_path = sys.argv[sys.argv.index("--config") + 1]
     print(f"tabbyapi (placeholder): would load config {config_path}", file=sys.stderr)
-    print(f"tabbyapi (placeholder): exllamav3 version = {exllamav3Version}", file=sys.stderr)
+    print("tabbyapi (placeholder): engine not yet installed", file=sys.stderr)
 
 # Keep the process alive (the idle wrapper expects a long-running child).
 import time

@@ -210,6 +210,22 @@
         "type": "github"
       }
     },
+    "exllamav3": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1789935406,
+        "narHash": "sha256-QrDC1BpQ5lbIIVgF5rpBr2aKhA9aY7Z/cfkywLWl76k=",
+        "owner": "turboderp-org",
+        "repo": "exllamav3",
+        "rev": "6b84a21b6f1e5da3f291b9e1019061f0de788279",
+        "type": "github"
+      },
+      "original": {
+        "owner": "turboderp-org",
+        "repo": "exllamav3",
+        "type": "github"
+      }
+    },
     "flake-parts": {
       "inputs": {
         "nixpkgs-lib": [
@@ -530,11 +546,11 @@
     "ninfer": {
       "flake": false,
       "locked": {
-        "lastModified": 1789734326,
-        "narHash": "sha256-RvcHyR6ErYQXoBmqCPqSzP4q5yXOX91+X6TPXp5HAk4=",
+        "lastModified": 1790225891,
+        "narHash": "sha256-GPMN36XDPbqZjED7WR6OfMhn2y3srsi1U6tSYvb/KOw=",
         "owner": "Neroued",
         "repo": "ninfer",
-        "rev": "9e163eee4b8acec21ab0ac765107b6a3f287b217",
+        "rev": "bace20dc70249eed6402b66d4852c6c3f9612905",
         "type": "github"
       },
       "original": {
@@ -766,6 +782,7 @@
         "difftastic": "difftastic",
         "dsh": "dsh",
         "echarts": "echarts",
+        "exllamav3": "exllamav3",
         "fluent-oled": "fluent-oled",
         "graphify": "graphify",
         "graphlore": "graphlore",
@@ -796,8 +813,7 @@
         "uv2nix": "uv2nix",
         "wezurrect": "wezurrect",
         "whisper-service": "whisper-service",
-        "zilliandomizer": "zilliandomizer",
-        "exllamav3": "exllamav3"
+        "zilliandomizer": "zilliandomizer"
       }
     },
     "serein": {
@@ -1024,22 +1040,6 @@
       "original": {
         "owner": "beauxq",
         "repo": "zilliandomizer",
-        "type": "github"
-      }
-    },
-    "exllamav3": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1789935406,
-        "narHash": "sha256-QrDC1BpQ5lbIIVgF5rpBr2aKhA9aY7Z/cfkywLWl76k=",
-        "owner": "turboderp-org",
-        "repo": "exllamav3",
-        "rev": "6b84a21b6f1e5da3f291b9e1019061f0de788279",
-        "type": "github"
-      },
-      "original": {
-        "owner": "turboderp-org",
-        "repo": "exllamav3",
         "type": "github"
       }
     }
