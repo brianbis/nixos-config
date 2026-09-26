@@ -1,0 +1,230 @@
+# Omarchy model recipes for the RTX 5090 (32 GB) — single source of truth.
+#
+# Each recipe declares: the model weights (HF repo + pinned revision), the
+# inference engine (tabbyapi/exllamav3 or sglang), the launch arguments, and
+# the serving parameters. The lib.nix factory transforms each recipe into:
+#   - a oneshot download service (hf download, revision-gated)
+#   - a socket-activated engine service (idle wrapper, on-demand VRAM)
+#   - a prep target (wants the download)
+#
+# "Updatable": change the `revision` here (or `nix flake update exllamav3`
+# for the engine) and the next service activation re-downloads / rebuilds.
+
+{
+  # ─── TabbyAPI / EXL3 (Qwen3.8-27B) ─────────────────────────────────────────
+
+  qwen3827b-exl3-sc5bpw = {
+    name = "Qwen3.8-27B";
+    servedName = "Qwen3.8-27B-EXL3-SC5bpw-H6-V6";
+    engine = "tabbyapi";
+    family = "qwen";
+    format = "EXL3 · SC 5.00bpw H6 V6";
+    capabilities = {
+      chat = true;
+      reasoning = true;
+      tools = true;
+      vision = true;
+    };
+    sizeGb = 18.24;
+    weights = {
+      repository = "turboderp/Qwen3.8-27B-exl3";
+      revision = "f33f26d929e2b20ef21361145d582f5239e3831f";
+      layout = "dir";
+      dir = "Qwen3.8-27B-EXL3-SC5bpw-H6-V6";
+      # Sentinel files that must exist for the download to be considered complete.
+      sentinels = [
+        "Qwen3.8-27B-EXL3-SC5bpw-H6-V6/model.safetensors.index.json"
+      ];
+    };
+    serving = {
+      ctxTokens = 262144;
+      kvTokens = 263168;
+    };
+    # Port assignments (front = socket-activated catalog face, child = loopback engine).
+    frontPort = 18091;
+    childPort = 18092;
+    # The tabbyapi config asset (mounted into the engine's working dir).
+    configAsset = ./assets/qwen3827b-exl3-sc5bpw-config.yml;
+    # Memory settings for the idle wrapper.
+    shm = "8g";
+  };
+
+  qwen3827b-exl3-4bpw = {
+    name = "Qwen3.8-27B";
+    servedName = "Qwen3.8-27B-EXL3-4bpw";
+    engine = "tabbyapi";
+    family = "qwen";
+    format = "EXL3 · 4 bpw";
+    capabilities = {
+      chat = true;
+      reasoning = true;
+      tools = true;
+      vision = false;
+    };
+    sizeGb = 15.73;
+    weights = {
+      repository = "turboderp/Qwen3.8-27B-exl3";
+      revision = "113cf7ab958054860e43fb7f3063b1af19171095";
+      layout = "dir";
+      dir = "Qwen3.8-27B-EXL3-4bpw";
+      sentinels = [
+        "Qwen3.8-27B-EXL3-4bpw/model.safetensors.index.json"
+      ];
+    };
+    serving = {
+      ctxTokens = 262144;
+      kvTokens = 262144;
+    };
+    frontPort = 18093;
+    childPort = 18094;
+    configAsset = ./assets/qwen3827b-exl3-4bpw-config.yml;
+    shm = "8g";
+  };
+
+  # ─── SGLang models ─────────────────────────────────────────────────────────
+
+  gemma4-12b-nvfp4 = {
+    name = "Gemma-4-12B-it";
+    servedName = "unsloth/gemma-4-12b-it-NVFP4";
+    engine = "sglang";
+    family = "gemma";
+    format = "ModelOpt · NVFP4";
+    capabilities = {
+      chat = true;
+      reasoning = false;
+      tools = false;
+      vision = false;
+    };
+    sizeGb = 8.7;
+    weights = {
+      repository = "unsloth/gemma-4-12b-it-NVFP4";
+      revision = "b1f649734b34aa5575b03d186abd1b9be3d0d5c4";
+      layout = "hub";
+      dir = "";
+      # HF-hub layout: the model is downloaded to the HF cache and served via
+      # --model-path <repo-id> (sglang resolves it from HF_HOME).
+      sentinels = [
+        "models--unsloth--gemma-4-12b-it-NVFP4/refs/b1f649734b34aa5575b03d186abd1b9be3d0d5c4"
+      ];
+    };
+    serving = {
+      ctxTokens = 131072;
+      kvTokens = 133368;
+    };
+    frontPort = 18095;
+    childPort = 18096;
+    shm = "16g";
+    # SGLang launch arguments (beyond the shared engine flags).
+    sglangArgs = [
+      "--model-path" "unsloth/gemma-4-12b-it-NVFP4"
+      "--revision" "b1f649734b34aa5575b03d186abd1b9be3d0d5c4"
+      "--tp" "1"
+      "--host" "127.0.0.1"
+      "--context-length" "131072"
+      "--mem-fraction-static" "0.8827875"
+      "--attention-backend" "triton"
+      "--enable-cache-report"
+      "--trust-remote-code"
+      "--reasoning-parser" "gemma4"
+      "--tool-call-parser" "gemma4"
+    ];
+    # The gemma4 engine patch (applied at runtime to the sglang venv's model file).
+    enginePatch = ./assets/gemma4-engine-patch.diff;
+  };
+
+  lfm25-26b-bf16 = {
+    name = "LFM2.5-2.6B";
+    servedName = "LiquidAI/LFM2.5-2.6B";
+    engine = "sglang";
+    family = "lfm";
+    format = "safetensors · BF16";
+    capabilities = {
+      chat = true;
+      reasoning = false;
+      tools = false;
+      vision = false;
+    };
+    sizeGb = 5.024;
+    weights = {
+      repository = "LiquidAI/LFM2.5-2.6B";
+      revision = "a334ee78cd38458bb71eda24109ac42dcec1309d";
+      layout = "hub";
+      dir = "";
+      sentinels = [
+        "models--LiquidAI--LFM2.5-2.6B/refs/a334ee78cd38458bb71eda24109ac42dcec1309d"
+      ];
+    };
+    serving = {
+      ctxTokens = 131072;
+      kvTokens = 731831;
+    };
+    frontPort = 18097;
+    childPort = 18098;
+    shm = "16g";
+    sglangArgs = [
+      "--model-path" "LiquidAI/LFM2.5-2.6B"
+      "--revision" "a334ee78cd38458bb71eda24109ac42dcec1309d"
+      "--host" "127.0.0.1"
+      "--port" "30000"
+      "--tp" "1"
+      "--context-length" "131072"
+      "--mem-fraction-static" "0.874"
+      "--attention-backend" "flashinfer"
+      "--max-running-requests" "4"
+      "--cuda-graph-max-bs-decode" "4"
+      "--enable-cache-report"
+      "--trust-remote-code"
+      "--reasoning-parser" "qwen3-thinking"
+      "--tool-call-parser" "lfm2"
+    ];
+  };
+
+  ornith15-35b-nvfp4 = {
+    name = "Ornith-1.5-35B-A3B";
+    servedName = "ornith-ai/Ornith-1.5-35B-A3B-NVFP4";
+    engine = "sglang";
+    family = "ornith";
+    format = "ModelOpt · NVFP4";
+    capabilities = {
+      chat = true;
+      reasoning = false;
+      tools = false;
+      vision = false;
+    };
+    sizeGb = 21.8;
+    weights = {
+      repository = "ornith-ai/Ornith-1.5-35B-A3B-NVFP4";
+      revision = "0f0b1b59b879ccde1353e6ebd0fb10c204d4c544";
+      layout = "hub";
+      dir = "";
+      sentinels = [
+        "models--ornith-ai--Ornith-1.5-35B-A3B-NVFP4/refs/0f0b1b59b879ccde1353e6ebd0fb10c204d4c544"
+      ];
+    };
+    serving = {
+      ctxTokens = 131072;
+      kvTokens = 381008;
+    };
+    frontPort = 18099;
+    childPort = 18100;
+    shm = "16g";
+    sglangArgs = [
+      "--model-path" "ornith-ai/Ornith-1.5-35B-A3B-NVFP4"
+      "--revision" "0f0b1b59b879ccde1353e6ebd0fb10c204d4c544"
+      "--tp" "1"
+      "--host" "127.0.0.1"
+      "--port" "30000"
+      "--context-length" "131072"
+      "--mem-fraction-static" "0.90"
+      "--max-running-requests" "4"
+      "--cuda-graph-max-bs-decode" "4"
+      "--enable-cache-report"
+      "--trust-remote-code"
+      "--reasoning-parser" "qwen3"
+      "--tool-call-parser" "qwen3_coder"
+      "--kv-cache-dtype" "fp8_e4m3"
+      "--attention-backend" "flashinfer"
+      "--moe-runner-backend" "flashinfer_cutlass"
+    ];
+  };
+}

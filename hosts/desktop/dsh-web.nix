@@ -16,6 +16,7 @@ let
   jails = import ../../home/llm/jails.nix {
     inherit lib pkgs jail-nix llm-agents;
     deepseekSecret = config.age.secrets.deepseek-api-key.path;
+    nvidiaSecret = config.age.secrets.nvidia-api-key.path;
     inherit shared;
     userHome = users.b.homeDirectory;
     # Same flakeless dsh input the home-manager modules use, so the service's

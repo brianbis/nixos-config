@@ -1,13 +1,15 @@
 # Headroom context-compression proxy systemd user services. Always-on so
 # jailed agents' local llama.cpp (and cloud DeepSeek) traffic flows through the
 # compression layer without any manual step.
-{ lib, pkgs, shared, headroomDeepseekWrapper }:
+{ lib, pkgs, shared, headroomDeepseekWrapper, headroomNvidiaWrapper }:
 
 let
   inherit (shared)
     headroomUpstreamUrl
     headroomPort
     headroomClaudePort
+    headroomNvidiaUpstreamUrl
+    headroomNvidiaPort
     headroomNinferUpstreamUrl
     headroomNinferPort;
 in
@@ -64,6 +66,26 @@ in
 
     Service = {
       ExecStart = "${headroomDeepseekWrapper}/bin/headroom-deepseek";
+      Restart = "on-failure";
+      RestartSec = "3";
+      WorkingDirectory = "%h/.local/share/headroom";
+      Environment = "HOME=%h";
+    };
+
+    Install.WantedBy = [ "default.target" ];
+  };
+
+  # NVIDIA NIM (Build) cloud proxy (Kimi K3): the wrapper reads the NVIDIA API key
+  # from the agenix secret at service start and injects it into upstream requests,
+  # so the agent's dsh only ever carries a dummy credential.
+  systemd.user.services.headroom-proxy-nvidia = {
+    Unit = {
+      Description = "Headroom context-compression proxy (NVIDIA NIM upstream)";
+      After = [ "network.target" ];
+    };
+
+    Service = {
+      ExecStart = "${headroomNvidiaWrapper}/bin/headroom-nvidia";
       Restart = "on-failure";
       RestartSec = "3";
       WorkingDirectory = "%h/.local/share/headroom";

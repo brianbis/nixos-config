@@ -80,7 +80,10 @@ in
         name = lib.removeSuffix ".age" file;
 
         value =
-          if file == "deepseek-api-key.age" then {
+          # deepseek-api-key + nvidia-api-key are read by the llm user's headroom
+          # proxy user-services (which inject the real cloud key host-side, keeping
+          # it out of the agent's environ), so they're group-readable by llm.
+          if (file == "deepseek-api-key.age" || file == "nvidia-api-key.age") then {
             file = "${secretsDir}/${file}";
             owner = "root";
             group = "llm";

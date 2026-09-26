@@ -1,10 +1,12 @@
 # Builds the (user, system) jail pair for each jailed agent (crush, opencode, aider, claude, dsh). System jails run as the llm agent user (via `sudo -u llm`) so they can edit /etc/nixos without being root.
-{ lib, pkgs, jail-nix, llm-agents, deepseekSecret, shared, userHome, dshSrc }:
+{ lib, pkgs, jail-nix, llm-agents, deepseekSecret, nvidiaSecret, shared, userHome, dshSrc }:
 
 let
   inherit (shared)
     headroomCloudUpstreamUrl
     headroomCloudPort
+    headroomNvidiaUpstreamUrl
+    headroomNvidiaPort
     headroomNinferUpstreamUrl
     models
     lspAdds
@@ -22,6 +24,16 @@ let
       --openai-api-url ${headroomCloudUpstreamUrl} \
       --openai-extra-headers "$HEADER" \
       --host 127.0.0.1 --port ${toString headroomCloudPort}
+  '';
+
+  # Same pattern for the NVIDIA NIM (Build) cloud endpoint (Kimi K3): reads the NVIDIA API key from the agenix secret at runtime and injects it into upstream requests via --openai-extra-headers, so the agent's dsh only ever carries a dummy credential.
+  headroomNvidiaWrapper = pkgs.writeShellScriptBin "headroom-nvidia" ''
+    KEY="''$(cat ${nvidiaSecret} | tr -d '\n')"
+    HEADER="{\"Authorization\":\"Bearer $KEY\"}"
+    exec ${pkgs.headroom}/bin/headroom proxy \
+      --openai-api-url ${headroomNvidiaUpstreamUrl} \
+      --openai-extra-headers "$HEADER" \
+      --host 127.0.0.1 --port ${toString headroomNvidiaPort}
   '';
 
   withDeepSeekKey = pkg: name:
@@ -106,6 +118,35 @@ let
     text = "exec ${musicTranscriptionEnv}/bin/python \"$@\"";
   };
 
+  # uv pinned to 0.12.13: quail's pyproject.toml declares `required-version = "==0.12.13"`,
+  # and the nixpkgs pin ships 0.12.17. Defined inline (not overrideAttrs) because the
+  # nixpkgs uv package hardcodes version/src/cargoHash in the buildRustPackage body, so
+  # overrideAttrs can't displace them. src = NAR hash of the unpacked 0.12.13 tree;
+  # cargoHash = hash of the 0.12.13 vendored Cargo deps. The nix uv is a dynamic ELF, so
+  # it runs in-jail only because baseJailOptions binds the glibc loader at
+  # /lib64/ld-linux-x86-64.so.2.
+  uv01213 = pkgs.rustPlatform.buildRustPackage (finalAttrs: {
+    pname = "uv";
+    version = "0.12.13";
+    src = pkgs.fetchFromGitHub {
+      owner = "astral-sh";
+      repo = "uv";
+      tag = "0.12.13";
+      hash = "sha256-seVvrRsOpkkR28aA4EGb7w/2j7q5fD+4PgF/VVJ1yqQ=";
+    };
+    cargoHash = "sha256-8atFEBKefI69jnkrXmvFAEy9weQBBz3LhdVHKPNyll8=";
+    buildInputs = [ pkgs."rust-jemalloc-sys" ];
+    nativeBuildInputs = [ pkgs.installShellFiles ];
+    cargoBuildFlags = [ "--package" "uv" ];
+    doCheck = false;
+    meta = {
+      description = "Extremely fast Python package installer and resolver, written in Rust";
+      homepage = "https://github.com/astral-sh/uv";
+      license = with pkgs.lib.licenses; [ asl20 mit ];
+      mainProgram = "uv";
+    };
+  });
+
   # Packages injected into every jail. Each spec carries a stable doc name + a resolver so the doc generator can list names without evaluating any package.
   commonPkgSpecs = [
     { name = "bashInteractive"; pkg = pkgs.bashInteractive; }
@@ -159,6 +200,8 @@ let
 
     # nix: so jailed agents can search nixpkgs and eval packages against the read-only-mounted source.
     { name = "nix"; pkg = pkgs.nix; }
+    # uv: Python package installer/resolver (pinned 0.12.13 for quail's required-version).
+    { name = "uv"; pkg = uv01213; }
 
     { name = "nixGuard"; pkg = nixGuard; }
 
@@ -422,6 +465,18 @@ let
     (set-env "NIX_CONFIG"
       "experimental-features = nix-command flakes")
     (set-env "NIXPKGS" pkgs.path)
+    # The jail's / is a fresh tmpfs with no /lib64, so every dynamically-linked
+    # binary (uv, uv-managed CPython, PyPI wheels like ruff) whose ELF interpreter
+    # is /lib64/ld-linux-x86-64.so.2 fails with ENOENT. Bind the nix glibc loader
+    # in so the kernel can find it; --dir must precede the file bind.
+    (unsafe-add-raw-args
+      "--dir /lib64 --ro-bind ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 /lib64/ld-linux-x86-64.so.2")
+    # The jail's / is a fresh tmpfs, so PyPI wheels' C extensions (numpy, torch,
+    # pyarrow in the agent's venvs) can't find libstdc++/libz via default paths.
+    # --clearenv wipes the caller's env, so this must be set inside the jail (not
+    # the service env). The /lib64 bind above handles the ELF interpreter; this
+    # handles the shared-library search path.
+    (set-env "LD_LIBRARY_PATH" "${pkgs.libgcc}/lib:${pkgs.zlib}/lib")
   ] ++ lspAdds;
 
   mkToolJail = { name, pkg, dirs, system, systemExtraPkgs ? [ ], systemExtraMounts ? [ ] }:
@@ -578,9 +633,11 @@ let
       systemExtraPkgs = [ dshOpenXdgOpen emptySecretFile pkgs.openssh pkgs.discord ];
       systemExtraMounts = with jail.combinators; [
         (readwrite "/run/dsh-open")
-        # Shadow the agenix secret that baseJailOptions ro-binds into every jail: bind the empty store file over it so the same-uid agent can't read the real key. systemExtraMounts is appended after baseJailOptions, so this later --ro-bind wins.
+        # Shadow the agenix secrets that baseJailOptions ro-binds into every jail: bind the empty store file over each so the same-uid agent can't read the real cloud key. systemExtraMounts is appended after baseJailOptions, so this later --ro-bind wins.
         (unsafe-add-raw-args
           "--ro-bind ${emptySecretFile} /run/agenix/deepseek-api-key")
+        (unsafe-add-raw-args
+          "--ro-bind ${emptySecretFile} /run/agenix/nvidia-api-key")
       ];
     });
 
@@ -612,6 +669,7 @@ in
     # The raw dsh npm package (before jail wrapping); exported so the npm closure re-pin can be verified in isolation.
     dshPatched
     headroomDeepseekWrapper
+    headroomNvidiaWrapper
     commonPkgs
     commonPkgNames
     jc

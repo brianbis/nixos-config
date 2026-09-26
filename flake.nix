@@ -127,6 +127,12 @@
       url = "github:satellitedown/cinference";
       flake = false;
     };
+    # exllamav3: EXL3 inference backend (CUDA C++); the tabbyapi engine's backend.
+    # `nix flake update exllamav3` re-pins to the latest commit.
+    exllamav3 = {
+      url = "github:turboderp-org/exllamav3";
+      flake = false;
+    };
     # archipelago meta-flake: bundles main source + PopTracker/apworld as nested inputs (read via outputs.archipelagoInputs.<name>).
     archipelago = {
       url = "path:hosts/desktop/archipelago";
@@ -292,6 +298,13 @@
           cudaToolkit = cudaToolkitPkgs.cudaPackages_13.cudatoolkit;
         };
 
+      # tabbyapiPkg: TabbyAPI + EXL3 (exllamav3) runtime for EXL3-quantized models.
+      # The exllamav3 source is tracked via the flake input; `nix flake update exllamav3` re-pins it.
+      tabbyapiPkg =
+        pkgs.callPackage ./hosts/desktop/llm/omarchy/tabbyapi-package.nix {
+          exllamav3Src = inputs.exllamav3;
+        };
+
       # llama-cppPkg: llama.cpp router server (pinned source + CUDA + sleep-exit patch), built against the unfree-enabled pkgs.
       llama-cppPkg = cudaToolkitPkgs.callPackage ./hosts/desktop/llm/llamacpp/package.nix {
         src = inputs.llama-cpp;
@@ -392,6 +405,9 @@
 
           # Native vLLM v0.27.1 + DFlash2 K7 runtime.
           vllm-dflash2 = vllmDflash2Pkg;
+
+          # TabbyAPI + EXL3 (exllamav3) runtime (omarchy recipes).
+          tabbyapi = tabbyapiPkg;
 
           # llama.cpp router server.
           llama-cpp = llama-cppPkg;
@@ -533,6 +549,10 @@
               })
 
               (final: prev: {
+                tabbyapi = tabbyapiPkg;
+              })
+
+              (final: prev: {
                 llama-cpp = llama-cppPkg;
               })
 
@@ -572,6 +592,9 @@
               };
 
               deepseekSecret = config.age.secrets.deepseek-api-key.path;
+
+              # NVIDIA NIM (Build) cloud API key (Kimi K3); injected host-side by the headroom-proxy-nvidia user-service, keeping it out of the agent's environ.
+              nvidiaSecret = config.age.secrets.nvidia-api-key.path;
 
               # NVIDIA driver (libcuda.so.1); passed to home/minuspod.nix so the minuspod service can dlopen the driver stub for CUDA whisper.
               nvidiaDriver = config.boot.kernelPackages.nvidiaPackages.latest;

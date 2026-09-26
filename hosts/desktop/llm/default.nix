@@ -11,6 +11,7 @@
     ./ninfer
     ./sglang
     ./vllm
+    ./omarchy
   ];
 
   # The llama.cpp router module (stock :8000 + Bonsai fork :8010) is the only

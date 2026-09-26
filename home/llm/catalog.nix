@@ -25,6 +25,11 @@ let
   headroomNinferProxyUrl = "http://127.0.0.1:${toString headroomNinferPort}";
   headroomNinferUpstreamUrl = "http://127.0.0.1:8080";
 
+  # NVIDIA NIM (Build) cloud proxy (port 8792): routes cloud NVIDIA traffic (Kimi K3) through the compression layer. Like the DeepSeek cloud proxy, the real API key is injected host-side by the headroom-proxy-nvidia user-service (via --openai-extra-headers), keeping it out of the agent's environ.
+  headroomNvidiaPort = 8792;
+  headroomNvidiaProxyUrl = "http://127.0.0.1:${toString headroomNvidiaPort}";
+  headroomNvidiaUpstreamUrl = "https://integrate.api.nvidia.com/v1";
+
   # Single source of truth for every LLM exposed to the jailed agents; each tool (crush/opencode/aider) derives its provider + model lists from here.
   models = {
     # Local backends. vLLM serves the OpenAI API on its own host ports (:8021 NVFP4 / :8022 AWQ); llama.cpp on :8000.
@@ -324,6 +329,80 @@ let
       costInCached = 0;
       costOutCached = 0;
     };
+    # ─── Omarchy recipes (undockerified, socket-activated) ──────────────────
+    # TabbyAPI/EXL3: Qwen3.8-27B in two EXL3 quantizations (exllamav3 backend).
+    # SGLang: Gemma-4-12B NVFP4, LFM2.5-2.6B BF16, Ornith-1.5-35B NVFP4.
+    # All socket-activated (on-demand VRAM); ports 18091–18100.
+    qwen3827b_exl3_sc5bpw = {
+      providerName = "tabbyapi_sc5bpw";
+      id = "qwen3.8-27b-exl3-sc5bpw";
+      name = "Qwen3.8-27B EXL3 SC5bpw (TabbyAPI)";
+      url = "http://127.0.0.1:18091";
+      context = 262144;
+      maxTok = 32768;
+      reason = true;
+      attachments = true;
+      costIn = 0;
+      costOut = 0;
+      costInCached = 0;
+      costOutCached = 0;
+    };
+    qwen3827b_exl3_4bpw = {
+      providerName = "tabbyapi_4bpw";
+      id = "qwen3.8-27b-exl3-4bpw";
+      name = "Qwen3.8-27B EXL3 4bpw (TabbyAPI)";
+      url = "http://127.0.0.1:18093";
+      context = 262144;
+      maxTok = 32768;
+      reason = true;
+      attachments = false;
+      costIn = 0;
+      costOut = 0;
+      costInCached = 0;
+      costOutCached = 0;
+    };
+    gemma4_12b_nvfp4 = {
+      providerName = "sglang_gemma4";
+      id = "gemma-4-12b-nvfp4";
+      name = "Gemma-4-12B-it NVFP4 (SGLang)";
+      url = "http://127.0.0.1:18095";
+      context = 131072;
+      maxTok = 32768;
+      reason = false;
+      attachments = false;
+      costIn = 0;
+      costOut = 0;
+      costInCached = 0;
+      costOutCached = 0;
+    };
+    lfm25_26b_bf16 = {
+      providerName = "sglang_lfm25";
+      id = "lfm2.5-2.6b";
+      name = "LFM2.5-2.6B BF16 (SGLang)";
+      url = "http://127.0.0.1:18097";
+      context = 131072;
+      maxTok = 32768;
+      reason = false;
+      attachments = false;
+      costIn = 0;
+      costOut = 0;
+      costInCached = 0;
+      costOutCached = 0;
+    };
+    ornith15_35b_nvfp4 = {
+      providerName = "sglang_ornith";
+      id = "ornith-1.5-35b-a3b-nvfp4";
+      name = "Ornith-1.5-35B-A3B NVFP4 (SGLang)";
+      url = "http://127.0.0.1:18099";
+      context = 131072;
+      maxTok = 32768;
+      reason = false;
+      attachments = false;
+      costIn = 0;
+      costOut = 0;
+      costInCached = 0;
+      costOutCached = 0;
+    };
     deepseekPro = {
       providerName = "deepseek";
       id = "deepseek-v4-pro";
@@ -341,6 +420,24 @@ let
       context = 1048576;
       maxTok = 32768;
       reason = true;
+    };
+    # Kimi K3 (Moonshot AI) via NVIDIA NIM (Build): a free cloud OpenAI-compatible endpoint (https://integrate.api.nvidia.com/v1), routed through the headroom-proxy-nvidia cloud proxy (8792) which injects the NVIDIA API key host-side. Kimi K3 is a reasoning model that takes a top-level `reasoning_effort` (low/high/max) — the same wire shape the deepseek thinkingFormat emits — and is vision-capable.
+    kimik3 = {
+      providerName = "nvidia";
+      id = "moonshotai/kimi-k3";
+      name = "Kimi K3 (NVIDIA NIM)";
+      url = headroomNvidiaProxyUrl;
+      # Conservative 128k context (well within the model's limit; dsh compacts earlier rather than risk an over-long request).
+      context = 131072;
+      # Matches the NVIDIA example's max_tokens.
+      maxTok = 16384;
+      reason = true;
+      attachments = true;
+      reasoningEfforts = {
+        low = "low";
+        high = "high";
+        max = "max";
+      };
     };
   };
 
@@ -388,9 +485,27 @@ let
     sglang.name = "SGLang (local)";
     sglang.type = "openai-compat";
     sglang.api_key = "sk-local";
+    tabbyapi_sc5bpw.name = "TabbyAPI EXL3 SC5bpw (local)";
+    tabbyapi_sc5bpw.type = "openai-compat";
+    tabbyapi_sc5bpw.api_key = "sk-local";
+    tabbyapi_4bpw.name = "TabbyAPI EXL3 4bpw (local)";
+    tabbyapi_4bpw.type = "openai-compat";
+    tabbyapi_4bpw.api_key = "sk-local";
+    sglang_gemma4.name = "SGLang Gemma-4 (local)";
+    sglang_gemma4.type = "openai-compat";
+    sglang_gemma4.api_key = "sk-local";
+    sglang_lfm25.name = "SGLang LFM2.5 (local)";
+    sglang_lfm25.type = "openai-compat";
+    sglang_lfm25.api_key = "sk-local";
+    sglang_ornith.name = "SGLang Ornith (local)";
+    sglang_ornith.type = "openai-compat";
+    sglang_ornith.api_key = "sk-local";
     deepseek.name = "DeepSeek";
     deepseek.type = "openai-compat";
     deepseek.api_key = "sk-local";
+    nvidia.name = "NVIDIA NIM (cloud)";
+    nvidia.type = "openai-compat";
+    nvidia.api_key = "sk-local";
   };
 
   # LSP catalog, keyed by crush language name: which language server each language uses, the package to mount (host copy, shared with home/packages.nix), and the file types / root markers for init.
@@ -572,7 +687,13 @@ let
       ninfer_swift = opencodeProvider "ninfer_swift";
       ninfer_cinference = opencodeProvider "ninfer_cinference";
       sglang = opencodeProvider "sglang";
+      tabbyapi_sc5bpw = opencodeProvider "tabbyapi_sc5bpw";
+      tabbyapi_4bpw = opencodeProvider "tabbyapi_4bpw";
+      sglang_gemma4 = opencodeProvider "sglang_gemma4";
+      sglang_lfm25 = opencodeProvider "sglang_lfm25";
+      sglang_ornith = opencodeProvider "sglang_ornith";
       deepseek = opencodeProvider "deepseek";
+      nvidia = opencodeProvider "nvidia";
     };
     model = "${models.gemma4awq.providerName}/${models.gemma4awq.id}";
     small_model = "${models.gemma4awq.providerName}/${models.gemma4awq.id}";
@@ -727,6 +848,9 @@ in
     headroomNinferPort
     headroomNinferProxyUrl
     headroomNinferUpstreamUrl
+    headroomNvidiaPort
+    headroomNvidiaProxyUrl
+    headroomNvidiaUpstreamUrl
     models
     providerLabel
     lsps

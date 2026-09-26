@@ -210,6 +210,22 @@
         "type": "github"
       }
     },
+    "exllamav3": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1789935406,
+        "narHash": "sha256-QrDC1BpQ5lbIIVgF5rpBr2aKhA9aY7Z/cfkywLWl76k=",
+        "owner": "turboderp-org",
+        "repo": "exllamav3",
+        "rev": "6b84a21b6f1e5da3f291b9e1019061f0de788279",
+        "type": "github"
+      },
+      "original": {
+        "owner": "turboderp-org",
+        "repo": "exllamav3",
+        "type": "github"
+      }
+    },
     "flake-parts": {
       "inputs": {
         "nixpkgs-lib": [
@@ -766,6 +782,7 @@
         "difftastic": "difftastic",
         "dsh": "dsh",
         "echarts": "echarts",
+        "exllamav3": "exllamav3",
         "fluent-oled": "fluent-oled",
         "graphify": "graphify",
         "graphlore": "graphlore",

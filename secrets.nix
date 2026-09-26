@@ -8,4 +8,5 @@ in
   "secrets/tailscale-authkey.age".publicKeys = [ adminPubKey ];
   "secrets/hf-token.age".publicKeys = [ adminPubKey ];
   "secrets/deepseek-api-key.age".publicKeys = [ adminPubKey ];
+  "secrets/nvidia-api-key.age".publicKeys = [ adminPubKey ];
 }
