@@ -95,15 +95,25 @@ let
             # plain copy (not cp -al): in a sandboxed build $out lives on a
             # different filesystem from the store, so hardlinks are EXDEV.
             cp -a ${pkgs.sglang}/. $out
+            # cp -a carries the store's 0555 dir modes (and the store root's
+            # mode onto $out itself); make the tree writable so mkdir/patch
+            # can work (nix normalizes the modes when it copies $out into
+            # the store).
+            chmod -R u+w $out
             target="$out/venv/lib/python3.12/site-packages/sglang/srt/models/gemma4_unified.py"
-            echo '${recipe.engineFilePreSha256}  $target' | sha256sum -c -
+            # Double quotes: $target must expand in the shell.
+            echo "${recipe.engineFilePreSha256}  $target" | sha256sum -c -
             # The diff is repo-root relative (python/sglang/srt/models/...);
-            # the venv's site-packages is the sglang package root.
+            # the venv's site-packages is the sglang package root. patch(1)
+            # refuses symlinks, so patch a copy at the repo-root path and
+            # copy the result back.
             mkdir -p "$out/python/sglang/srt/models"
-            ln -s "$target" "$out/python/sglang/srt/models/gemma4_unified.py"
+            cp "$target" "$out/python/sglang/srt/models/gemma4_unified.py"
             (cd "$out" && patch -p0 < ${enginePatch})
             # The patched file must match the omarchy pin.
-            echo '${recipe.engineFilePostSha256}  $target' | sha256sum -c -
+            echo "${recipe.engineFilePostSha256}  $out/python/sglang/srt/models/gemma4_unified.py" | sha256sum -c -
+            cp "$out/python/sglang/srt/models/gemma4_unified.py" "$target"
+            echo "${recipe.engineFilePostSha256}  $target" | sha256sum -c -
           '';
         }
       else pkgs.sglang;
