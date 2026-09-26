@@ -25,19 +25,19 @@ let
 
   # Transform each recipe into its set of systemd units.
   perRecipe = lib.mapAttrs (id: recipe: factory { inherit id recipe; }) recipes;
+  recipeList = lib.attrValues perRecipe;
 
-  # Merge all per-recipe results into a single module body.
-  merged = lib.foldl'
-    (acc: units: lib.recursiveUpdate acc units)
-    { }
-    (lib.attrValues perRecipe);
+  # Collect unit groups across all recipes.
+  allServices = lib.foldl' (acc: u: acc // (u.systemd.services or { })) { } recipeList;
+  allSockets = lib.foldl' (acc: u: acc // (u.systemd.sockets or { })) { } recipeList;
+  allTargets = lib.foldl' (acc: u: acc // (u.systemd.targets or { })) { } recipeList;
+  allTmpfiles =
+    [ "d /var/lib/omarchy 0755 root root -" ]
+    ++ lib.concatMap (u: u.systemd.tmpfiles.rules or [ ]) recipeList;
 in
 {
-  # The shared /var/lib/omarchy base dir.
-  systemd.tmpfiles.rules = [
-    "d /var/lib/omarchy 0755 root root -"
-  ];
-
-  # All the generated units (download services, engine services, sockets, targets).
-  config = lib.recursiveUpdate config merged;
+  systemd.tmpfiles.rules = allTmpfiles;
+  systemd.services = allServices;
+  systemd.sockets = allSockets;
+  systemd.targets = allTargets;
 }
