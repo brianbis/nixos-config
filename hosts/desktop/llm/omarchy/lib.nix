@@ -127,8 +127,11 @@ let
         # the TABBY_NETWORK_* env vars below override the port/host from it.
         configPath = "${pkgs.writeText "omarchy-config-${id}" (builtins.readFile recipe.configAsset)}";
       in
+      # Launch the venv's own python (not a thin $out/bin symlink): CPython
+      # detects the venv from the launch path's parent dir (pyvenv.cfg), so a
+      # symlink rooted elsewhere makes sys.prefix the base interpreter's.
       [
-        "${enginePkg}/bin/python3"
+        "${enginePkg}/venv/bin/python3"
         "${enginePkg}/app/main.py"
         "--config"
         configPath

@@ -122,10 +122,10 @@ stdenv.mkDerivation {
       --find-links ${wheelhouse} \
       -r ${requirements}
 
-    # Thin entry points so the service can run a stable path.
-    mkdir -p $out/bin
-    ln -s $out/venv/bin/python $out/bin/python3
-    ln -s $out/venv/bin/python $out/bin/python
+    # The service runs $out/venv/bin/python3 directly (not a thin $out/bin
+    # symlink): CPython detects the venv from the launch path's parent dir
+    # (pyvenv.cfg), so a symlink rooted elsewhere makes sys.prefix the base
+    # interpreter's and the venv's site-packages goes invisible.
 
     # The tabbyAPI app (run with the venv python; it reads config.yml from
     # the working directory at runtime — the service sets WorkingDirectory).
