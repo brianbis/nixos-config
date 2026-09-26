@@ -85,7 +85,7 @@ let
       # sglang: the engine binary + the recipe's args.
       # Override the --port to use the recipe's childPort.
       let
-        portIdx = lib.elemIndex "--port" recipe.sglangArgs;
+        portIdx = lib.findIndex (a: a == "--port") recipe.sglangArgs;
         # Remove the existing --port value if present.
         noPortArgs =
           if portIdx != null
