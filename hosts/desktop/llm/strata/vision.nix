@@ -46,7 +46,9 @@ stdenv.mkDerivation {
   nativeBuildInputs = [ visionBin ];
 
   installPhase = ''
-    cp -a ${engine}/app/. $out/app/
+    # copy the directory itself: the destination does not exist yet
+    # ('src/. -> dest/' form requires it to exist first)
+    cp -a ${engine}/app $out/app
     install -Dm755 ${visionBin}/bin/strata-vision $out/app/engine/strata-vision
     test -s $out/app/engine/strata-vision
   '';
