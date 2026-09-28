@@ -74,6 +74,7 @@ let
 
   downloader = pkgs.writeShellScriptBin "strata-model-download" ''
     set -euo pipefail
+    trap 'echo "strata: download failed at line $LINENO (exit $?)"' ERR
     mkdir -p ${modelsDir}
     rev_file=${modelsDir}.revision
     recorded=$(cat "$rev_file" 2>/dev/null || echo none)
