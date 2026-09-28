@@ -178,7 +178,13 @@ async def probe_health(port: int, timeout: float = 2.0) -> bool:
                 )
                 data = sock.recv(4096)
 
-            return data.startswith(b"HTTP/1.1 200")
+            # Any HTTP version in the status line counts: backends are not
+            # required to be HTTP/1.1 (Strata's serve/server.py is pinned to
+            # HTTP/1.0 for its SSE close semantics).
+            first = data.split(b"\r\n", 1)[0]
+            parts = first.split(b" ")
+
+            return len(parts) >= 2 and parts[1] == b"200"
 
         except OSError:
             return False
