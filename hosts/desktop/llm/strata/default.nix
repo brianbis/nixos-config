@@ -38,6 +38,9 @@ let
   ];
   mmprojFile = "mmproj-Qwen3.8-Flash-Next-BF16.gguf";
   shardGlobs = [ "IQ3_XXS/*" "mmproj-Qwen3.8-Flash-Next-BF16.gguf" ];
+  # Precomputed at nix level: a string literal carrying its own ${...} cannot
+  # appear nested inside another string's interpolation expression.
+  hfIncludes = lib.concatStringsSep " " (lib.map (g: "--include \"${g}\"") shardGlobs);
 
   idleWrapper = pkgs.callPackage ../idle-wrapper { };
   strataApp = pkgs."strata-vision-app";
@@ -95,7 +98,7 @@ let
       ${modelRepo} \
       --revision ${modelRevision} \
       --local-dir ${modelsDir} \
-      ${lib.concatStringsSep " " (lib.map (g: "--include \"$g\"") shardGlobs)}
+      ${hfIncludes}
     # setup.py's own completion marks: without them its step 5 would not trust
     # the pre-seeded shards and would re-download them under the first request
     for f in ${lib.concatStringsSep " " shardFiles}; do

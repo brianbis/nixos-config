@@ -61,6 +61,12 @@ Activation scripts should therefore remain small and activation-specific. Do not
 
 * **Single source of truth.** The flake is the only source of truth. Do not edit generated files directly; edit the template or flake that generates them.
 
+## Nix String Interpolation into Shell Scripts
+
+* `${x}` interpolates a Nix value into both `"..."` and `''...''` strings. A bare `${x}` embedded as single-quoted text is **not** a Nix substitution — it passes through literally, so `"$g"` in a Nix string becomes a shell reference to an unset `g` (fatal under `set -u`: `g: unbound variable`, exit 1, silent in a systemd journal). Write a literal `${` as `$${`.
+* A string literal carrying its own `${...}` cannot be nested inside another string's interpolation expression (parse error: "in string interpolation, ${ is reserved"). Precompute such fragments in a `let`/binding at the nix-code level and interpolate the *result* into the script string.
+* Verify generated scripts by their **rendered** text, not your intent: evaluate the string (or build the `writeShellScriptBin` and read the output), then `bash -n` and `shellcheck --enable=unbound-variable` it. A command whose *arguments* you dry-ran successfully does not prove the *text* that produced it rendered correctly.
+
 ## Assembling fetchFromGitHub hashes
 
 This nixpkgs pin's `fetchFromGitHub` fetches `https://github.com/OWNER/REPO/archive/REV.tar.gz` and hashes the **unpacked tree** (via `fetchzip` with `recursiveHash = true`) — **not** the tarball's `sha256`. Computing the tarball hash will always produce a mismatch. Assemble the correct `sha256-…` (base64 NAR) hash with this one-liner (substitute `OWNER`/`REPO`/`REV`):
