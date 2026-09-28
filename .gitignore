@@ -1,5 +1,7 @@
 result
 result-*
 __pycache__/
+# update-deps.py working dir (self-cleaning; covered in case a run is killed)
+home/llm/dsh/.lockfile-tmp/
 *.pyc
 nohup.out

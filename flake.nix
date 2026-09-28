@@ -118,6 +118,11 @@
       url = "github:Neroued/ninfer";
       flake = false;
     };
+    # strata: inference engine dedicated to Qwen3.8-Flash-Next GSQ-RCO GGUFs (512-expert MoE).
+    strata = {
+      url = "github:Niko1221/Strata";
+      flake = false;
+    };
     ninfer-gzenz = {
       url = "github:gzenz/ninfer";
       flake = false;
@@ -140,16 +145,10 @@
       flake = false;
     };
     # archipelago meta-flake: bundles main source + PopTracker/apworld as nested inputs (read via outputs.archipelagoInputs.<name>).
+    # (its git deps — kivymd, zilliandomizer, the pony fork — are pinned by the
+    # uv workspace's uv.lock, not by flake inputs.)
     archipelago = {
       url = "path:hosts/desktop/archipelago";
-    };
-    kivymd = {
-      url = "github:kivymd/KivyMD";
-      flake = false;
-    };
-    zilliandomizer = {
-      url = "github:beauxq/zilliandomizer";
-      flake = false;
     };
     # recurse: AI-native IDE for reverse engineering (Tauri 2; pluggable analysis backend).
     recurse = {
@@ -191,9 +190,18 @@
       flake = false;
     };
 
-    # dsh (deepseek-harness) source (pnpm monorepo); built offline by home/llm/dsh/ (npm ci OOMs); re-pin via just dsh-repin.
+    # dsh (deepseek-harness) source (pnpm monorepo); built offline by
+    # home/llm/dsh/ (npm ci OOMs). Pinned to a published release tag: its
+    # tarball's production deps are all on the npm registry, so the npm-closure
+    # pin (package-lock.json + deps-sha256.json, generated from exactly this
+    # tree by update-deps.py) is always resolvable, and the pnpm side is pinned
+    # by one fetchPnpmDeps store hash that reads this tree's own pnpm-lock.yaml.
+    # `nix flake update` leaves tag-pinned inputs alone, so plain updates never
+    # strand the pin data stale. To move to a new release, run `just dsh-repin`
+    # (bumps this ref to the newest npm dist-tag + refreshes all three pins
+    # atomically).
     dsh = {
-      url = "github:deepseek-ai/deepseek-harness";
+      url = "github:deepseek-ai/deepseek-harness/dsh-v0.1.7-rc.2";
       flake = false;
     };
   };
@@ -237,6 +245,16 @@
       # --- locally built packages -----------------------------------------
       # Built locally from the flakeless source inputs above; exposed as flake
       # packages and/or nixpkgs overlays so the NixOS modules can consume them.
+      # dsh: the DeepSeek Harness agent runtime (pnpm monorepo). The pnpm side
+      # is pinned by a single fetchPnpmDeps store hash in home/llm/dsh/
+      # (tarball.nix); the npm side by the committed lock pin files there.
+      # Bumped by `just dsh-repin` (newest npm-published release tag).
+      dshPkg = import ./home/llm/dsh {
+        inherit pkgs;
+        src = inputs.dsh;
+        versionCheckHomeHook = inputs.llm-agents.packages.${system}.versionCheckHomeHook;
+      };
+
       # hushmic: built locally because nixpkgs' recipe uses deprecated xorg.libX11-style names.
       hushmic = pkgs.callPackage ./hosts/desktop/hushmic/package.nix {
         src = inputs.hushmic;
@@ -303,6 +321,49 @@
         pkgs.callPackage ./hosts/desktop/llm/vllm/dflash2-package.nix {
           cudaToolkit = cudaToolkitPkgs.cudaPackages_13.cudatoolkit;
         };
+
+      # Strata: llama.cpp pinned to the exact commit Strata pins (setup.py's
+      # LLAMA_CPP_COMMIT): the engine's ggml-cpu native expert kernels and
+      # strata-vision's mtmd share this source, so no FetchContent at build.
+      # The NAR hash covers the unpacked tree (AGENTS.md); re-derive it only
+      # when the strata source changes that commit.
+      strataLlamaCpp = pkgs.fetchFromGitHub {
+        owner = "ggml-org";
+        repo = "llama.cpp";
+        rev = "3cf03257f219afbe7334045ff7c6a06ac68c627d";
+        hash = "sha256-SRGoXa+4ACBCB3eaG9XFYhMN1i0FyPEy9Rrer+dFGYI=";
+      };
+
+      # strataEnginePkg: sm_120 CUDA engine + the vendored python app (setup.py + serve/).
+      strataEnginePkg = cudaToolkitPkgs.callPackage ./hosts/desktop/llm/strata/package.nix {
+        src = inputs.strata;
+        llamaCpp = strataLlamaCpp;
+      };
+
+      # strataServeEnv: server venv from its uv.lock (single source of truth; see hosts/desktop/llm/strata/uv/).
+      strataServeEnv =
+        let
+          workspace = inputs.uv2nix.lib.workspace.loadWorkspace {
+            workspaceRoot = ./hosts/desktop/llm/strata/uv;
+          };
+          overlay = workspace.mkPyprojectOverlay { sourcePreference = "wheel"; };
+          pythonSet =
+            (pkgs.callPackage inputs.pyproject-nix.build.packages {
+              python = pkgs.python313;
+            }).overrideScope (pkgs.lib.composeManyExtensions [
+              inputs.pyproject-build-systems.overlays.wheel
+              overlay
+            ]);
+        in
+        pythonSet.mkVirtualEnv "strata-serve-env" (workspace.deps.default);
+
+      # strataVisionAppPkg: the engine app layout plus the GPU vision encoder (mtmd, sm_120);
+      # what services.strata runs.
+      strataVisionAppPkg = cudaToolkitPkgs.callPackage ./hosts/desktop/llm/strata/vision.nix {
+        src = inputs.strata;
+        llamaCpp = strataLlamaCpp;
+        engine = strataEnginePkg;
+      };
 
       # tabbyapiPkg: TabbyAPI + EXL3 (exllamav3) runtime for EXL3-quantized models.
       # Both binaries are tracked via flake inputs (their true bases on GitHub):
@@ -402,6 +463,11 @@
           # The pinned dsh source tree, exposed so home/llm/dsh/update-deps.py can materialize it.
           dsh-src = inputs.dsh.outPath;
 
+          # The dsh runtime (installed package) and its npm tarball (release
+          # pipeline output); used by the NixOS config and `just dsh-repin`.
+          dsh = dshPkg.package;
+          dsh-tarball = dshPkg.tarball;
+
           # WezTerm session-persistence plugin (resurrect.wezterm fork).
           wezurrect = pkgs.callPackage ./home/wezterm/resurrect.nix {
             src = inputs.wezurrect;
@@ -413,6 +479,15 @@
 
           # Native vLLM v0.27.1 + DFlash2 K7 runtime.
           vllm-dflash2 = vllmDflash2Pkg;
+
+          # Strata engine (sm_120) + vendored python app (setup.py + serve/).
+          strata-engine = strataEnginePkg;
+
+          # Strata app + GPU vision encoder — what services.strata runs.
+          strata-vision-app = strataVisionAppPkg;
+
+          # Strata server venv (uv.lock via uv2nix; see hosts/desktop/llm/strata/uv/).
+          strata-serve-env = strataServeEnv;
 
           # TabbyAPI + EXL3 (exllamav3) runtime (omarchy recipes).
           tabbyapi = tabbyapiPkg;
@@ -566,6 +641,12 @@
 
               (final: prev: {
                 llama-cpp-bonsai = llama-cpp-bonsaiPkg;
+              })
+
+              (final: prev: {
+                strata-engine = strataEnginePkg;
+                strata-vision-app = strataVisionAppPkg;
+                strata-serve-env = strataServeEnv;
               })
 
               # Tether — Linux + iPhone Continuity bridge (upstream overlay).

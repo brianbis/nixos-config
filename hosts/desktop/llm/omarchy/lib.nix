@@ -174,15 +174,24 @@ let
     if engine == "tabbyapi"
     then [
       "CUDA_VISIBLE_DEVICES=0"
-      # tabbyAPI config overrides: TABBY_<SECTION>_<FIELD> env vars beat the
-      # config.yml values (merge order file < env < args). The asset keeps
-      # port 5000 (the container default); the service serves on the child
-      # port, loopback-only (the idle wrapper relays the front socket).
+      # tabbyAPI config: the TABBY_NETWORK_* env vars set the child port +
+      # loopback host. They are intentionally NOT in the --config asset,
+      # because the --config file has the highest merge priority (it is
+      # merged last) and would otherwise override them. The idle wrapper
+      # relays the front socket to this child port, loopback-only.
       "TABBY_NETWORK_PORT=${toString recipe.childPort}"
       "TABBY_NETWORK_HOST=127.0.0.1"
       "LD_LIBRARY_PATH=${enginePkg}/lib:${enginePkg}/venv/lib/python3.12/site-packages/nvidia/cu13/lib:/run/opengl-driver/lib"
       "HF_HOME=${modelDir}"
       "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True"
+      # Triton JIT (exllamav3's gated-delta-net conv1d kernels) resolves
+      # libcuda via TRITON_LIBCUDA_PATH; without it it shells out to
+      # /sbin/ldconfig, which NixOS does not provide. CC/CXX + PATH let
+      # triton's _build find a C compiler for the CUDA extension.
+      "TRITON_LIBCUDA_PATH=/run/opengl-driver/lib"
+      "CC=${pkgs.stdenv.cc}/bin/cc"
+      "CXX=${pkgs.stdenv.cc}/bin/c++"
+      "PATH=${enginePkg}/venv/bin:${pkgs.stdenv.cc}/bin:${pkgs.coreutils}/bin:${pkgs.findutils}/bin:/run/wrappers/bin:/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin"
     ]
     else [
       "CUDA_VISIBLE_DEVICES=0"

@@ -576,7 +576,14 @@ let
     '';
   };
 
-  # dsh is built from source (the flakeless `dsh` input): home/llm/dsh/ replicates the upstream release pipeline to produce the @deepseek-ai/dsh npm tarball (tarball.nix) and installs it without running npm (package.nix: node_modules unpacked from per-package fetchurl FODs, since `npm ci` OOMs on this tree). The version follows the pinned tree's root package.json; `just dsh-repin` re-pins it.
+  # dsh is built from source (the flakeless `dsh` input, pinned to a published
+  # release tag): home/llm/dsh/ replicates the upstream release pipeline to
+  # produce the @deepseek-ai/dsh npm tarball (tarball.nix: fetchPnpmDeps store
+  # pin + pnpmConfigHook offline install + build:official + pack) and installs
+  # it without running npm (package.nix: node_modules unpacked from per-package
+  # fetchurl FODs, since `npm ci` OOMs on this tree). The version follows the
+  # pinned tree's root package.json; `just dsh-repin` bumps the release tag
+  # and refreshes the three pins (flake.lock, npm data files, store hash).
   # The shipped `standard` preset is patched in place at build time (the user preset root can't shadow the shipped one, first-root-wins); writeText makes the patch a derivation input (a bare repo path is invisible to the sandboxed builder).
   dshPkg = (import ./dsh/default.nix) {
     inherit pkgs;

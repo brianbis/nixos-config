@@ -1,6 +1,7 @@
 network:
-  host: 0.0.0.0
-  port: 5000
+  # host/port are set by the service via TABBY_NETWORK_HOST/PORT env vars
+  # (loopback + child_port); omitted here because the --config file has the
+  # highest merge priority and would otherwise override the env vars.
   disable_auth: true
   disable_fetch_requests: true
   send_tracebacks: false

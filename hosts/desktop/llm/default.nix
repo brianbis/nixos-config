@@ -12,9 +12,11 @@
     ./sglang
     ./vllm
     ./omarchy
+    ./strata
   ];
 
-  # The llama.cpp router module (stock :8000 + Bonsai fork :8010) is the only
-  # llm service with an enable gate; the others are always-on when imported.
+  # The llama.cpp router module (stock :8000 + Bonsai fork :8010) and Strata
+  # (Qwen3.8-Flash-Next GGUF, off until weights are present) are the llm
+  # services with enable gates; the others are always-on when imported.
   services.llamacpp.enable = true;
 }

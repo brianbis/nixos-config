@@ -190,6 +190,7 @@
       },
       "original": {
         "owner": "deepseek-ai",
+        "ref": "dsh-v0.1.7-rc.2",
         "repo": "deepseek-harness",
         "type": "github"
       }
@@ -423,22 +424,6 @@
         "owner": "~alexdavid",
         "repo": "jail.nix",
         "type": "sourcehut"
-      }
-    },
-    "kivymd": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1788762870,
-        "narHash": "sha256-01On2A5H9spJceDVL1TMYeMK8ViJRKi1FoNz3lNuOMg=",
-        "owner": "kivymd",
-        "repo": "KivyMD",
-        "rev": "4a2617ea24e13ef2540c37edb95a54ef02e78707",
-        "type": "github"
-      },
-      "original": {
-        "owner": "kivymd",
-        "repo": "KivyMD",
-        "type": "github"
       }
     },
     "knife": {
@@ -790,7 +775,6 @@
         "home-manager": "home-manager_2",
         "hushmic": "hushmic",
         "jail-nix": "jail-nix",
-        "kivymd": "kivymd",
         "knife": "knife",
         "librepods": "librepods",
         "llama-cpp": "llama-cpp",
@@ -809,12 +793,12 @@
         "ripwire": "ripwire",
         "serein": "serein",
         "sidra": "sidra",
+        "strata": "strata",
         "tabbyapi": "tabbyapi",
         "tether": "tether",
         "uv2nix": "uv2nix",
         "wezurrect": "wezurrect",
-        "whisper-service": "whisper-service",
-        "zilliandomizer": "zilliandomizer"
+        "whisper-service": "whisper-service"
       }
     },
     "serein": {
@@ -866,6 +850,22 @@
       "original": {
         "owner": "ArchipelagoMW",
         "repo": "Archipelago",
+        "type": "github"
+      }
+    },
+    "strata": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1790538019,
+        "narHash": "sha256-7LGIMdKpbmeIjcqcDwVM8+33r2mty+a3SEeVIMxAIG4=",
+        "owner": "Niko1221",
+        "repo": "Strata",
+        "rev": "b742ff998704638903461a2d7d6c1e03b8032509",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Niko1221",
+        "repo": "Strata",
         "type": "github"
       }
     },
@@ -1043,22 +1043,6 @@
         "type": "path"
       },
       "parent": []
-    },
-    "zilliandomizer": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1764546541,
-        "narHash": "sha256-1rCNyoCimuafhrF/z4w80zDuvRLG93KzH8eZDATcEuI=",
-        "owner": "beauxq",
-        "repo": "zilliandomizer",
-        "rev": "4c0824ceaad05f21861075143c886d47c46e2cda",
-        "type": "github"
-      },
-      "original": {
-        "owner": "beauxq",
-        "repo": "zilliandomizer",
-        "type": "github"
-      }
     }
   },
   "root": "root",

@@ -1,33 +1,32 @@
 #!/usr/bin/env python3
-"""Re-pin the dsh npm-closure data after `nix flake update dsh`.
+"""Re-pin the dsh npm-closure data after the dsh flake input moves.
 
-The dsh package (package.nix) and the dsh tarball (tarball.nix) fetch their
-registry tarballs with per-package fixed-output derivations whose sha256
-hashes live in deps-sha256.json (url -> sha256). This script regenerates
-both data files from the pinned source tree:
+The dsh package (package.nix) fetches its npm production closure as one
+fixed-output derivation per registry tarball (fetchurl); each sha256 lives
+in deps-sha256.json (url -> sha256). This script regenerates the npm-side
+data files from the pinned source tree:
 
 1. Rewrite the `workspace:` dependencies in apps/cli/package.json to
    concrete versions (pnpm pack does the same rewrite at publish time; the
    npm lockfile must be generated from the rewritten manifest, since npm
    does not understand the workspace: protocol).
 2. `npm install --package-lock-only` -> package-lock.json (the npm closure
-   pin: exact placement + per-package sha512 integrity).
-3. Collect the union of tarballs across the npm lock (production,
-   linux-x64) and the source's pnpm-lock.yaml (linux-x64-applicable),
-   download any missing tarballs (cached under $XDG_CACHE_HOME/dsh-deps),
-   verify each sha512 against the lock's integrity, and record the sha256.
+   pin: exact placement + per-package sha512 integrity), stamped with
+   _meta.srcRev = the dsh source rev it was generated from (package.nix
+   asserts it matches the pinned input, so a stale re-pin fails loudly).
+3. Download the closure tarballs (cached under $XDG_CACHE_HOME/dsh-deps),
+   verify each sha512 against the lock's integrity, and record the sha256
+   in deps-sha256.json.
 
-Usage: update-deps.py <src-dir> <pnpm-lock.json>
-  <src-dir>          the pinned dsh source tree (e.g. the store path of the
-                     `dsh-src` flake output).
-  <pnpm-lock.json>   the source's pnpm-lock.yaml converted to JSON (the
-                     justfile does this with yq), so this script needs only
-                     the python stdlib.
+The pnpm side is NOT pinned by data files anymore: tarball.nix pins its
+store with a single fetchPnpmDeps `hash` and reads the source tree's own
+pnpm-lock.yaml (see tarball.nix header for the hash-refresh flow).
 
-The script also writes home/llm/dsh/pnpm-lock.json (the same JSON plus a
-_meta.pnpmLockYamlSha256 of the source's pnpm-lock.yaml) — tarball.nix
-reads it at evaluation time (this Nix has no builtins.fromYAML) and asserts
-the hash matches the pinned source, so a stale re-pin fails loudly.
+Usage: update-deps.py <src-dir> <src-rev>
+  <src-dir>   the pinned dsh source tree (e.g. the store path of the
+              `dsh-src` flake output).
+  <src-rev>   the full 40-char commit SHA of that tree (the flake.lock dsh
+              rev), stamped into package-lock.json.
 
 Stdlib only on purpose: the justfile runs this inside `nix shell
 nixpkgs#nodejs nixpkgs#python3`, a minimal environment.
@@ -108,26 +107,33 @@ def rewrite_manifest(pj_path, versions):
 
 
 def npm_lockfile(src, out_lock):
-    """Generate package-lock.json from the rewritten apps/cli manifest."""
+    """Generate package-lock.json from the rewritten apps/cli manifest.
+
+    The working directory is always cleaned up, so a failed run leaves no
+    state behind (an earlier version leaked .lockfile-tmp/ on npm failure).
+    """
     meta = rewrite_manifest(os.path.join(src, "apps", "cli", "package.json"),
                             workspace_versions(src))
     tmp = os.path.join(os.path.dirname(os.path.abspath(out_lock)),
                        ".lockfile-tmp")
     shutil.rmtree(tmp, ignore_errors=True)
-    os.makedirs(tmp)
-    with open(os.path.join(tmp, "package.json"), "w") as f:
-        json.dump(meta, f, indent=2)
-    npm = shutil.which("npm")
-    if not npm:
-        die("npm not on PATH")
-    r = subprocess.run([npm, "install", "--package-lock-only",
-                        "--ignore-scripts",
-                        "--registry=https://registry.npmjs.org"],
-                       cwd=tmp, capture_output=True, text=True)
-    if r.returncode != 0:
-        die(f"npm install --package-lock-only failed:\n{r.stdout}\n{r.stderr}")
-    shutil.move(os.path.join(tmp, "package-lock.json"), out_lock)
-    shutil.rmtree(tmp, ignore_errors=True)
+    try:
+        os.makedirs(tmp)
+        with open(os.path.join(tmp, "package.json"), "w") as f:
+            json.dump(meta, f, indent=2)
+        npm = shutil.which("npm")
+        if not npm:
+            die("npm not on PATH")
+        r = subprocess.run([npm, "install", "--package-lock-only",
+                            "--ignore-scripts",
+                            "--registry=https://registry.npmjs.org"],
+                           cwd=tmp, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(
+                f"npm install --package-lock-only failed:\n{r.stdout}\n{r.stderr}")
+        shutil.move(os.path.join(tmp, "package-lock.json"), out_lock)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def linux_applicable(v):
@@ -150,27 +156,6 @@ def npm_entries(lock):
     return out
 
 
-def pnpm_entries(pnpm_lock):
-    """(url, integrity) for the linux-x64-applicable pnpm lock entries."""
-    out = []
-    for key, e in (pnpm_lock.get("packages") or {}).items():
-        if not isinstance(e, dict) or not linux_applicable(e):
-            continue
-        res = e.get("resolution") or {}
-        integrity = res.get("integrity")
-        if not integrity:
-            continue  # link: / workspace entries
-        if res.get("tarball"):
-            url = res["tarball"]
-        else:
-            # name@version key (scoped names start with @)
-            name, _, version = key.rpartition("@")
-            base = name.rsplit("/", 1)[-1]
-            url = f"https://registry.npmjs.org/{name}/-/{base}-{version}.tgz"
-        out.append((url, integrity))
-    return out
-
-
 def fetch(url, integrity, cache_dir):
     """Download url (cached), verify sha512 integrity, return sha256 hex."""
     digest = hashlib.sha1(url.encode()).hexdigest()
@@ -181,10 +166,10 @@ def fetch(url, integrity, cache_dir):
             shutil.copyfileobj(r, f)
         os.replace(path + ".part", path)
     data = open(path, "rb").read()
+    import base64
     algo, b64 = integrity.split("-", 1)
     if algo != "sha512":
         die(f"unsupported integrity algo {algo!r} for {url}")
-    import base64
     if hashlib.sha512(data).digest() != base64.b64decode(b64):
         die(f"sha512 mismatch for {url} (lock integrity {integrity})")
     return hashlib.sha256(data).hexdigest()
@@ -192,13 +177,13 @@ def fetch(url, integrity, cache_dir):
 
 def main():
     if len(sys.argv) != 3:
-        die(f"usage: {sys.argv[0]} <src-dir> <pnpm-lock.json>")
+        die(f"usage: {sys.argv[0]} <src-dir> <src-rev>")
     src = os.path.abspath(sys.argv[1])
-    with open(sys.argv[2]) as f:
-        pnpm_lock = json.load(f)
+    rev = sys.argv[2].strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", rev):
+        die(f"src-rev must be a full 40-char sha, got {rev!r}")
     here = os.path.dirname(os.path.abspath(__file__))
     out_lock = os.path.join(here, "package-lock.json")
-    out_pnpm = os.path.join(here, "pnpm-lock.json")
     out_sha = os.path.join(here, "deps-sha256.json")
     cache_dir = os.path.join(os.environ.get("XDG_CACHE_HOME",
                                             os.path.expanduser("~/.cache")),
@@ -209,12 +194,22 @@ def main():
     with open(out_lock) as f:
         lock = json.load(f)
 
+    # Stamp the source rev the closure was resolved against (package.nix
+    # asserts it equals the pinned dsh input's rev at eval time).
+    lock["_meta"] = {"srcRev": rev}
+    tmp = out_lock + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(lock, f, indent=2)
+        f.write("\n")
+    os.replace(tmp, out_lock)
+    print(f"wrote {out_lock} (srcRev {rev})")
+
     wanted = {}
-    for url, integrity in npm_entries(lock) + pnpm_entries(pnpm_lock):
+    for url, integrity in npm_entries(lock):
         if url in wanted and wanted[url] != integrity:
             die(f"conflicting integrity for {url}: {wanted[url]} vs {integrity}")
         wanted[url] = integrity
-    print(f"{len(wanted)} unique tarballs across both locks")
+    print(f"{len(wanted)} unique tarballs in the npm closure")
 
     existing = {}
     if os.path.isfile(out_sha):
@@ -238,20 +233,6 @@ def main():
         f.write("\n")
     os.replace(tmp, out_sha)
     print(f"wrote {out_sha} ({len(result)} entries)")
-
-    # Commit the pnpm lock as JSON (this Nix has no builtins.fromYAML),
-    # stamped with the sha256 of the source pnpm-lock.yaml so tarball.nix
-    # can detect staleness at eval time.
-    with open(os.path.join(src, "pnpm-lock.yaml"), "rb") as f:
-        yaml_sha = hashlib.sha256(f.read()).hexdigest()
-    out = dict(pnpm_lock)
-    out["_meta"] = {"pnpmLockYamlSha256": yaml_sha}
-    tmp = out_pnpm + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(out, f, indent=1)
-        f.write("\n")
-    os.replace(tmp, out_pnpm)
-    print(f"wrote {out_pnpm}")
 
 
 if __name__ == "__main__":

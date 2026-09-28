@@ -25,28 +25,37 @@ let
   ];
 
   # Backend runtime, resolved hermetically by nixpkgs (pip can't reach the
-  # network in the sandbox, so the repo's pip-compiled requirements.txt is not used).
-  minuspodPython = pkgs.python312.override {
+  # network in the sandbox, so the repo's pip-compiled requirements.txt is not
+  # used). python313: matches whisper-service's transcription stack; MinusPod's
+  # deps (Flask 3, faster-whisper, the pin's ctranslate2 4.8.2) all build for
+  # 3.13. (Formerly python312, when the pin predated a current withCUDA
+  # ctranslate2.)
+  minuspodPython = pkgs.python313.override {
     packageOverrides = self: super: {
       ctranslate2 = super.ctranslate2.override {
         ctranslate2-cpp = cudaCT2;
       };
-      # docs test breaks on python 3.12 at this pin
+      # docs test breaks at this pin (observed on python 3.12; kept for 3.13)
       inline-snapshot = super.inline-snapshot.overridePythonAttrs (old: {
         disabledTestPaths = (old.disabledTestPaths or [ ]) ++ [
           "tests/test_docs.py"
         ];
       });
-      # MinusPod only needs the library; the test chain is broken on python 3.12 at this pin.
+      # MinusPod only needs the library; its test chain is unreliable at this pin.
       anthropic = super.anthropic.overridePythonAttrs (old: {
         doCheck = false;
         nativeCheckInputs = [ ];
         checkInputs = [ ];
       });
-      # nixpkgs' pythonMetadataCheckPhase fails on 5.2.17 (metadata mismatch);
-      # relax the check.
+      # django is not a direct dependency of MinusPod; it enters the closure
+      # only as a check-input chain of scikit-learn's interop tooling
+      # (scikit-learn 1.9 -> narwhals -> ibis-framework -> factory-boy ->
+      # django). Its test suite fails on python 3.13 at this pin (and the
+      # metadata check on 5.2.17 always), and MinusPod never runs it:
+      # skip the whole check phase.
       django = super.django.overridePythonAttrs (old: {
         pythonRelaxed = true;
+        doCheck = false;
       });
     };
   };

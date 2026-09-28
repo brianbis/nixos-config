@@ -1,0 +1,21 @@
+# Strata server runtime deps. Mirrors setup.py's PY_PACKAGES (the 10 packages
+# setup.py's pip check enforces), so the uv2nix venv satisfies that check with
+# no network access at runtime. The lock (uv.lock) is the pin.
+
+[project]
+name = "strata-serve"
+version = "0.1.0"
+description = "Strata server runtime (setup.py + serve/) dependencies"
+requires-python = ">=3.12"
+dependencies = [
+  "cmake",
+  "jinja2",
+  "numpy",
+  "ninja",
+  "pillow",
+  "psutil",
+  "pyyaml",
+  "regex",
+  "requests",
+  "tqdm",
+]
