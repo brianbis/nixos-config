@@ -338,6 +338,8 @@
       strataEnginePkg = cudaToolkitPkgs.callPackage ./hosts/desktop/llm/strata/package.nix {
         src = inputs.strata;
         llamaCpp = strataLlamaCpp;
+        # callPackage can't infer it: no such attr in the pkgs set (same as vllm).
+        cudaToolkit = cudaToolkitPkgs.cudaPackages_13.cudatoolkit;
       };
 
       # strataServeEnv: server venv from its uv.lock (single source of truth; see hosts/desktop/llm/strata/uv/).
@@ -363,6 +365,7 @@
         src = inputs.strata;
         llamaCpp = strataLlamaCpp;
         engine = strataEnginePkg;
+        cudaToolkit = cudaToolkitPkgs.cudaPackages_13.cudatoolkit;
       };
 
       # tabbyapiPkg: TabbyAPI + EXL3 (exllamav3) runtime for EXL3-quantized models.

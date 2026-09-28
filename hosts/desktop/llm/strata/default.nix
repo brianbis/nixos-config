@@ -91,7 +91,7 @@ let
       ${modelRepo} \
       --revision ${modelRevision} \
       --local-dir ${modelsDir} \
-      ${lib.map (g: ''--include "$g"'') shardGlobs}
+      ${lib.concatStringsSep " " (lib.map (g: "--include \"$g\"") shardGlobs)}
     echo ${modelRevision} > "$rev_file"
     echo "strata: download complete"
   '';
