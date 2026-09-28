@@ -357,7 +357,18 @@
               overlay
             ]);
         in
-        pythonSet.mkVirtualEnv "strata-serve-env" (workspace.deps.default);
+        # Strata's setup.py proves its python deps with a .strata-pip.json stamp
+        # in sys.prefix (setup.py pip_install, L376-380); without it the first
+        # start would pip-install into the read-only store and die. The list
+        # mirrors setup.py's PY_PACKAGES names exactly; for a source:"local"
+        # engine the NVIDIA wheel list is never reached (setup.py L866-868).
+        # Injected via overrideAttrs: the make-venv hook ends with runHook postInstall.
+        (pythonSet.mkVirtualEnv "strata-serve-env" (workspace.deps.default))
+          .overrideAttrs(_a: {
+            postInstall = ''
+              echo '["cmake", "jinja2", "numpy", "ninja", "pillow", "psutil", "pyyaml", "regex", "requests", "tqdm"]' > $out/.strata-pip.json
+            '';
+          });
 
       # strataVisionAppPkg: the engine app layout plus the GPU vision encoder (mtmd, sm_120);
       # what services.strata runs.

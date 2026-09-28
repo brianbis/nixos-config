@@ -29,15 +29,15 @@ let
   modelRepo = "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF";
   # Revision gate for the download oneshot (repo main at pin time).
   modelRevision = "2a55d75962e22f7a4a1d9963ab6eae3678537831";
-  shards = [
-    "Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf"
-    "Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf"
-    "mmproj-Qwen3.8-Flash-Next-BF16.gguf"
+  # The HF repo keeps each quant under <size>/, and setup.py reads
+  # <models-dir>/IQ3_XXS/<shard> for its shards and <models-dir>/<mmproj> for the
+  # vision encoder (setup.py: models_dir = <models-dir>/<family-tag + model>).
+  shardFiles = [
+    "IQ3_XXS/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf"
+    "IQ3_XXS/Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf"
   ];
-  shardGlobs = [
-    "Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-*"
-    "mmproj-Qwen3.8-Flash-Next-BF16.gguf"
-  ];
+  mmprojFile = "mmproj-Qwen3.8-Flash-Next-BF16.gguf";
+  shardGlobs = [ "IQ3_XXS/*" "mmproj-Qwen3.8-Flash-Next-BF16.gguf" ];
 
   idleWrapper = pkgs.callPackage ../idle-wrapper { };
   strataApp = pkgs."strata-vision-app";
@@ -78,8 +78,11 @@ let
     rev_file=${modelsDir}.revision
     recorded=$(cat "$rev_file" 2>/dev/null || echo none)
     missing=0
-    for f in ${lib.concatStringsSep " " shards}; do
+    for f in ${lib.concatStringsSep " " shardFiles} ${mmprojFile}; do
       [ -f ${modelsDir}/$f ] || missing=1
+    done
+    for f in ${lib.concatStringsSep " " shardFiles}; do
+      [ -f ${modelsDir}/$f.done ] || missing=1
     done
     if [ "$recorded" = "${modelRevision}" ] && [ "$missing" = "0" ]; then
       echo "strata: ${model} @ ${modelRevision} present, skipping download"
@@ -92,6 +95,11 @@ let
       --revision ${modelRevision} \
       --local-dir ${modelsDir} \
       ${lib.concatStringsSep " " (lib.map (g: "--include \"$g\"") shardGlobs)}
+    # setup.py's own completion marks: without them its step 5 would not trust
+    # the pre-seeded shards and would re-download them under the first request
+    for f in ${lib.concatStringsSep " " shardFiles}; do
+      touch ${modelsDir}/$f.done
+    done
     echo ${modelRevision} > "$rev_file"
     echo "strata: download complete"
   '';
