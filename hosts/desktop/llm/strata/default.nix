@@ -169,6 +169,9 @@ in
         );
         Restart = "on-abnormal";
         RestartSec = "3";
+        # setup.py's step 1 shells out to a bare `nvidia-smi`; the service's
+        # default PATH lacks the driver package's bin.
+        EnvironmentPATH = [ "${config.hardware.nvidia.package}/bin" ];
         Environment = [
           "CUDA_VISIBLE_DEVICES=0"
           # The engine links the nixpkgs CUDA libs via rpath; this is the
