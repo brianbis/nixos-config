@@ -409,6 +409,22 @@ let
       costInCached = 0;
       costOutCached = 0;
     };
+    # Strata (dedicated engine, built from source: hosts/desktop/llm/strata): Qwen3.8-Flash-Next 125B MoE (Qwen4Exp) in the DASLab IQ3_XXS GSQ-RCO quant, 128K context, socket-activated idle wrapper on :18085 (weights via the strata-model-download oneshot).
+    # The served id is the server's fixed model name (strata serve/server.py); vision runs on the GPU (mmproj), so attachments work.
+    strata_qwen38 = {
+      providerName = "strata";
+      id = "qwen3.8-flash-next";
+      name = "Qwen3.8-Flash-Next IQ3_XXS (Strata)";
+      url = "http://127.0.0.1:18085";
+      context = 131072;
+      maxTok = 32768;
+      reason = true;
+      attachments = true;
+      costIn = 0;
+      costOut = 0;
+      costInCached = 0;
+      costOutCached = 0;
+    };
     deepseekPro = {
       providerName = "deepseek";
       id = "deepseek-v4-pro";
@@ -506,6 +522,9 @@ let
     sglang_ornith.name = "SGLang Ornith (local)";
     sglang_ornith.type = "openai-compat";
     sglang_ornith.api_key = "sk-local";
+    strata.name = "Strata (local)";
+    strata.type = "openai-compat";
+    strata.api_key = "sk-local";
     deepseek.name = "DeepSeek";
     deepseek.type = "openai-compat";
     deepseek.api_key = "sk-local";
@@ -698,6 +717,7 @@ let
       sglang_gemma4 = opencodeProvider "sglang_gemma4";
       sglang_lfm25 = opencodeProvider "sglang_lfm25";
       sglang_ornith = opencodeProvider "sglang_ornith";
+      strata = opencodeProvider "strata";
       deepseek = opencodeProvider "deepseek";
       nvidia = opencodeProvider "nvidia";
     };

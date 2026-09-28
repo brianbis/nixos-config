@@ -38,6 +38,7 @@ let
       muse: "${models.muse.providerName}/${models.muse.id}"
       pro: "${models.deepseekPro.providerName}/${models.deepseekPro.id}"
       flash: "${models.deepseekFlash.providerName}/${models.deepseekFlash.id}"
+      strata: "${models.strata_qwen38.providerName}/${models.strata_qwen38.id}"
 
     # Better autonomous coding workflow
     auto-commits: true

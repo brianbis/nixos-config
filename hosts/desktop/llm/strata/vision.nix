@@ -46,9 +46,14 @@ stdenv.mkDerivation {
   nativeBuildInputs = [ visionBin ];
 
   installPhase = ''
-    # copy the directory itself: the destination does not exist yet
-    # ('src/. -> dest/' form requires it to exist first)
+    # the builder does not pre-create $out (the engine derivation's
+    # 'mkdir -p $out/app/engine' masks this; be explicit here)
+    mkdir -p $out
     cp -a ${engine}/app $out/app
+    # -a preserved the frozen store modes of the engine input (dirs 555,
+    # files 444): give the copy its write bits back before adding the
+    # vision binary (final store state settles at 755/644 instead)
+    chmod -R u+w $out/app
     install -Dm755 ${visionBin}/bin/strata-vision $out/app/engine/strata-vision
     test -s $out/app/engine/strata-vision
   '';
