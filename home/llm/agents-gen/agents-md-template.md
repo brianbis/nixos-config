@@ -87,12 +87,15 @@ Every jailed tool (crush, opencode, aider, claude, dsh) has a **user** jail (`jc
 Playwright + Selenium run headless in-jail against pinned store binaries; `python3` imports both. Screenshots render real text (not tofu) because every jail exports `FONTCONFIG_FILE` (DejaVu + Noto CJK + Noto emoji) and `PLAYWRIGHT_BROWSERS_PATH` (pinned browser farm — chromium, headless-shell, firefox, ffmpeg; WebKit deliberately off).
 
 * Playwright (preferred): `python3 -c "from playwright.sync_api import ..."` or the `playwright` CLI; launch as usual — the env var wires the farm automatically. `page.screenshot()` is the UI-capture path.
-* Selenium: **bypass Selenium Manager explicitly or it downloads an unpinned vanilla firefox/geckodriver into `~/.cache/selenium` and the session dies 127** (the download needs ambient libstdc++ the jail lacks). Use the store binaries by explicit path:
-  `from selenium.webdriver import Firefox; from selenium.webdriver.firefox.service import Service; from selenium.webdriver.firefox.options import Options`
+* Selenium: **bypass Selenium Manager explicitly or it downloads an unpinned vanilla browser+driver into `~/.cache/selenium` and the session dies (exit 127 in the jail — the download needs ambient libs the jail lacks)**. Use the store binaries by explicit path — an explicit `Service(path)` is what disables the manager:
+  Firefox: `from selenium.webdriver import Firefox; from selenium.webdriver.firefox.service import Service; from selenium.webdriver.firefox.options import Options`
   `opts = Options(); opts.add_argument("-headless"); opts.binary = shutil.which("firefox")`
   `d = Firefox(options=opts, service=Service(shutil.which("geckodriver")))`
-  The explicit `Service` path is what disables the manager; in selenium 4.40 `set_capability("moz:firefoxOptions", ...)` is clobbered by `FirefoxOptions` internals — use `add_argument`.
-* No X server: always `-headless` / `headless=True`. No chromedriver in this nixpkgs pin (source build requiring big-parallel) — run chromium flows through playwright, not selenium.
+  Chromium: `from selenium.webdriver import Chrome; from selenium.webdriver.chrome.service import Service; from selenium.webdriver.chrome.options import Options`
+  `opts = Options(); opts.add_argument("--headless=new"); opts.binary_location = shutil.which("chromium")`
+  `d = Chrome(options=opts, service=Service(shutil.which("chromedriver")))` — store chromium and chromedriver are built from the same source in this pin, so versions always agree.
+  In selenium 4.40 the `*Options` classes clobber `set_capability("moz:firefoxOptions"/"goog:chromeOptions", ...)` with their own internals — pass flags via `add_argument`; firefox uses `.binary`, chrome has only `.binary_location`.
+* No X server: always `-headless` / `headless=True` (chrome: `--headless=new`). Both selenium engines render UI capturing via `driver.save_screenshot(...)`.
 
 ## Code Knowledge Graphs (graphify / graphlore)
 

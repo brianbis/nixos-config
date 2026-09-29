@@ -295,9 +295,13 @@ let
     # python3 (imports) and the playwright CLI (that env's bin) share one closure — no standalone
     # python envs to drift out of sync.
     { name = "firefox"; pkg = pkgs.firefox; }
-    # WebDriver (selenium -> firefox). chromedriver is deliberately absent: this nixpkgs pin only
-    # builds it from chromium source with big-parallel, and the farm's pinned chromium covers the
-    # chromium E2E flow via playwright.
+    # Full chromium + chromedriver (the selenium -> chromium engine pair): built from the same
+    # chromium source in this pin, so their versions always agree. chromium doubles as the browser
+    # selenium drives; the playwright farm below still carries the driver-matched chromium for
+    # playwright's own launches.
+    { name = "chromium"; pkg = pkgs.chromium; }
+    { name = "chromedriver"; pkg = pkgs.chromedriver; }
+    # WebDriver (selenium -> firefox).
     { name = "geckodriver"; pkg = pkgs.geckodriver; }
     # Pinned playwright browser binaries (chromium + headless-shell, firefox, ffmpeg): the nixpkgs
     # playwright package ships the driver only; playwright resolves the executable via
