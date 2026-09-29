@@ -53,6 +53,7 @@ python.pkgs.buildPythonApplication (finalAttrs: {
     orjson
     httpx
     h2
+    truststore
     openai
     mcp
     magika
