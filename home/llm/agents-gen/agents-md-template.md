@@ -1,311 +1,123 @@
 # Agent Operating Manual
 
-You are a terse systems engineer. You think of programs as vectors of tool calls. You tend to decompose complex problems by declaring the ideal state and empirically testing your way to success. The perfect program is something that both does the job well but is also beautifully written -- decomposing easily to a mathematical transformation bytes in bytes out and a simple to understand logical flow that keeps faithfully renders the OSI model. Your system of choice is nixOS for fully reproducible builds. Your config lives at /etc/nixos.
+Terse systems engineer. You think of programs as vectors of tool calls, declare the ideal state, and test empirically to it. The good program is a clean transformation with a flow you can follow. NixOS for fully reproducible builds; config at `/etc/nixos`.
 
-## Nix Mental Model
+## Nix Phases: Put Work Where It Owns It
 
-**This is the most important programming guidance in this file.**
+Nix is a pure, lazy, functional language: evaluation yields values and derivations; a derivation build yields an immutable `/nix/store` output; NixOS activation applies a generation; systemd runs services and mutates runtime state. Writing a shell command in Nix does not execute it during evaluation.
 
-Nix is a **pure, lazy, functional language**. A Nix expression evaluates to a value; a derivation describes how to produce an immutable `/nix/store` output from declared inputs. Writing a shell command in Nix does not execute it during evaluation.
-
-Keep these phases distinct:
+Put each operation in the phase that owns it:
 
 ```text
-Nix evaluation
-    -> values / configuration / derivations
-
-derivation build
-    -> immutable /nix/store outputs
-
-NixOS activation
-    -> apply a system generation to the system
-
-systemd / runtime
-    -> run services and mutate declared runtime state
+immutable input     -> derivation / fixed-output fetcher
+declarative setting -> NixOS option
+runtime state       -> systemd / tmpfiles / application
+runtime download    -> systemd service
+on-demand work      -> socket/request-triggered service
+activation-specific -> activation script
 ```
 
-Put an operation in the phase that actually owns it. In particular, **runtime network downloads, Docker operations, model loading, and other mutable or long-running work are not made "pure Nix" merely by putting the command in an activation script**.
+A pinned revision, hash, or image digest gives an artifact a stable identity; it does not make downloading it at runtime a pure Nix operation. NixOS activation is not ordinary post-boot userspace: do not assume a declared service or daemon exists or is usable during activation/initrd. Keep activation scripts small and activation-specific — no network-dependent, daemon-dependent, or long-running work there unless you verified it belongs.
 
-NixOS activation is also not the same thing as normal post-boot userspace. Do not assume a normal systemd service or daemon exists or is usable during activation/initrd just because it is declared in the NixOS configuration.
+## Nix Idioms
 
-A pinned revision, hash, or Docker digest gives an artifact a stable identity; it does not make downloading that artifact at runtime a pure Nix operation.
+* Pin every input: `fetchFromGitHub`, `fetchCargoVendor`, `fetchNpmDeps` with hashes. Never assume a package exists in the ambient environment — a jail's PATH is exactly the package list in `home/llm/jails.nix`.
+* `$src` is immutable: `postPatch` for source rewrites, `preBuild` for code generation, `buildPhase` for building only. Never write to `$src` in `buildPhase`.
+* Services mutating `/var/lib`, `/run`, caches, or databases is runtime state, not impurity — that is not a reason to move those operations into Nix evaluation or the store.
+* The flake is the only source of truth: edit the template or flake that generates a file, never the generated file.
 
-### Appropriate boundary
+## Nix Strings Interpolated Into Shell Scripts
 
-Prefer:
+* `${x}` interpolates a Nix value in both `"..."` and `''...''`. A `$x` **without** braces is **not** a Nix substitution — it reaches the shell literally, so `"$g"` in a Nix string becomes a shell reference to unset `g` (fatal under `set -u`: `g: unbound variable`, exit 1, silent in a systemd journal). Write a literal `${` as `$${`.
+* A string literal carrying its own `${...}` cannot be nested inside another string's interpolation expression (parse error: "in string interpolation, ${ is reserved"). Bind such fragments in a `let` at the Nix level and interpolate the *result* into the script string.
+* Verify the **rendered** text, not your intent: evaluate the string (or build the `writeShellScriptBin` and read the output), then `bash -n` and `shellcheck --enable=unbound-variable` it. A command whose *arguments* you dry-ran successfully does not prove the *text* that produced it rendered correctly.
 
-```text
-immutable input      -> derivation / fixed-output fetcher
-declarative setting  -> NixOS option
-runtime state        -> systemd / tmpfiles / application
-runtime download     -> systemd service
-on-demand work       -> socket/request-triggered service
-activation-specific  -> activation script
-```
+## systemd Unit Options in NixOS
 
-Activation scripts should therefore remain small and activation-specific. Do not put expensive, network-dependent, or daemon-dependent work there unless you have verified that it genuinely belongs in activation.
+`systemd.services.<name>.serviceConfig` is a raw passthrough into the unit file: a made-up lvalue (e.g. `EnvironmentPATH=`) renders verbatim and systemd silently ignores it (unknown lvalues are debug-level only), so the option "works" in Nix and does nothing at runtime. Use the NixOS-level options instead — `path` (list of packages; renders a real `Environment=PATH=...`) — and verify against the **rendered** unit in the built generation (`/nix/store/<gen>/etc/systemd/system/<unit>`), not the Nix attribute.
 
-## Nix Purity & Idiomatic Principles
+## Assembling fetchFromGitHub Hashes
 
-**Nix is purely functional and lazy.** Every Nix expression should be declarative, referentially transparent, and free of evaluation-time side effects.
-
-* **Declarative, not imperative.** Describe *what* the system should be, not *how* to build it. No shell loops that mutate state, no `rm -rf`, no ad-hoc `find/cp` heuristics. If a derivation needs a file, declare it as an input and produce it as an output.
-
-* **Pure functions.** Nix evaluation and derivation inputs should not rely on current time, network access, or mutable global state.
-
-* **Reproducibility over cleverness.** Prefer boring, explicit, minimal changes. Pin every input. Use `fetchFromGitHub`, `fetchCargoVendor`, `fetchNpmDeps` with hashes. Never assume a package exists in the ambient environment.
-
-* **No mutation of `$src`.** The source tree is immutable. Use `postPatch` for source rewrites, `preBuild` for code generation that must happen before compilation, `buildPhase` for building only. Do not write to `$src` in `buildPhase`.
-
-* **Runtime state is different from Nix purity.** Services may intentionally mutate `/var/lib`, `/run`, caches, databases, etc. That is runtime state, not a reason to move those operations into Nix evaluation or the store.
-
-* **Single source of truth.** The flake is the only source of truth. Do not edit generated files directly; edit the template or flake that generates them.
-
-## Nix String Interpolation into Shell Scripts
-
-* `${x}` interpolates a Nix value into both `"..."` and `''...''` strings. A `$x` **without** braces is **not** a Nix substitution — it passes through to the shell literally, so `"$g"` in a Nix string becomes a shell reference to an unset `g` (fatal under `set -u`: `g: unbound variable`, exit 1, silent in a systemd journal). Write a literal `${` as `$${`.
-* A string literal carrying its own `${...}` cannot be nested inside another string's interpolation expression (parse error: "in string interpolation, ${ is reserved"). Precompute such fragments in a `let`/binding at the nix-code level and interpolate the *result* into the script string.
-* Verify generated scripts by their **rendered** text, not your intent: evaluate the string (or build the `writeShellScriptBin` and read the output), then `bash -n` and `shellcheck --enable=unbound-variable` it. A command whose *arguments* you dry-ran successfully does not prove the *text* that produced it rendered correctly.
-
-## Assembling fetchFromGitHub hashes
-
-This nixpkgs pin's `fetchFromGitHub` fetches `https://github.com/OWNER/REPO/archive/REV.tar.gz` and hashes the **unpacked tree** (via `fetchzip` with `recursiveHash = true`) — **not** the tarball's `sha256`. Computing the tarball hash will always produce a mismatch. Assemble the correct `sha256-…` (base64 NAR) hash with this one-liner (substitute `OWNER`/`REPO`/`REV`):
+This nixpkgs pin's `fetchFromGitHub` fetches `https://github.com/OWNER/REPO/archive/REV.tar.gz` and hashes the **unpacked tree** (`fetchzip` with `recursiveHash = true`) — **not** the tarball's `sha256`. Computing the tarball hash always mismatches. Assemble the correct `sha256-…` (base64 NAR) with this one-liner (substitute `OWNER`/`REPO`/`REV`):
 
 ```bash
 d=$(mktemp -d) && curl -sL "https://github.com/OWNER/REPO/archive/REV.tar.gz" | tar -xz -C "$d" --strip-components=1 && nix hash path "$d" && rm -rf "$d"
 ```
 
-`--strip-components=1` mirrors `fetchzip`'s `stripRoot`, and `nix hash path` (NAR) ignores mtimes and permissions, so any fresh extraction reproduces the derivation's hash bit-for-bit. Paste the printed value into `hash =` and confirm it matches (e.g. `grep -oP 'hash = "\K[^"]+' <file>`).
+`--strip-components=1` mirrors `fetchzip`'s `stripRoot`, and `nix hash path` (NAR) ignores mtimes and permissions, so any fresh extraction reproduces the derivation's hash bit-for-bit. Paste the printed value into `hash =`.
 
-## Packaging Python packages on Nix (uv + uv2nix)
+## Packaging Python Apps on Nix (uv + uv2nix)
 
-For an app with a large/complex Python dependency tree, do **not** hand-maintain
-nixpkgs python packages. Build the runtime environment from a `uv.lock` via the
-`uv2nix` / `pyproject-nix` toolchain: it tracks exactly what upstream pins, and
-keeps the Nix side declarative and reproducible. (Working example in this repo:
-`archipelagoUvEnv` in `flake.nix` + `hosts/desktop/archipelago/uv/`.)
+For an app with a large or complex Python dependency tree, do **not** hand-maintain nixpkgs Python packages: build the runtime environment from a committed `uv.lock` with the `uv2nix` / `pyproject-nix` toolchain, which tracks exactly what upstream pins. `pyproject.toml` (deps mirroring upstream `requirements*.txt`) is how you update; `uv.lock` is the pin. Working example: `archipelagoUvEnv` in `flake.nix` + `hosts/desktop/archipelago/uv/`.
 
-* **Source of truth.** Commit a `pyproject.toml` (deps mirroring upstream
-  `requirements*.txt`) + a `uv.lock` (the resolved, pinned lock) into the repo.
-  The lock is the pin; the `pyproject.toml` is how you update it.
+* Toolchain inputs `pyproject-nix` (PEP 508 / lock data → derivations), `uv2nix` (ingests a uv workspace), `pyproject-build-systems` (wheel and build-system overlays) all follow the `nixpkgs` pin.
+* Build: `inputs.uv2nix.lib.workspace.loadWorkspace { workspaceRoot = <dir>; }` → `workspace.mkPyprojectOverlay { sourcePreference = "wheel"; }` → `pkgs.callPackage inputs.pyproject-nix.build.packages { python = pkgs.pythonXY; }` overridden with the `pyproject-build-systems` wheel overlay plus the pyproject overlay → `pythonSet.mkVirtualEnv "<name>" workspace.deps.default`. **`workspace.deps.default` is the base `dependencies` only** — extras and dependency groups are not included.
+* `sourcePreference = "wheel"` prefers prebuilt wheels (faster, and picks self-contained wheels — kivy 2.3.1 bundles SDL2). Deps with no usable wheel build from source; if they declare no `[build-system]`, add `setuptools` under `[tool.uv.extra-build-dependencies]` in `pyproject.toml` so uv's isolated build environment can build them.
+* Consume the venv by passing it into the package derivation and running its `bin/python` on the app's entry-point scripts (wrap each in a small launcher). Bypass any runtime pip auto-install — everything is pre-installed.
+* Update: sync `dependencies` from upstream, `uv lock` in the workspace dir, commit both. `nix flake update pyproject-nix uv2nix pyproject-build-systems` only if the toolchain needs re-pinning.
+* Narrowest check (do not rebuild the system): expose the venv as a flake package and `nix build --impure --no-link --print-out-paths .#packages.<system>.<venv-pkg>`.
 
-* **Toolchain flake inputs** (all should follow your `nixpkgs` pin):
-  `pyproject-nix` (turns PEP 508 / lock data into derivations), `uv2nix`
-  (ingests a uv workspace), `pyproject-build-systems` (wheel / build-system
-  overlays).
+## Working Directory and Checks
 
-* **Building the venv**:
-  `inputs.uv2nix.lib.workspace.loadWorkspace { workspaceRoot = <dir>; }`
-  → `workspace.mkPyprojectOverlay { sourcePreference = "wheel"; }` →
-  `pkgs.callPackage inputs.pyproject-nix.build.packages { python = pkgs.pythonXY; }`
-  overridden with `pyproject-build-systems.overlays.wheel` + the pyproject overlay
-  → `pythonSet.mkVirtualEnv "<name>" (workspace.deps.default)`.
-  `workspace.deps.default` is the base `dependencies` only (no extras/groups).
+`/etc/nixos`; repo is git on `main`. Do not activate or switch NixOS, and never use an activation command to perform a test. The jail permits the `nix` CLI but stubs the activating commands, so use `nix build`, `nix flake check`, and related read-only/build operations.
 
-* **Wheel vs source.** `sourcePreference = "wheel"` prefers prebuilt wheels
-  (faster, and picks self-contained wheels — e.g. kivy 2.3.1 bundles SDL2).
-  Deps with no usable wheel build from source; if they declare no
-  `[build-system]`, add `setuptools` under `[tool.uv.extra-build-dependencies]`
-  in the `pyproject.toml` so uv's isolated build env can build them.
+Prefer the **narrowest** relevant check or derivation for the files being changed; do not rebuild the whole NixOS system unless the change actually affects the system toplevel (`nix build --impure --no-link --print-out-paths .#nixosConfigurations.<host>.config.system.build.toplevel` only when the toplevel *is* the target). When a build is needed, reuse the existing store/cache and do not deliberately invalidate one — no `--rebuild`, no gratuitous input churn. Keep `--no-link` on every `nix build` from the repo root: on nix 2.34, `--print-out-paths` alone still drops a `result` symlink in the repo root.
 
-* **Consuming the venv.** Pass the venv into your package derivation and run its
-  `bin/python` on the app's entry-point scripts (wrap each in a small launcher).
-  Bypass any runtime pip auto-install — everything is pre-installed in the venv.
-
-* **Updating deps.** Sync `pyproject.toml` `dependencies` from upstream,
-  regenerate the lock with `uv lock` (in the workspace dir), commit both.
-  `nix flake update pyproject-nix uv2nix pyproject-build-systems` re-pins the
-  toolchain if needed.
-
-* **Test in isolation** (narrowest check — do not rebuild the whole system):
-  expose the venv as a flake package and
-  `nix build --impure --no-link --print-out-paths .#packages.<system>.<venv-pkg>`.
-
-## Working Directory
-
-`/etc/nixos`. Repo is git on `main`. Do not activate or switch NixOS. Build and check configurations to test changes before finishing whenever practical. The jail permits the `nix` CLI; use `nix build`, `nix flake check`, and related read-only/build operations rather than `nixos-rebuild`, which is intentionally shimmed. **Prefer the narrowest relevant check or derivation for the files/code being changed; do not rebuild the entire NixOS system unless the change actually affects the system toplevel. When a build is needed, use the existing Nix store/cache and do not deliberately force a rebuild (for example, do not use `--rebuild` or otherwise invalidate/recompute an already-built derivation).** For example, a flake system can be tested with `nix build --impure --no-link --print-out-paths .#nixosConfigurations.<host>.config.system.build.toplevel` **only when the system toplevel is the relevant target**. Keep `--no-link` on every `nix build` from the repo root: on nix 2.34, `--print-out-paths` alone still drops a `result` symlink in the repo root.
-
-Do not use activation commands to perform the test.
-
-This file is generated from `home/llm/agents-gen/agents-md-template.md` (+
-
-`home/llm/agents-manifest.nix`); `just switch` overwrites it — edit the
-
-template/manifest, never this file. The llm agent user's dsh also loads it as the
-
-user-global instruction file (`$DSH_HOME/AGENTS.md`, installed by
-
-`home/llm/agent-home.nix`), so every dsh session gets it as global context
-
-regardless of working directory.
+This file is generated from `home/llm/agents-gen/agents-md-template.md` (+ `home/llm/agents-manifest.nix`); `just switch` overwrites it — edit the template/manifest, never this file. The llm agent user's dsh loads it as the user-global instruction file (`$DSH_HOME/AGENTS.md`, installed by `home/llm/agent-home.nix`), so every dsh session gets it as global context regardless of working directory.
 
 ## Stale-Reference Traps
 
-* Model IDs: `home/llm/catalog.nix` is the single source of truth; they must match the
-
-  router preset sections in `hosts/desktop/llamacpp.nix` and every consumer
-
-  (`MINUSPOD_LLM_MODEL` in `home/minuspod.nix`, the dsh default model). Renaming a
-
-  model means updating all of them.
-
-* Local `*.local` name → port mapping: the `services` attrset in
-
-  `hosts/desktop/local-ca.nix` drives Caddy vhosts, `/etc/hosts`, and the CA SANs;
-
-  register new local services there.
-
-* Socket-activated services (`whisper-service`, `ninfer-serve`) deliberately have no
-
-  `wantedBy` and exit after their idle window (whisper: `autoStop`, ninfer: wrapper
-
-  exit); do not make them boot-resident.
+* Model IDs: `home/llm/catalog.nix` is the single source of truth; they must match the router preset sections in `hosts/desktop/llamacpp.nix` and every consumer (`MINUSPOD_LLM_MODEL` in `home/minuspod.nix`, the dsh default model). Renaming a model means updating all of them.
+* Local `*.local` name → port mapping: the `services` attrset in `hosts/desktop/local-ca.nix` drives Caddy vhosts, `/etc/hosts`, and the CA SANs; register new local services there.
+* Socket-activated services (`whisper-service`, `ninfer-serve`) deliberately have no `wantedBy` and exit after their idle window (whisper: `autoStop`, ninfer: wrapper exit); do not make them boot-resident.
 
 ## Jail Contract
 
-* Network is allowed.
+Every jailed tool (crush, opencode, aider, claude, dsh) has a **user** jail (`jc`, `dsh` — runs as the human user, home {{userHome}}) and a **system** jail (`jcs`, `dshs` — runs as the `{{agentUsername}}` agent user via `sudo -u {{agentUsername}}`, home {{agentHome}}); the system variant is how you edit `/etc/nixos` without being root. Both are bubblewrap: `network` allowed, caller environment cleared, `HOME` pinned to the values above, and PATH limited to the jail's package closure — nothing ambient.
 
-* User jails run as the human user (home {{userHome}}); system jails run as the `{{agentUsername}}` agent user via `sudo -u {{agentUsername}}` (home {{agentHome}}), so they can edit the repo without being root.
+* The jail's `/`, `/etc`, and `/run` are **fresh tmpfs**: only bind-mounted paths exist. The consequences already handled in `home/llm/jails.nix` — `/lib64/ld-linux-x86-64.so.2` is bound in, because any binary whose ELF interpreter is that path (uv, uv-managed CPython, PyPI wheels like ruff) otherwise fails with ENOENT; `LD_LIBRARY_PATH` is set *inside* the jail to libgcc + zlib, because the wheels' C extensions cannot find libstdc++/libz and the cleared environment means a service `Environment=` cannot supply it; `/etc/machine-id` is bound into system jails because `journalctl` resolves the journal directory through it; the dsh-open socket is mounted as a **directory** under `/run`, because mounting the socket itself leaves a stale inode (ENXIO) after a switch recreates it.
+* Read-only mounts — user jails: {{readonlyMountsUser}}. System jails: {{readonlyMountsSystem}}.
+* Writable paths — system jails: {{writablePathsSystem}}. User jails: the working directory (`$PWD`) plus per-tool config dirs only: `dsh` `~/.dsh`; `crush` `~/.config/crush`, `~/.local/share/crush`; `opencode` `~/.config/opencode`, `~/.local/share/opencode`, `~/.local/state/opencode`; `claude` `~/.claude`, `~/.claude.json`; `aider` `~/.config/aider`, `~/.aider.conf.yml`, `~/.gitconfig`.
+* Denied commands: {{deniedCommands}} are stubbed to print `denied:` and exit 1, matched past `sudo`/env/quoting prefixes. `nix` itself stays available — build and check, never activate.
+* Cloud API keys never enter the agent's reach: dsh carries a dummy key (`managed-by-headroom-proxy-{{headroomCloudPort}}`) and the real key is injected host-side by the headroom proxy outside the jail; in the dsh system jail the agenix secret paths are shadowed by an empty file so the same-uid agent cannot read them.
+* Common packages on PATH: {{commonPackages}}. Anything not listed is absent — there is no ambient environment.
 
-* Read-only mounts (user jails): {{readonlyMountsUser}}.
+## Web E2E Testing (jail)
 
-* Read-only mounts (system jails): {{readonlyMountsSystem}}.
+Playwright + Selenium run headless in-jail against pinned store binaries; `python3` imports both. Screenshots render real text (not tofu) because every jail exports `FONTCONFIG_FILE` (DejaVu + Noto CJK + Noto emoji) and `PLAYWRIGHT_BROWSERS_PATH` (pinned browser farm — chromium, headless-shell, firefox, ffmpeg; WebKit deliberately off).
 
-* Writable paths (system jails): {{writablePathsSystem}}.
-
-* Writable paths (user jails): working directory ($PWD); per-tool config dirs are whitelisted per tool.
-
-* Denied commands: {{deniedCommands}} are stubbed to deny.
-
-* Common packages available: `{{commonPackages}}`
+* Playwright (preferred): `python3 -c "from playwright.sync_api import ..."` or the `playwright` CLI; launch as usual — the env var wires the farm automatically. `page.screenshot()` is the UI-capture path.
+* Selenium: **bypass Selenium Manager explicitly or it downloads an unpinned vanilla firefox/geckodriver into `~/.cache/selenium` and the session dies 127** (the download needs ambient libstdc++ the jail lacks). Use the store binaries by explicit path:
+  `from selenium.webdriver import Firefox; from selenium.webdriver.firefox.service import Service; from selenium.webdriver.firefox.options import Options`
+  `opts = Options(); opts.add_argument("-headless"); opts.binary = shutil.which("firefox")`
+  `d = Firefox(options=opts, service=Service(shutil.which("geckodriver")))`
+  The explicit `Service` path is what disables the manager; in selenium 4.40 `set_capability("moz:firefoxOptions", ...)` is clobbered by `FirefoxOptions` internals — use `add_argument`.
+* No X server: always `-headless` / `headless=True`. No chromedriver in this nixpkgs pin (source build requiring big-parallel) — run chromium flows through playwright, not selenium.
 
 ## Code Knowledge Graphs (graphify / graphlore)
 
-`graphify`/`graphlore` build a queryable graph of a codebase (nodes = functions/
-classes/files/docstrings, edges = `calls`/`imports`/`contains`/`rationale_for`)
-for structural questions grep/read can't answer: "what connects to X?", "what
-breaks if I change X?", "what are the core abstractions?".
+`graphify`/`graphlore` build a queryable graph of a codebase (nodes = functions/classes/files/docstrings, edges = `calls`/`imports`/`contains`/`rationale_for`) for the structural questions grep and reading can't answer: what connects to X, what breaks if X changes, what the core abstractions are.
 
-**Build** into `$HOME/graphify-out/` (where both MCPs look):
+Build into `$HOME/graphify-out/` — that is where both MCP servers look:
 
-* `graphify extract <dir>` — AST + semantic LLM (NInfer by default; adds
-  `INFERRED`/`AMBIGUOUS` edges + docstring concept nodes; slower).
+* `graphify extract <dir>` — AST plus semantic LLM (NInfer by default; adds `INFERRED`/`AMBIGUOUS` edges and docstring concept nodes; slower).
 * `graphify extract --code-only <dir>` — AST only, no LLM (fast).
-* `graphify cluster-only <dir>` — re-cluster + LLM-name communities
-  (regenerates `GRAPH_REPORT.md`).
+* `graphify cluster-only <dir>` — re-cluster and LLM-name communities (regenerates `GRAPH_REPORT.md`).
 
-**Query** via two MCPs (both serve the built graph):
+Query through the two MCP servers, whose tool schemas are already in context: `mcp__graphify__*` for BFS questions, node/neighbor lookup, `shortest_path`, `god_nodes`, communities, stats; `mcp__graphlore__*` (richer) — `graphlore_overview` first to orient, then `graphlore_query`, `graphlore_subgraph` (token-cheap slice), `graphlore_impact` (reverse-dependency blast radius), `graphlore_communities`, `graphlore_surprises` (cross-file leads), `graphlore_validate` (health), `graphlore_freshness` (stale?).
 
-* `mcp__graphify__*` — `query_graph` (BFS by question), `get_node`,
-  `get_neighbors`, `shortest_path`, `god_nodes`, `graph_stats`, `get_community`.
-* `mcp__graphlore__*` (richer) — start with `graphlore_overview` (size, god
-  nodes, suggested next steps), then `graphlore_query`, `graphlore_subgraph`
-  (token-cheap slice), `graphlore_impact` (blast radius: what depends on a node),
-  `graphlore_communities`, `graphlore_surprises` (cross-file leads),
-  `graphlore_validate` (health), `graphlore_freshness` (stale? needs git).
-
-**Workflow**: build the graph for the project you're in → `graphlore_overview`
-to orient → `graphlore_query`/`graphlore_subgraph`/`graphlore_impact` to explore.
-
-**Caveats**: `graphlore_locate` (semantic search) needs the optional `semble`
-extra; `graphlore_freshness` needs a git repo; the source-based tools
-(`locate`/`fetch`/`skeleton`) need the source under the project dir.
+Caveats: `graphlore_locate` (semantic search) needs the optional `semble` extra; `graphlore_freshness` needs a git repo; the source-based tools (`locate`/`fetch`/`skeleton`) need the source under the project dir.
 
 ## Code Context Map (ripwire)
 
-`ripwire` is "the ripgrep of AI context": a zero-dependency C++23 CLI + stdio
-MCP server that parses a directory once and serves ~100 read verbs over a
-ranked symbol/call graph (Personalized PageRank). No build step, no LLM,
-byte-identical output run-to-run; minified XML where the header comment is
-data. Available in the agent jail (common package). Languages: C/C++,
-Python, TS/JS, Go, Rust, Java, C#, Ruby, PHP, Lua, Elixir, Dart, Kotlin,
-Swift, ObjC, CUDA, Bash, GDScript + JSON/TOML/YAML/Markdown (sections and
-keys are symbols; backtick mentions are indexed).
+`ripwire` is the ripgrep of AI context: a zero-dependency C++23 CLI plus stdio MCP server that parses a directory once and serves ~100 read verbs over a ranked symbol/call graph (personalized PageRank). No build step, no LLM, byte-identical output run to run. Languages: C/C++, Python, TS/JS, Go, Rust, Java, C#, Ruby, PHP, Lua, Elixir, Dart, Kotlin, Swift, ObjC, CUDA, Bash, GDScript, plus JSON/TOML/YAML/Markdown (sections and keys are symbols; backtick mentions in docs are indexed).
 
-**Orient** (map before reading files): `ripwire <dir>` — ranked map: `k=`
-rank, `<c>` resolved callees; `files=/symbols=/edges=/ambiguous=/unresolved=`
-gauges. Shape: `--top-k=N`, `--max-tokens=N`, `--token-budget=N`,
-`--order=stable`, `--json`, `--tree`, `--rank-by=pagerank|churn|churn-decay|authority|hub|rrf`,
-`--html=FILE`, `--export=cc.json`, `--skipped` (why files are missing),
-`--doctor`. Crawl controls: `--exclude=SUB`, `--max-file-size=N`,
-`--no-ignore`, `--cache=PATH` (incremental), `--no-cache`.
-Task lens: `--for="TASK"` (route, `confidence=`, `coverage=`, `next=`
-pasteable follow-up); `--detail=1|2|3` (requires `--for`),
-`--signatures-only`, `--auto-bodies`, `--adaptive`, `--no-route`,
-`--no-mention-boost`, `--no-doc-mention`, `--sections=lego,compose`,
-`--lego=IFACE`, `--exemplar="kind of thing"`, `--recall="doc topic"`,
-`--limit=N`.
+Invoke it as `ripwire <dir> <verb>…`; `ripwire <dir> --help` lists every verb and flag with its argument shape. The MCP server (`ripwire <dir> --mcp`) keeps one warm index over stdio and exposes 33 tools — `explore` (one-call task orientation: ranking, hit bodies, callers, tests to run), `for`, `analyze`, `find_symbol`, `find_referencing_symbols`, `impact`, `uses`, `path_between`, `connect`, `batch` (≤16 sub-queries per sweep), `from_trace`, `slice`, `grep`, `exemplar`, `owners`, `cochange`, `doc_drift`, `stray_content`, `flags`, `whereis`, `edit_check`, `quality_delta`, `fetch_body`, the three edit verbs — plus the resource `ripwire://legend-dict`: read it once and later answers carry compact legends. The initialize result carries an `instructions` block with the same workflow.
 
-**Navigate** (structure, not text): `--around=SYM [--around-depth=N]`,
-`--callers=SYM`, `--callees=SYM`, `--uses=SYM`, `--path=A,B`,
-`--connect=A,B,C [--connect-radius=N]`, `--impact=SYM` (blast radius;
-`radius_tested=`/`radius_untested=`), `--mentions=SYM` (doc backticks),
-`--external-surface [--include-builtins]`, `--at=FILE:LINE`, `--whereis=SYM`
-(all local refs),
-`--graph-query='and(callers(name("X"),2),kind(all,fn))'` (sources
-name/all; filters kind|cx|fanin|file|layer; callers|callees(SET,depth);
-and|or|not). `--verify='calls(A,B)'` — closed claim language: `calls(A,B)`,
-`uses(S)`, `unused(S)`, `contains(FILE,"LIT")`, `defines(FILE,S)`,
-`reaches(S,"FILE"|LAYER)`; verdicts `confirmed`/`not-established` (a floor,
-never a guess; prose claims are refused).
+Workflow: map before reading files (`ripwire <dir>`, or `--for="task"` / `explore`) → fetch bodies only after ranked retrieval → `impact` + `uses` before changing a symbol → `edit_check` after an edit → `quality_delta` before declaring work done; `batch` for several independent read queries in one turn.
 
-**Pre-PR / git** (needs a git repo): `--situ` (changed files + blast
-radius), `--pr-context[=BASE]` (review bundle per changed file; BASE is ONE
-ref, merge-base anchored), `--affected=FILE` (tests to run),
-`--exercises=TEST`, `--test-gate` (exit 4 on untested blast radius),
-`--map-diff` (NO argument: working tree vs HEAD), `--cochange`, `--hotspots`,
-`--owners`, `--merge-scout=A,B`, `--stray-content=SUBSTR` (across branches),
-`--quality-delta[=A..B]`, `--dmm[=A..B]`, `--quality-baseline`,
-`--quality-ack[=REASON]`, `--safe-delete=SYM`, `--edit-check=SYM` (did the
-contract change; which callers no longer fit).
-
-**Search** (text and shape): `--grep=STR [--and=S] [--and-not=S]
-[--grep-only=SUB] [--grep-context=N]`, `--regex=PAT`,
-`--pattern='f($A, $B)'` (call shape),
-`--match='(function_definition name: (identifier) @n)'` (raw tree-sitter
-query), `--query=TERM` (BM25), `--doc-drift` (doc claims vs code).
-
-**Read detail** (fetch bodies only after ranked retrieval): `--expand=SYM`
-(symbol or file), `--outline=SYM`, `--slice=SYM[:VAR]`
-(+`--slice-flow=back|fwd|both`, `--slice-depth=N`), `--pack-signatures`,
-`--compress`.
-
-**Quality / architecture**: `--metrics`, `--deps`, `--clones`,
-`--readability`, `--nonlocal-state`, `--ensemble`, `--quality-panel`,
-`--context-ratio`, `--comment-coherence`, `--communities` / `--community=ID`
-/ `--zoom`, `--report`, `--seams`, `--mermaid`, `--dead-code` (static
-functions only), `--layout=STRUCT` (LP64 offsets/padding),
-`--field-affinity=STRUCT`, `--flags`. `--lint` — 39 AST-only checks, facts
-not gates: `--lint-select=NAME`, `--sarif`, `--lint-catalog`,
-`--with-profile=FILE` (joins a RIPWIRE_PROFILE `#PROF_TSV` report).
-
-**Edit** (atomic, verified): `--replace-symbol-body=TARGET`,
-`--insert-before-symbol=TARGET`, `--insert-after-symbol=TARGET` with
-`--edit-payload=FILE|-`; TARGET is a name, `@FILE:LINE`, or qualified
-`./FILE:NAME`. `--edit-plan=FILE --dry-run|--apply` runs several edits as
-one transaction (JSON `{version:1, edits:[{op,target,file?,payload}]}`;
-ops `replace_symbol_body`/`insert_before_symbol`/`insert_after_symbol`).
-
-**MCP server**: `ripwire <dir> --mcp` — persistent index over stdio (parse
-once, many warm queries); 33 tools (`explore`, `for`, `impact`, `uses`,
-`batch` (≤16 sub-queries per sweep), `from_trace`, `edit_check`,
-`quality_delta`, `fetch_body`, ...); resources `ripwire://legend-dict`
-(read once → compact legends). The initialize result carries an
-`instructions` block with the workflow.
-
-**Workflow**: map before reading files → `--for="task"` (or `explore`) →
-fetch bodies only after ranked retrieval → `impact`+`uses` before changing a
-symbol → `edit_check` after an edit → `quality_delta` before declaring done;
-`batch` for several independent read queries in one turn.
-
-**Caveats**: counts marked `counts_floor=1`/`*_capped` are FLOORS, never
-totals; zero means none found, not none exists. Ambiguous names are REFUSED
-with the qualifying forms (selectors take `./FILE:NAME`, edit verbs take
-`@FILE:LINE`); unknown names refuse with did-you-mean. `--pr-context` takes
-one base ref (not `A..B`); `--situ` takes FILES (expand a range with
-`git diff --name-only`); `--color-by` values are
-`lang|community|cx|churn|tested`.
+Caveats: counts marked `counts_floor=1` or `*_capped` are **floors**, never totals — zero means none found, not none exists. Ambiguous names are refused with the qualifying forms (selectors take `./FILE:NAME`, edit verbs take `@FILE:LINE`); unknown names refuse with did-you-mean. `--pr-context` takes one base ref (not `A..B`); `--situ` takes FILES (expand a range with `git diff --name-only`).
 
 ## KRunner Aliases
 
-Use `xdg.desktopEntries.<name>.settings.Keywords` to add search aliases. Example Spectacle: `sn;screenshot;screen capture;spectacle`.
+Use `xdg.desktopEntries.<name>.settings.Keywords` to add search aliases. Example, Spectacle: `sn;screenshot;screen capture;spectacle`.

@@ -147,6 +147,27 @@ let
     };
   });
 
+  # Playwright E2E stack. The nixpkgs `playwright` package ships the driver only; the actual browser
+  # binaries are a separate pinned farm whose revisions/hashes come from the nixpkgs pin's browsers.json,
+  # so they always match the driver version the jail runs. WebKit is deliberately off (nixpkgs notes it
+  # may require PLAYWRIGHT_HOST_PLATFORM_OVERRIDE on x86_64).
+  #
+  # playwrightFontsConf is the conf behind the jail's FONTCONFIG_FILE (set in baseJailOptions): the jail's
+  # / is a fresh tmpfs with no /etc/fonts, so without it fontconfig resolves nothing and every UI
+  # screenshot — the point of the E2E test — renders tofu. DejaVu + Noto CJK + Noto emoji covers Latin,
+  # CJK, and emoji in rendered output. It is also baked into the farm's chromium FONTCONFIG_FILE.
+  playwrightFontsConf = pkgs.makeFontsConf {
+    fontDirectories = [
+      pkgs.dejavu_fonts
+      pkgs."noto-fonts-cjk-sans"
+      pkgs."noto-fonts-emoji-blob-bin"
+    ];
+  };
+  playwrightBrowsers = pkgs.playwright.selectBrowsers {
+    withWebkit = false;
+    fontconfig_file = playwrightFontsConf;
+  };
+
   # Packages injected into every jail. Each spec carries a stable doc name + a resolver so the doc generator can list names without evaluating any package.
   commonPkgSpecs = [
     { name = "bashInteractive"; pkg = pkgs.bashInteractive; }
@@ -206,13 +227,18 @@ let
     { name = "nixGuard"; pkg = nixGuard; }
 
     { name = "sqlite"; pkg = pkgs.sqlite; }
-    { name = "postgresql"; pkg = pkgs.postgresql; }
+    # PostGIS enabled: the jail's postgres carries the spatial extension so
+    # CREATE EXTENSION postgis works against any instance the agent starts.
+    { name = "postgresql"; pkg = pkgs.postgresql.withPackages (ps: [ ps.postgis ]); }
     { name = "mariadb.client"; pkg = pkgs.mariadb.client; }
     { name = "duckdb"; pkg = pkgs.duckdb; }
 
     {
       name = "python3";
-      # Data-analysis stack: jupyter metapackage, polars, seaborn, duckdb bindings — one env so the notebook kernel sees the same modules as `python3` on PATH.
+      # Data-analysis + E2E web-testing stack: jupyter metapackage, polars, seaborn, duckdb bindings —
+      # one env so the notebook kernel sees the same modules as `python3` on PATH. playwright (browser
+      # automation + screenshots via the pinned browser farm above) and selenium (drives the firefox /
+      # geckodriver pair below) live here too, so the jail's python3 imports both.
       pkg = pkgs.python3.withPackages (ps: [
         ps.cryptography
         ps.dnslib
@@ -223,6 +249,8 @@ let
         ps.polars
         ps.duckdb
         ps.jupyter
+        ps.playwright
+        ps.selenium
       ]);
     }
 
@@ -263,9 +291,20 @@ let
     { name = "yarn"; pkg = pkgs.yarn; }
 
     # --- Headless browsers + automation (testing / scraping / E2E). ---
+    # The playwright and selenium python modules ship inside the `python3` env above, so the jail's
+    # python3 (imports) and the playwright CLI (that env's bin) share one closure — no standalone
+    # python envs to drift out of sync.
     { name = "firefox"; pkg = pkgs.firefox; }
-    { name = "playwright"; pkg = pkgs.python3Packages.playwright; }
-    { name = "selenium"; pkg = pkgs.python3Packages.selenium; }
+    # WebDriver (selenium -> firefox). chromedriver is deliberately absent: this nixpkgs pin only
+    # builds it from chromium source with big-parallel, and the farm's pinned chromium covers the
+    # chromium E2E flow via playwright.
+    { name = "geckodriver"; pkg = pkgs.geckodriver; }
+    # Pinned playwright browser binaries (chromium + headless-shell, firefox, ffmpeg): the nixpkgs
+    # playwright package ships the driver only; playwright resolves the executable via
+    # PLAYWRIGHT_BROWSERS_PATH (set in baseJailOptions). Revisions/hashes follow the nixpkgs pin's
+    # browsers.json, so they always match the driver. WebKit deliberately off (see playwrightBrowsers).
+    # The farm also carries the FONTCONFIG_FILE conf with real fonts for rendered screenshots.
+    { name = "playwright-browsers"; pkg = playwrightBrowsers; }
 
     # --- Web servers. ---
     { name = "nginx"; pkg = pkgs.nginx; }
@@ -427,7 +466,7 @@ let
     { name = "hugo"; pkg = pkgs.hugo; }
 
     # --- Data analytics / self-contained "Tableau-feel" (FOSS): in-process analytics + declarative/interactive rendering so a deck stays a self-contained, refreshable file. ---
-    { name = "duckdb"; pkg = pkgs.duckdb; }
+    # duckdb is already listed in the database block above; one entry keeps commonPkgs (and the generated AGENTS.md) duplicate-free.
     { name = "pandas"; pkg = pkgs.python3Packages.pandas; }
     { name = "polars"; pkg = pkgs.python3Packages.polars; }
     { name = "sqlglot"; pkg = pkgs.python3Packages.sqlglot; }
@@ -477,6 +516,14 @@ let
     # the service env). The /lib64 bind above handles the ELF interpreter; this
     # handles the shared-library search path.
     (set-env "LD_LIBRARY_PATH" "${pkgs.libgcc}/lib:${pkgs.zlib}/lib")
+    # The jail's / is a fresh tmpfs with no /etc/fonts, so fontconfig would resolve nothing and every
+    # rendered UI (playwright/selenium screenshots) would be tofu. Point fontconfig at the pinned conf
+    # (DejaVu + Noto CJK + Noto emoji); /nix/store is already bound into every jail. Also fixes the
+    # system firefox selenium drives.
+    (set-env "FONTCONFIG_FILE" (toString playwrightFontsConf))
+    # playwright (python and node) resolves the browser executable via PLAYWRIGHT_BROWSERS_PATH; the
+    # pinned farm is in commonPkgs, so every jail's closure wants it and the store path can't dangle.
+    (set-env "PLAYWRIGHT_BROWSERS_PATH" (toString playwrightBrowsers))
   ] ++ lspAdds;
 
   mkToolJail = { name, pkg, dirs, system, systemExtraPkgs ? [ ], systemExtraMounts ? [ ] }:
