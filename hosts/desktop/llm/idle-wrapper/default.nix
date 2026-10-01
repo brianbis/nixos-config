@@ -1,5 +1,5 @@
-# The shared socket-activated idle wrapper for the on-demand LLM model
-# servers (ninfer, vLLM, sglang).
+# The shared idle wrapper for the on-demand LLM model servers (ninfer, vLLM,
+# sglang): each unit's model server is a child process the wrapper owns.
 #
 # Builds a store directory holding the shared library (idle_wrapper.py) and
 # the thin per-backend entry points (ninfer_wrapper.py, vllm_wrapper.py,

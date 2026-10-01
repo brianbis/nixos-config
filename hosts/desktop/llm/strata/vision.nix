@@ -15,7 +15,7 @@
 let
   visionBin = stdenv.mkDerivation {
     pname = "strata-vision";
-    version = "0.1.12";
+    version = "0.1.30";
     src = src;
 
     nativeBuildInputs = [ cmake ninja cudaToolkit ];
@@ -36,7 +36,7 @@ let
 in
 stdenv.mkDerivation {
   pname = "strata-vision-app";
-  version = "0.1.12";
+  version = "0.1.30";
 
   src = engine;
   dontUnpack = true;

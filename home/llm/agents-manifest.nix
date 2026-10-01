@@ -15,7 +15,10 @@ let
 in
 {
   formatted = {
-    # Ports are canonical in catalog.nix
+    # Ports are canonical in the ledger (catalog/default.nix).
+    gatePort = toString shared.gatePort;
+    gateUrl = shared.gateUrl;
+    gateDefaultModel = shared.gateDefaultModel;
     headroomLocalPort = toString shared.headroomPort;
     headroomCloudPort = toString shared.headroomCloudPort;
     headroomClaudePort = toString shared.headroomClaudePort;
@@ -47,9 +50,10 @@ in
 
     # Common packages, unversioned (doc names derived from each package's
     # mainProgram/pname) for stable diffs. Single source of truth: the
-    # commonPkgs list in jails.nix.
+    # commonPkgs list in jails.nix. lib.unique guards the doc against a
+    # package being listed under more than one grouping.
     commonPackages = lib.concatStringsSep ", "
-      (map (p: p.meta.mainProgram or (p.pname or (lib.getName p))) jailCfg.commonPkgs);
+      (lib.unique (map (p: p.meta.mainProgram or (p.pname or (lib.getName p))) jailCfg.commonPkgs));
 
     # Denied commands from the single source of truth in jails.nix
     deniedCommands = lib.concatStringsSep ", " (map (c: "`${c}`") (builtins.attrNames forbiddenNixCmds));

@@ -4,7 +4,7 @@
 # service, model downloads, and presets. `nix flake update llama-cpp` re-pins
 # the source to the newest master commit.
 
-{ config, options, lib, pkgs, ... }:
+{ config, options, lib, pkgs, catalog, ... }:
 
 let
   cfg = config.services.llamacpp;
@@ -267,7 +267,7 @@ in
       "d ${cfg.draftDir} 0755 root root -"
     ];
 
-    # llama.cpp router server on :8000. --models-dir makes every top-level .gguf
+    # llama.cpp router server on the ledger port (8000). --models-dir makes every top-level .gguf
     # (and each subdir) a routable model; --models-preset attaches the Muse
     # drafter and renames the Qwen id to match the model catalog. The headroom
     # proxy upstreams requests here.
@@ -291,7 +291,7 @@ in
           "--host"
           "127.0.0.1"
           "--port"
-          "8000"
+          (toString catalog.models.muse.port)
           "--parallel"
           "4"
           "--load-mode"
@@ -304,7 +304,7 @@ in
       };
     };
 
-    # Bonsai router on :8010. Runs the PrismML-Eng fork (the only binary that
+    # Bonsai router on the ledger port (8010). Runs the PrismML-Eng fork (the only binary that
     # loads the ternary PQ2_0 weights) over the declarative store models dir;
     # kept separate from the stock llamacpp-muse router so the fork's build and
     # the ternary model don't touch the Muse / Qwen / Heretic fleet.
@@ -327,7 +327,7 @@ in
           "--host"
           "127.0.0.1"
           "--port"
-          "8010"
+          (toString catalog.models.bonsai2_27b_pq2_instruct.port)
           "--parallel"
           "4"
           "--load-mode"

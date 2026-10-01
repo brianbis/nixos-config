@@ -93,12 +93,14 @@ in
     # GitButler — GUI git client (virtual branches / stacked PRs), from nixpkgs.
     gitbutler
     # Recurse: AI-native RE IDE (Tauri 2), from the flakeless `recurse` input.
-    # Defaults the agent panel to the local NInfer engine (:8080, socket-
-    # activated) with Qwen3.8-27B NVFP4 (model id from the catalog); the dummy
-    # API key satisfies the client's credential check. The in-app picker
-    # overrides these defaults (persisted to ~/.recurse/).
+    # Defaults the agent panel to the one LLM door — the availability gate
+    # (llm.local, on the ledger's gate port) — with Qwen3.8-27B NVFP4 (model id
+    # from the catalog): the gate loads that engine on the first request and
+    # keeps whatever is already resident. The dummy API key satisfies the
+    # client's credential check. The in-app picker overrides these defaults
+    # (persisted to ~/.recurse/).
     (writeShellScriptBin "recurse" ''
-      export RECURSE_LLM_ENDPOINT="http://127.0.0.1:8080/v1/chat/completions"
+      export RECURSE_LLM_ENDPOINT="${shared.gateUrl}/v1/chat/completions"
       export RECURSE_LLM_MODEL="${shared.models.qwen38_nvfp4_ninfer.id}"
       export RECURSE_LLM_API_KEY="local"
       # GSettings schemas: GTK reads org.gtk.Settings.FileChooser via glib,

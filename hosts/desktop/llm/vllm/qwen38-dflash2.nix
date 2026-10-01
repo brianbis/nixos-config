@@ -3,7 +3,7 @@
 # container (the community `seanyourhighness/vllm-sm12x-nvfp4-dflash2` image):
 # the engine is now the `pkgs.vllmDflash2` derivation (a pinned-wheel vLLM
 # v0.27.1 venv with the DFlash2 Python overlays — see ./dflash2-package.nix)
-# running as a socket-activated child process under the shared idle wrapper,
+# running as a lifecycle-daemon child process under the shared idle wrapper,
 # exactly like the SGLang native engine. Between requests no process is
 # resident and the model's VRAM is released.
 #
@@ -16,14 +16,16 @@
 #             (downloaded to /var/lib/vllm/qwen38-nvfp4-draft)
 # The two download services below are unchanged from the docker version and
 # remain the single source of the checkpoints.
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, catalog, ... }:
 
 let
   idleSeconds = 120;
-  frontPort = 18089; # socket-activated front (the catalog / Caddy face)
-  childPort = 18090; # loopback-only child (the vllm server)
+  # The ledger row owns the engine's port and the unit name; there is no front
+  # port to own — the gate binds the one public door.
+  row = catalog.models.qwen38_dflash2;
+  childPort = row.port;
 
-  # The shared socket-activated idle wrapper (child-process backend; the same
+  # The shared idle wrapper (child-process backend; the same
   # wrapper the SGLang native engine runs).
   idleWrapper = pkgs.callPackage ../idle-wrapper { };
 
@@ -217,7 +219,7 @@ in
   };
 
   /*
-   * NATIVE ENGINE (socket-activated child process)
+   * NATIVE ENGINE (lifecycle child process)
    *
    * No wantedBy: started by the socket unit on demand and exits (code 0)
    * after the idle window, leaving nothing resident between requests. It must
@@ -225,7 +227,7 @@ in
    */
   systemd.services.vllm-qwen38-dflash2 = {
     description =
-      "vLLM Qwen3.8 DFlash2 native engine (socket-activated, unloads after ${toString idleSeconds}s idle)";
+      "vLLM Qwen3.8 DFlash2 native engine (on-demand, unloads after ${toString idleSeconds}s idle)";
 
     /*
      * Starting the wrapper causes systemd to start the preparation target;
@@ -233,10 +235,7 @@ in
      * completed successfully (checkpoints present).
      */
     requires = [ "vllm-qwen38-dflash2-prep.target" ];
-    after = [
-      "vllm-qwen38-dflash2-prep.target"
-      "vllm-qwen38-dflash2.socket"
-    ];
+    after = [ "vllm-qwen38-dflash2-prep.target" ];
 
     serviceConfig = {
       Type = "simple";
@@ -254,6 +253,12 @@ in
         "60"
         "--kill-timeout"
         "30"
+        # Lifecycle mode: no port bound here, nothing relayed — the gate owns
+        # the public door and forwards to --child-port; the activity file's
+        # mtime is what keeps this engine resident.
+        "--lifecycle-only"
+        "--activity-file"
+        "${catalog.gate.activityDir}/${row.unit}"
         "--"
       ]
       ++ childCommand);
@@ -326,13 +331,4 @@ in
     };
   };
 
-  systemd.sockets.vllm-qwen38-dflash2 = {
-    description =
-      "vLLM Qwen3.8 DFlash2 socket (socket activation, on-demand model residency)";
-    wantedBy = [ "sockets.target" ];
-
-    socketConfig = {
-      ListenStream = "127.0.0.1:${toString frontPort}";
-    };
-  };
 }

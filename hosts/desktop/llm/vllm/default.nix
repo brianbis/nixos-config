@@ -3,8 +3,7 @@
 #   gemma4-nvfp4-turbo.nix  Gemma 4 31B NVFP4 Turbo (docker, manual start)
 #   gemma4-awq.nix          Gemma 4 26B AWQ fallback (docker, manual start)
 #   qwen38-dflash2.nix      Qwen3.8-27B NVFP4 + DFlash2 K7 (NATIVE process,
-#                           socket-activated on-demand; pinned release
-#                           artifacts)
+#                           lifecycle on-demand; pinned release artifacts)
 #   k2horizon-nvfp4.nix     K2-Horizon-MoVA-36B-A4B NVFP4 (docker, manual
 #                           start; pinned vLLM nightly — k2_horizon is not in
 #                           a release yet)

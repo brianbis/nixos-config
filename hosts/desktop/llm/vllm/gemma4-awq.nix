@@ -3,7 +3,7 @@
 # Manual start: `just vllm-gemma4-awq` (service docker-vllm-gemma4-awq).
 # Never started at boot; only ever run one vLLM container at a time (they
 # fight over VRAM).
-{ ... }:
+{ catalog, ... }:
 
 let
   mkVllm = import ./lib.nix;
@@ -17,7 +17,7 @@ in
 
     servedName = "gemma-4-awq";
 
-    port = 8022;
+    port = catalog.models.gemma4awq.port;
 
     maxModelLen = 262144;
 

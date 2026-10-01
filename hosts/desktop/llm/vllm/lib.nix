@@ -2,7 +2,7 @@
 #
 # Each container is a NixOS oci-containers definition (docker backend) that is
 # not started at boot: the gemma containers are started manually (`just
-# vllm-gemma4-*`), and the DFlash2 container is started by its socket-activated
+# vllm-gemma4-*`), and the DFlash2 engine is started by the gate on demand
 # idle wrapper (../idle-wrapper/vllm_wrapper.py) on the first request.
 { image
 , model

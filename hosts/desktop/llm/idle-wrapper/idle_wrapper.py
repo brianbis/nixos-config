@@ -1,42 +1,26 @@
 """
-Shared machinery for the socket-activated idle wrappers of the on-demand LLM
-model servers (ninfer, vLLM).
+Shared machinery for the on-demand LLM model servers (ninfer, vLLM, sglang).
 
-systemd owns the front-port listening socket (socket activation); the wrapper
-process is started on the first connection and exits (code 0) as soon as there
-is nothing left to do, so between requests no process is resident at all and
-the model's VRAM (and the process's host memory) is released.
+A backend (ninfer_wrapper.py / vllm_wrapper.py / sglang_wrapper.py) supplies the
+model server's lifecycle (ensure/is_ready/stop for a spawned child or a docker
+container), what counts as "nothing left to do", and its CLI arguments. The
+idle monitor, the clean exit-0, and the health probe live here, once.
 
-This module is backend-agnostic. A backend (see ninfer_wrapper.py /
-vllm_wrapper.py) supplies:
+Two runtime shapes:
 
-  - the lifecycle: ensure() / is_ready() / stop() of the model server
-    (a spawned child process for ninfer, a docker container for vLLM)
-  - the idle monitor: what counts as "nothing left to do"
-  - the backend-specific CLI arguments
+  --lifecycle-only (what every unit in this repo runs): no port is bound and
+  nothing is relayed. The gate (hosts/desktop/llm/gate) is the single public
+  door, starts this unit with `systemctl start --no-block`, and forwards to the
+  model's own port itself. This process only keeps the model resident and exits
+  when the gate stops stamping --activity-file, which is what releases the VRAM.
 
-Everything else — the transparent TCP relay, the forced Connection: close,
-the local /health, the socket-activation plumbing, the clean exit-0 — lives
-here, once.
-
-Division of labour compared to the old resident proxy:
-  - The HTTP relay is a transparent TCP relay; the request log (not
-    connection state) is authoritative for in-flight requests.
-  - The proxy's "one request per connection" contract is preserved by
-    forcing Connection: close on the child side (rewrite_headers). That is
-    what lets the idle unload happen while the front (Caddy) keeps
-    connections pooled: the child closes its side after each response, the
-    relay completes, and the idle window can expire.
-  - GET /health is answered locally and never starts the model.
-  - Lifecycle: started on the first real request, terminated after the
-    idle window, then the wrapper exits (code 0). systemd's socket unit
-    keeps the port bound and re-activates the service on the next
-    connection.
+  socket-activated (legacy, no unit uses it — there are no LLM .socket units
+  left): systemd owns the front-port socket, this process relays each
+  connection to the model's own port, and the service re-activates on the next
+  connection. Kept so a wrapper can still be run by hand.
 
 Exit codes:
-  0  clean stop: idle unload, SIGTERM, or child failure. The service is
-     inactive until the next connection re-activates it; a failed startup
-     is retried lazily on the next request, not eagerly by systemd.
+  0  clean stop: idle unload, SIGTERM, or child failure.
   1  unexpected internal error (systemd Restart=on-abnormal).
 """
 
@@ -53,7 +37,7 @@ import socket
 import sys
 import time
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable, Optional
+from typing import Awaitable, Callable
 
 HEALTH_BODY = b'{"status":"ok"}'
 
@@ -94,12 +78,12 @@ class State:
     backend: "Backend"
 
     # child backend (ninfer): a spawned local process.
-    child: Optional[asyncio.subprocess.Process] = None
+    child: asyncio.subprocess.Process | None = None
     child_ready: bool = False
 
     # Authoritative in-flight request state (child backend): the request log
     # (ninfer) or the child's own load metrics (vllm/sglang poller).
-    instance_id: Optional[str] = None
+    instance_id: str | None = None
     in_flight: set[tuple[str, str]] = field(default_factory=set)
 
     # docker backend (vllm): an oci-containers container.
@@ -669,8 +653,8 @@ def close_connections(
 
 async def shutdown(
     state: State,
-    listen: socket.socket,
-    accept_task: asyncio.Task,
+    listen: socket.socket | None,
+    accept_task: asyncio.Task | None,
     extra_tasks: list[asyncio.Task],
     monitor_task: asyncio.Task,
 ) -> None:
@@ -678,15 +662,17 @@ async def shutdown(
 
     state.stopping = True
 
-    accept_task.cancel()
+    if accept_task is not None:
+        accept_task.cancel()
 
-    # Awaiting a cancelled task raises CancelledError (a BaseException in
-    # 3.8+), which must be swallowed here or the shutdown itself is
-    # cancelled.
-    with contextlib.suppress(asyncio.CancelledError):
-        await accept_task
+        # Awaiting a cancelled task raises CancelledError (a BaseException in
+        # 3.8+), which must be swallowed here or the shutdown itself is
+        # cancelled.
+        with contextlib.suppress(asyncio.CancelledError):
+            await accept_task
 
-    listen.close()
+    if listen is not None:
+        listen.close()
 
     close_connections(state)
 
@@ -737,10 +723,63 @@ def socket_activated_listen_socket() -> socket.socket:
     return socket.socket(fileno=3)
 
 
-async def run(
-    args: argparse.Namespace,
-    backend: Backend,
-) -> int:
+# ---------------------------------------------------------------------------
+# Lifecycle-only runtime (the gate owns the public front door)
+# ---------------------------------------------------------------------------
+
+ACTIVITY_POLL_SECONDS = 5.0
+
+
+async def activity_idle_monitor(
+    state: State,
+    stop_event: asyncio.Event,
+    poll: float = ACTIVITY_POLL_SECONDS,
+) -> None:
+    """
+    End the residency window from the mtime of the gate's activity file.
+
+    In lifecycle-only mode nothing connects to this process, so the client
+    connection state that the socket-activated mode watches does not exist.
+    The gate touches the activity file on every request it routes to this
+    model (and heartbeats while one is in flight), so the file's mtime is the
+    authoritative "the fleet still wants this model" signal: when it ages past
+    idle_seconds, the model is unloaded and the wrapper exits.
+
+    Wall-clock (time.time) is deliberate: the comparison is against a file
+    mtime, which is wall clock.
+    """
+
+    started = time.time()
+
+    while not stop_event.is_set():
+        await asyncio.sleep(poll)
+
+        try:
+            touched = os.stat(state.args.activity_file).st_mtime
+        except OSError:
+            # No activity file yet: measure from process start, so a model
+            # nobody ever asked for still unloads on its own.
+            touched = started
+
+        age = time.time() - touched
+
+        if age > state.args.idle_seconds:
+            log.info(
+                "no gate request for %.1fs (idle window %.1fs): unloading",
+                age,
+                state.args.idle_seconds,
+            )
+            stop_event.set()
+            return
+
+
+def boot(args: argparse.Namespace, backend: Backend) -> tuple[State, asyncio.Event]:
+    """The shared prologue: the run's State plus a stop event wired to SIGTERM.
+
+    Both modes — socket-activated relay and lifecycle-only — stop on the same
+    signals and watch the same State, so only their task sets differ.
+    """
+
     state = State(args=args, backend=backend)
 
     loop = asyncio.get_running_loop()
@@ -755,6 +794,83 @@ async def run(
             sig,
             request_shutdown,
         )
+
+    return state, stop_event
+
+
+async def run_lifecycle(
+    args: argparse.Namespace,
+    backend: Backend,
+) -> int:
+    """
+    Load the model, keep it resident while the gate asks for it, exit 0.
+
+    No port is bound and nothing is relayed: the gate is the front door and
+    forwards to this model's own port. The unit is started with
+    `systemctl start --no-block`, so the gate never blocks on this load.
+    """
+
+    state, stop_event = boot(args, backend)
+
+    log.info(
+        "lifecycle-only (no port bound) child_port=%d idle=%.1fs activity=%s",
+        args.child_port,
+        args.idle_seconds,
+        args.activity_file,
+    )
+
+    # No extra tasks: the request-log tailer tracks in-flight requests the
+    # wrapper itself relayed, and in this mode the wrapper relays none. The
+    # gate heartbeats the activity file while a request is in flight, which
+    # keeps the model loaded for the whole generation.
+    extra_tasks: list[asyncio.Task] = []
+
+    monitor_task = asyncio.create_task(
+        activity_idle_monitor(state, stop_event),
+        name="activity-idle-monitor",
+    )
+
+    try:
+        await backend.ensure(state)
+
+        if not backend.is_ready(state):
+            raise TimeoutError("model server is not ready after ensure()")
+
+    except Exception:
+        log.exception("model server failed to start")
+
+        await shutdown(
+            state,
+            None,
+            None,
+            extra_tasks,
+            monitor_task,
+        )
+
+        # A failed load is a failed unit: the gate retries it on the next
+        # request rather than systemd restarting it eagerly.
+        return 1
+
+    try:
+        await stop_event.wait()
+
+    finally:
+        await shutdown(
+            state,
+            None,
+            None,
+            extra_tasks,
+            monitor_task,
+        )
+
+    return 0
+
+
+async def run(
+    args: argparse.Namespace,
+    backend: Backend,
+) -> int:
+    state, stop_event = boot(args, backend)
 
     listen = socket_activated_listen_socket()
     listen.setblocking(False)
@@ -841,6 +957,25 @@ def parse_args(
         default=DEFAULT_DRAIN_TIMEOUT,
     )
 
+    # Lifecycle-only mode: the gate (hosts/desktop/llm/gate) owns the public
+    # front door, so this wrapper binds NO port and relays nothing. systemd
+    # starts it directly (systemctl start --no-block) and it just keeps the
+    # model resident until the gate stops asking for it. Liveness then comes
+    # from the mtime of an activity file the gate touches on every request
+    # instead of from client connections.
+    parser.add_argument(
+        "--lifecycle-only",
+        action="store_true",
+        help="bind no port: load the model, keep it resident, exit when idle",
+    )
+
+    parser.add_argument(
+        "--activity-file",
+        default=None,
+        help="activity file whose mtime keeps this model resident "
+        "(lifecycle-only mode)",
+    )
+
     backend.add_args(parser)
 
     args = parser.parse_args(argv)
@@ -853,6 +988,9 @@ def parse_args(
 
     backend.validate(args, parser)
 
+    if args.lifecycle_only and args.activity_file is None:
+        parser.error("--lifecycle-only needs --activity-file")
+
     return args
 
 
@@ -864,6 +1002,9 @@ def main(
     configure_logging(backend.log_prefix)
 
     try:
+        if args.lifecycle_only:
+            return asyncio.run(run_lifecycle(args, backend))
+
         return asyncio.run(run(args, backend))
     except RuntimeError as exc:
         # Not socket-activated (e.g. run by hand): fail loudly.

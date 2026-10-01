@@ -18,7 +18,7 @@
 #
 # Note: the checkpoint README's `docker run` example omits the `cu129-` prefix
 # from the nightly tag; the real Docker Hub tag is the prefixed one below.
-{ pkgs, ... }:
+{ pkgs, catalog, ... }:
 
 let
   mkVllm = import ./lib.nix;
@@ -73,7 +73,7 @@ in
 
     servedName = "k2-horizon-mova-36b-a4b-nvfp4";
 
-    port = 8020;
+    port = catalog.models.k2horizon_nvfp4.port;
 
     maxModelLen = 80000;
 

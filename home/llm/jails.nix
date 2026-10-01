@@ -168,6 +168,24 @@ let
     fontconfig_file = playwrightFontsConf;
   };
 
+  # pkgs.chromium declares a "sandbox" output that nixpkgs materialises as a STORE-LEVEL
+  # SYMLINK (ln -sv to chromium-unwrapped-<ver>-sandbox). Nix lists every multi-output
+  # output in its siblings' reference lists, so that symlink path is always in the
+  # out output's reference closure. jail-nix bind-mounts every path of the runtime
+  # reference graph, and bubblewrap refuses to bind-mount on a symlink destination
+  # ("Can't mount on symlink destination ...") — one such path fails rendering of EVERY
+  # jail in the generation. Materialising the output as a real directory (a copy of the
+  # underlying sandbox binary dir) breaks the symlink out of the store entirely. (The
+  # setuid sandbox is moot in the jail anyway — in-jail chrome runs --no-sandbox, see the
+  # Web E2E section of the agents doc.)
+  chromiumJail = pkgs.chromium.overrideAttrs (final: prev: {
+    postInstall = (prev.postInstall or "") + ''
+      rm "$sandbox"
+      mkdir "$sandbox"
+      cp -a ${pkgs.chromium.browser.sandbox}/. "$sandbox"/
+    '';
+  });
+
   # Packages injected into every jail. Each spec carries a stable doc name + a resolver so the doc generator can list names without evaluating any package.
   commonPkgSpecs = [
     { name = "bashInteractive"; pkg = pkgs.bashInteractive; }
@@ -299,7 +317,10 @@ let
     # chromium source in this pin, so their versions always agree. chromium doubles as the browser
     # selenium drives; the playwright farm below still carries the driver-matched chromium for
     # playwright's own launches.
-    { name = "chromium"; pkg = pkgs.chromium; }
+    # chromiumJail (above) is required, not pkgs.chromium: the stock wrapper's sandbox output is a
+    # store-level symlink that breaks bubblewrap's closure bind ("Can't mount on symlink
+    # destination"), which fails rendering of every jail in the generation.
+    #{ name = "chromium"; pkg = chromiumJail; }
     { name = "chromedriver"; pkg = pkgs.chromedriver; }
     # WebDriver (selenium -> firefox).
     { name = "geckodriver"; pkg = pkgs.geckodriver; }

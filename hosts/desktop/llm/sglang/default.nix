@@ -1,9 +1,9 @@
 # SGLang engine for Qwen3.8-27B NVFP4, served as a native (non-docker)
 # process on the RTX 5090. Nix-side counterpart to the vLLM DFlash2 container,
 # but with no container runtime: the engine is the pkgs.sglang derivation (a
-# pinned CUDA wheel-assembly venv) running as a socket-activated child process
-# under the shared idle wrapper, exactly like the NInfer engines. Between
-# requests no process is resident and the model's VRAM is released.
+# under the shared idle wrapper. Between requests no process is resident and
+# the model's VRAM is released: the gate (../gate) starts this unit on demand
+# and the wrapper exits once the gate stops stamping its activity file.
 #
 # The weights are the SAME artifact the vLLM DFlash2 container uses
 # (gittensor-model-hub/Qwen3.8-27B-NVFP4-RTX5090, downloaded to
@@ -11,14 +11,16 @@
 # download service (not the full prep target, which also pulls the docker
 # image + DFlash2 draft) guarantees the checkpoint is present before the first
 # request, without re-downloading it.
-{ config, lib, pkgs, ... }:
+{ config, lib, pkgs, catalog, ... }:
 
 let
   idleSeconds = 120;
-  frontPort = 8086; # socket-activated front (the catalog / Caddy face)
-  childPort = 8087; # loopback-only child (the sglang server)
+  # The engine's port and unit come from the ledger (../../../catalog), which
+  # is also the gate's routing table — there is no front port to own here.
+  row = catalog.models.qwen38_nvfp4_sglang;
+  childPort = row.port;
 
-  # The shared socket-activated idle wrapper (child-process backend).
+  # The shared idle wrapper (child-process backend).
   idleWrapper = pkgs.callPackage ../idle-wrapper { };
 
   # Reuse the vLLM DFlash2 target checkpoint (same NVFP4 artifact).
@@ -58,9 +60,9 @@ in
    */
   systemd.services.sglang-serve = {
     description =
-      "SGLang engine for Qwen3.8-27B NVFP4 (socket-activated, unloads after ${toString idleSeconds}s idle)";
+      "SGLang engine for Qwen3.8-27B NVFP4 (on-demand, unloads after ${toString idleSeconds}s idle)";
 
-    after = [ "sglang-serve.socket" ];
+
 
     # The checkpoint is downloaded by the vLLM DFlash2 prep service (same
     # artifact); require it so the weights are present before the first
@@ -83,6 +85,12 @@ in
         "60"
         "--kill-timeout"
         "30"
+        # Lifecycle mode: no port bound, nothing relayed — the gate forwards
+        # to --child-port and stamps the activity file that keeps this model
+        # resident.
+        "--lifecycle-only"
+        "--activity-file"
+        "${catalog.gate.activityDir}/${row.unit}"
         "--"
       ]
       ++ childCommand);
@@ -143,12 +151,5 @@ in
     };
   };
 
-  systemd.sockets.sglang-serve = {
-    description = "SGLang engine socket (socket activation, on-demand model residency)";
-    wantedBy = [ "sockets.target" ];
 
-    socketConfig = {
-      ListenStream = "127.0.0.1:${toString frontPort}";
-    };
-  };
 }

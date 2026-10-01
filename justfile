@@ -109,12 +109,12 @@ vllm-k2horizon-nvfp4:
 vllm-lensvlm:
     sudo systemctl start docker-vllm-lensvlm.service
 
-# Qwen3.8 DFlash2 NATIVE engine (socket-activated on :18089, no docker). Like
-# the SGLang engine it is on-demand: a request to http://127.0.0.1:18089 starts
-# it, and it unloads after the idle window. The child listens on :18090 while
-# resident. These recipes inspect / stop the socket-activated unit.
+# Qwen3.8 DFlash2 NATIVE engine (no docker). On-demand like every gated engine:
+# the gate on :8100 starts it when a request names it, and it unloads after its
+# idle window. :18090 is its private engine port — it exists only while resident,
+# so nothing fronts it. These recipes inspect / stop the lifecycle unit.
 vllm-dflash2-status:
-    sudo systemctl status vllm-qwen38-dflash2.service vllm-qwen38-dflash2.socket --no-pager
+    sudo systemctl status vllm-qwen38-dflash2.service --no-pager
 
 vllm-dflash2-stop:
     sudo systemctl stop vllm-qwen38-dflash2.service
@@ -122,8 +122,8 @@ vllm-dflash2-stop:
 # Keep the old name as a no-op alias so muscle memory / docs don't break: the
 # DFlash2 engine is no longer a manually-started docker container.
 vllm-qwen38-dflash2:
-    @echo "The DFlash2 engine is now a native, socket-activated process (no docker)."
-    @echo "It starts on the first request to http://127.0.0.1:18089 and unloads when idle."
+    @echo "The DFlash2 engine is now a native, gate-loaded process (no docker, no socket)."
+    @echo "Name it in a request to the gate on http://127.0.0.1:8100 and it loads; it unloads when idle."
     @echo "Use: just vllm-dflash2-status / just vllm-dflash2-stop"
 
 # Infer running container and stop it
@@ -152,12 +152,13 @@ vllm-status:
     done
     echo "No vLLM container running"
 
-# SGLang native engine (Qwen3.8-27B NVFP4, socket-activated on :8086, no
-# docker). Like the NInfer engines it is on-demand: a request to
-# http://127.0.0.1:8086 starts it, and it unloads after the idle window.
-# These recipes inspect / stop the socket-activated unit.
+# SGLang native engine (Qwen3.8-27B NVFP4, no docker). On-demand like every
+# gated engine: the gate on :8100 starts it when a request names it, and it
+# unloads after its idle window. :8087 is its private engine port — it exists
+# only while resident, so nothing fronts it. These recipes inspect / stop the
+# lifecycle unit.
 sglang-status:
-    sudo systemctl status sglang-serve.service sglang-serve.socket --no-pager
+    sudo systemctl status sglang-serve.service --no-pager
 
 sglang-stop:
     sudo systemctl stop sglang-serve.service
@@ -293,6 +294,28 @@ dsh-repin:
     fi
     echo
     echo "dsh-repin: dsh now at $ver ($newref @ ${newrev:0:12}) — run \`just switch\` to activate"
+
+# The one LLM door: the availability gate on :8100 (llm.local). It answers what
+# can be served, loads the model a request names, and silently redirects a call
+# to a different model when one is already resident. Engine ports are private
+# plumbing — go through here.
+llm-gate-status:
+    sudo systemctl status llm-gate.service --no-pager
+
+llm-gate-logs:
+    sudo journalctl -u llm-gate.service -f
+
+# The whole fleet against current free VRAM: what is resident, what would fit.
+llm-gate-state:
+    curl -s http://127.0.0.1:8100/gate/state | jq .
+
+# What can be served right now, and which of it is resident.
+llm-models:
+    curl -s http://127.0.0.1:8100/v1/models | jq -r '.data[] | [(.id|tostring), (.resident|tostring)] | @tsv'
+
+# Release a model's VRAM now (the gate never stops an engine behind your back).
+llm-unload model:
+    curl -s -X POST http://127.0.0.1:8100/unload -H 'Content-Type: application/json' -d '{"model":"{{model}}"}' | jq .
 
 # llama.cpp shortcuts
 

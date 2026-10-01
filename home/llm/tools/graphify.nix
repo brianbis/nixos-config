@@ -51,7 +51,7 @@ py.buildPythonApplication (finalAttrs: {
     starlette
 
     # [openai] extra (the openai / OpenAI-compatible backend: local servers such
-    # as llama.cpp, vLLM, and the socket-activated NInfer serve). graphify's
+    # as llama.cpp, vLLM, and the NInfer engine). graphify's
     # openai backend imports `openai` and uses `tiktoken` for token counting;
     # without them the backend errors with "the 'openai' package is required
     # for this backend but is not installed". The jail wrapper (home/llm/jails.nix

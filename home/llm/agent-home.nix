@@ -22,6 +22,12 @@ let
   # Embed the content as one single-quoted shell word so apostrophes in the
   # manual can never break the activation script's quoting.
   shellQuote = s: "'" + builtins.replaceStrings [ "'" ] [ "'\\''" ] s + "'";
+
+  # PM Skills Marketplace (phuryn/pm-skills) flattened into dsh skill bundles
+  # (see ./pm-skills.nix); materialized into dsh's user skill root below.
+  pmSkillsSkills = pkgs.callPackage ./pm-skills.nix {
+    src = inputs.pm-skills;
+  };
 in
 {
   imports = [ ./jail-home.nix ];
@@ -43,5 +49,23 @@ in
       else
         $DRY_RUN_CMD mv -f $HOME/.dsh/AGENTS.md.tmp $HOME/.dsh/AGENTS.md
       fi
+    '';
+
+  # PM Skills Marketplace (phuryn/pm-skills), flattened into dsh's user skill
+  # root ($HOME/.dsh/skills): the dsh-skill-filesystem provider (dsh-base,
+  # default roots + watch) scans one level of <name>/SKILL.md bundles and picks
+  # the 69 PM skills up without a restart. Same materialization rationale as
+  # the manual above (store symlinks dangle inside the jail). The flake owns
+  # this directory wholesale — to add non-pm-skills skills, extend
+  # ./pm-skills.nix rather than dropping folders by hand (activation rewrites
+  # the directory from the store path).
+  home.activation.writeDshPmSkills =
+    lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      $DRY_RUN_CMD rm -rf $HOME/.dsh/skills
+      $DRY_RUN_CMD cp -r ${pmSkillsSkills} $HOME/.dsh/skills
+      # cp -r from the store keeps the store's read-only modes (dirs 555, files
+      # 444); the next activation's `rm -rf` then fails (no owner-write on the
+      # bundle dirs). Make the tree owner-writable so it can be rewritten.
+      $DRY_RUN_CMD chmod -R u+w $HOME/.dsh/skills
     '';
 }

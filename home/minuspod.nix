@@ -1,4 +1,4 @@
-{ pkgs, lib, inputs, nvidiaDriver ? null, ... }:
+{ pkgs, lib, inputs, nvidiaDriver ? null, catalog, ... }:
 let
   # Source from the flakeless `minuspod` input; `nix flake update minuspod` re-pins it.
   src = inputs.minuspod;
@@ -155,9 +155,12 @@ let
   # the systemd user service so the two never drift.
   minuspodEnv = {
     MINUSPOD_LLM_PROVIDER = "openai";
-    MINUSPOD_LLM_BASE_URL = "http://127.0.0.1:8787/v1";
+    # The one LLM door. The gate relays this row through the headroom
+    # compression front (catalog.ports.headroom), so the compression layer stays
+    # in the path exactly as it did when this pointed straight at it.
+    MINUSPOD_LLM_BASE_URL = "http://127.0.0.1:${toString catalog.gate.port}/v1";
     # Consolidated thinking mode; the router preset's default reasoning_effort is xhigh.
-    MINUSPOD_LLM_MODEL = "qwen3-8-27b-q8_0-thinking";
+    MINUSPOD_LLM_MODEL = catalog.models.qwen38_thinking.id;
     MINUSPOD_TRANSCRIBE_PROVIDER = "local";
     MINUSPOD_MASTER_PASSPHRASE = "change-me";
   };
@@ -168,7 +171,7 @@ in
   # Runtime configuration for the local LLM proxy (see home/llm).
   home.sessionVariables = minuspodEnv;
 
-  # Always-on user service (resident gunicorn, not a socket-activated idle
+  # Always-on user service (resident gunicorn, not an idle-unloading lifecycle
   # service). The wrapper already sets data dir, port, WHISPER_DEVICE=cuda, the
   # CUDA runtime lib path and PYTHONPATH; the service adds the LLM config and,
   # when an NVIDIA driver package is supplied, its lib dir so ctranslate2 can

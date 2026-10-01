@@ -8,6 +8,9 @@ let
   replacements = {
     "{{commonPackages}}" = manifest.formatted.commonPackages;
     "{{deniedCommands}}" = manifest.formatted.deniedCommands;
+    "{{gatePort}}" = manifest.formatted.gatePort;
+    "{{gateUrl}}" = manifest.formatted.gateUrl;
+    "{{gateDefaultModel}}" = manifest.formatted.gateDefaultModel;
     "{{headroomLocalPort}}" = manifest.formatted.headroomLocalPort;
     "{{headroomCloudPort}}" = manifest.formatted.headroomCloudPort;
     "{{headroomClaudePort}}" = manifest.formatted.headroomClaudePort;

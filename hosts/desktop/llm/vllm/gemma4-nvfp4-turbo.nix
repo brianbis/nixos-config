@@ -3,7 +3,7 @@
 # Manual start: `just vllm-gemma4-nvfp4-turbo` (service
 # docker-vllm-gemma4-nvfp4-turbo). Never started at boot; only ever run one
 # vLLM container at a time (they fight over VRAM).
-{ ... }:
+{ catalog, ... }:
 
 let
   mkVllm = import ./lib.nix;
@@ -17,7 +17,7 @@ in
 
     servedName = "gemma-4-nvfp4";
 
-    port = 8021;
+    port = catalog.models.gemma4nvfp4.port;
 
     maxModelLen = 32768;
 

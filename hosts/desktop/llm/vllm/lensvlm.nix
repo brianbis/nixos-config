@@ -19,7 +19,7 @@
 # (64 KB/token: 2 x 32 layers x 4 KV heads x 256 head-dim x 1 byte), so the
 # 131072 context fits with headroom; the model's full 262144 would need ~16 GiB
 # of fp8 KV and is not guaranteed.
-{ pkgs, ... }:
+{ pkgs, catalog, ... }:
 
 let
   mkVllm = import ./lib.nix;
@@ -66,7 +66,7 @@ in
 
     servedName = "lensvlm-9b";
 
-    port = 8023;
+    port = catalog.models.lensvlm.port;
 
     maxModelLen = 131072;
 

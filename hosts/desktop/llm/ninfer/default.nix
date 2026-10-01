@@ -1,5 +1,5 @@
 # `inputs` is a NixOS specialArg (see flake.nix specialArgs); it is destructured here (not a free variable) so the flakeless `ninfer` / `ninfer-gzenz` source inputs are in scope.
-{ config, pkgs, lib, inputs, ... }:
+{ config, pkgs, lib, inputs, catalog, ... }:
 
 let
   modelsDir = "/var/lib/ninfer/models";
@@ -88,25 +88,32 @@ let
     homepage = "https://github.com/gzenz/ninfer";
   };
 
-  # Cinference fork: a focused NInfer fork (satellitedown/cinference) that raises the MTP draft window to 10 and derives CUDA Graph topology classes from the captured graph. Its base is the same NInfer rev we pin (9e163eee), so the shared build recipe builds it unchanged and the reasoning-effort patch applies (it only touches src/serve/*).
+  # Cinference fork: a focused NInfer fork (satellitedown/cinference) that raises the MTP draft window to 10 and derives CUDA Graph topology classes from the captured graph. The fork rebases onto a newer NInfer than the stock pin, and the drift touches src/serve/*: the fork's own --verify-tree flag shifts the usage-text layout the reasoning-effort patch edits, so it gets its own rebased copy of that patch (reasoning-effort-cinference.patch) instead of the shared stock one. Re-sync that copy whenever the fork is re-pinned.
   # Source from the flakeless `cinference` input; `nix flake update cinference` re-pins it.
   cinference = mkNinfer {
     pname = "cinference";
     src = inputs.cinference;
-    patchFile = ./reasoning-effort.patch;
+    patchFile = ./reasoning-effort-cinference.patch;
     homepage = "https://github.com/satellitedown/cinference";
   };
 
-  # Socket-activated idle wrapper (shared with the vLLM containers; the relay/health/idle machinery lives in ../idle-wrapper once). systemd owns the front-port socket; the wrapper relays connections to the child and exits (code 0) once the model is idle.
+  # Shared idle wrapper (../idle-wrapper): the child-process backend's lifecycle
+  # machinery, once. Lifecycle mode binds no port — the gate owns the door.
   idleWrapper = pkgs.callPackage ../idle-wrapper { };
 
-  # The wrapper's ExecStart for a serve pair: the shared idle wrapper (child backend) plus the per-model child command.
-  serveExecStart = childPort: requestLog: childCommand:
+  # The wrapper's ExecStart for one engine: the shared idle wrapper (child
+  # backend) plus the per-model child command. Lifecycle mode: the wrapper
+  # binds no port and relays nothing — the gate (../gate) is the front door,
+  # starts this unit with `systemctl start --no-block`, and forwards to
+  # --child-port itself. The old --model-id flag has no consumer any more: the
+  # gate answers GET /v1/models from its own table, so the model-picker probe
+  # (dsh-web hits it at boot) never reaches an engine at all.
+  serveExecStart = e:
     lib.concatStringsSep " " ([
       "${pkgs.python3}/bin/python3"
       "${idleWrapper}/ninfer_wrapper.py"
       "--child-port"
-      (toString childPort)
+      (toString e.row.port)
       "--idle-seconds"
       (toString idleSeconds)
       "--ready-timeout"
@@ -116,10 +123,13 @@ let
       "--kill-timeout"
       "10"
       "--request-log"
-      requestLog
+      e.requestLog
+      "--lifecycle-only"
+      "--activity-file"
+      "${catalog.gate.activityDir}/${e.row.unit}"
       "--"
     ]
-    ++ childCommand);
+    ++ e.childCommand);
 
   # The model-serving child. Loopback-only: the wrapper (and thus the socket unit) is the only thing that can reach it.
   childCommand = [
@@ -371,6 +381,37 @@ let
     fi
   '';
 
+  # The serve units, generated from the ledger: the port, the unit name, and
+  # the model's display name come from catalog/default.nix, so the gate's
+  # routing table and these units cannot drift apart.
+  serveEngines = [
+    {
+      row = catalog.models.qwen38_nvfp4_ninfer;
+      requestLog = requestLog;
+      childCommand = childCommand;
+    }
+    {
+      row = catalog.models.qwen36_a3b_ninfer;
+      requestLog = "${logDir}/requests-a3b.jsonl";
+      childCommand = childCommandA3B;
+    }
+    {
+      row = catalog.models.qwen38_nvfp4_ninfer_gzenz;
+      requestLog = requestLogGzenz;
+      childCommand = childCommandGzenz;
+    }
+    {
+      row = catalog.models.qwen38_swift_abliterated_nvfp4_ninfer;
+      requestLog = requestLogSwift;
+      childCommand = childCommandSwift;
+    }
+    {
+      row = catalog.models.qwen38_nvfp4_ninfer_cinference;
+      requestLog = requestLogCinference;
+      childCommand = childCommandCinference;
+    }
+  ];
+
 in
 {
   environment.systemPackages = [ ninfer ninferGzenz cinference ];
@@ -383,153 +424,34 @@ in
   system.activationScripts.ninferModel.text = downloadNinferModel "ninfer-qwen38-nvfp4" ninferModelRepo modelsDir ninferModelFile;
 
   system.activationScripts.ninferModelA3B.text = downloadNinferModel "ninfer-qwen36-a3b" ninferModelRepoA3B modelsDir ninferModelFileA3B;
+  # No socket unit and no front port: the gate owns the one public door, so an
+  # engine's own loopback port is private plumbing that only the gate forwards
+  # to. Each unit is a lifecycle daemon — the gate starts it on demand, it stays
+  # resident while the gate keeps stamping its activity file, and it exits (code
+  # 0) once that file ages past the idle window, which is what releases the VRAM.
+  # No wantedBy: nothing here may be boot-resident.
+  systemd.services = lib.listToAttrs (map
+    (e: {
+      name = e.row.unit;
+      value = {
+        description = "NInfer engine for ${e.row.name} (${e.row.provider}) — lifecycle daemon, unloads after ${toString idleSeconds}s idle";
 
-  system.activationScripts.ninferModelSwift.text = downloadNinferModel "ninfer-qwen38-swift-abliterated" ninferModelRepoSwift modelsDir ninferModelFileSwift;
+        serviceConfig = {
+          Type = "simple";
 
-  # No After=network.target: sockets.target orders before basic.target, but network.target on this host does not (via wpa_supplicant); ordering the socket after network.target would cycle and systemd would drop its job.
-  systemd.sockets.ninfer-serve = {
-    description = "NInfer engine socket (socket activation, on-demand model residency)";
-    wantedBy = [ "sockets.target" ];
+          ExecStart = serveExecStart e;
 
-    socketConfig = {
-      ListenStream = "127.0.0.1:8080";
-    };
-  };
+          # The wrapper exits 0 in every normal path (idle unload, SIGTERM,
+          # child failure); only a wrapper crash (signal/coredump) restarts.
+          Restart = "on-abnormal";
+          RestartSec = "3";
 
-  systemd.services.ninfer-serve = {
-    description = "NInfer engine for Qwen3.8-27B NVFP4 (socket-activated, unloads after ${toString idleSeconds}s idle)";
-    # No wantedBy: the service is started by the socket unit on demand and exits (code 0) after the idle window, leaving nothing resident; it must not be pulled in at boot.
-    after = [ "ninfer-serve.socket" ];
-
-    serviceConfig = {
-      Type = "simple";
-
-      ExecStart = serveExecStart childPort requestLog childCommand;
-
-      # The wrapper exits 0 in every normal path (idle unload, SIGTERM, child failure); only a wrapper crash (signal/coredump) restarts.
-      Restart = "on-abnormal";
-      RestartSec = "3";
-
-      Environment = [
-        "CUDA_VISIBLE_DEVICES=0"
-        "LD_LIBRARY_PATH=/run/opengl-driver/lib"
-      ];
-    };
-  };
-
-  # Second socket-activated service: Qwen3.6-35B-A3B on port 8082 (front) / 8083 (child). Same idle-unload pattern as the Qwen3.8 service.
-  systemd.sockets.ninfer-serve-a3b = {
-    description = "NInfer engine socket for Qwen3.6-35B-A3B (socket activation, on-demand model residency)";
-    wantedBy = [ "sockets.target" ];
-
-    socketConfig = {
-      ListenStream = "127.0.0.1:8082";
-    };
-  };
-
-  systemd.services.ninfer-serve-a3b = {
-    description = "NInfer engine for Qwen3.6-35B-A3B (socket-activated, unloads after ${toString idleSeconds}s idle)";
-    after = [ "ninfer-serve-a3b.socket" ];
-
-    serviceConfig = {
-      Type = "simple";
-
-      ExecStart = serveExecStart childPortA3B "${logDir}/requests-a3b.jsonl" childCommandA3B;
-
-      Restart = "on-abnormal";
-      RestartSec = "3";
-
-      Environment = [
-        "CUDA_VISIBLE_DEVICES=0"
-        "LD_LIBRARY_PATH=/run/opengl-driver/lib"
-      ];
-    };
-  };
-
-  # Third socket-activated service: the gzenz fork engine on port 8084 (front) / 8085 (child), serving the same Qwen3.8-27B NVFP4 artifact as the upstream engine (8080/8081). Same idle-unload pattern; the two are mutually exclusive in practice (one 32 GB card).
-  systemd.sockets.ninfer-serve-gzenz = {
-    description = "NInfer (gzenz fork) engine socket (socket activation, on-demand model residency)";
-    wantedBy = [ "sockets.target" ];
-
-    socketConfig = {
-      ListenStream = "127.0.0.1:8084";
-    };
-  };
-
-  systemd.services.ninfer-serve-gzenz = {
-    description = "NInfer (gzenz fork) engine for Qwen3.8-27B NVFP4 (socket-activated, unloads after ${toString idleSeconds}s idle)";
-    after = [ "ninfer-serve-gzenz.socket" ];
-
-    serviceConfig = {
-      Type = "simple";
-
-      ExecStart = serveExecStart childPortGzenz requestLogGzenz childCommandGzenz;
-
-      Restart = "on-abnormal";
-      RestartSec = "3";
-
-      Environment = [
-        "CUDA_VISIBLE_DEVICES=0"
-        "LD_LIBRARY_PATH=/run/opengl-driver/lib"
-      ];
-    };
-  };
-
-  # Fourth socket-activated service: the Swift (abliterated) Qwen3.8-27B NVFP4 checkpoint on port 8088 (front) / 8089 (child), served by the stock engine. Same idle-unload pattern; mutually exclusive in practice (one 32 GB card).
-  systemd.sockets.ninfer-serve-swift = {
-    description = "NInfer (Swift abliterated) engine socket (socket activation, on-demand model residency)";
-    wantedBy = [ "sockets.target" ];
-
-    socketConfig = {
-      ListenStream = "127.0.0.1:8088";
-    };
-  };
-
-  systemd.services.ninfer-serve-swift = {
-    description = "NInfer (Swift abliterated) engine for Qwen3.8-27B NVFP4 (socket-activated, unloads after ${toString idleSeconds}s idle)";
-    after = [ "ninfer-serve-swift.socket" ];
-
-    serviceConfig = {
-      Type = "simple";
-
-      ExecStart = serveExecStart childPortSwift requestLogSwift childCommandSwift;
-
-      Restart = "on-abnormal";
-      RestartSec = "3";
-
-      Environment = [
-        "CUDA_VISIBLE_DEVICES=0"
-        "LD_LIBRARY_PATH=/run/opengl-driver/lib"
-      ];
-    };
-  };
-
-  # Fifth socket-activated service: the Cinference fork engine (MTP-10) on port 8091 (front) / 8092 (child), serving the Swift (abliterated) Qwen3.8-27B NVFP4 checkpoint. Same idle-unload pattern; mutually exclusive in practice (one 32 GB card).
-  systemd.sockets.ninfer-serve-cinference = {
-    description = "Cinference (MTP-10 fork) engine socket (socket activation, on-demand model residency)";
-    wantedBy = [ "sockets.target" ];
-
-    socketConfig = {
-      ListenStream = "127.0.0.1:8091";
-    };
-  };
-
-  systemd.services.ninfer-serve-cinference = {
-    description = "Cinference (MTP-10 fork) engine for Qwen3.8-27B NVFP4 (socket-activated, unloads after ${toString idleSeconds}s idle)";
-    after = [ "ninfer-serve-cinference.socket" ];
-
-    serviceConfig = {
-      Type = "simple";
-
-      ExecStart = serveExecStart childPortCinference requestLogCinference childCommandCinference;
-
-      Restart = "on-abnormal";
-      RestartSec = "3";
-
-      Environment = [
-        "CUDA_VISIBLE_DEVICES=0"
-        "LD_LIBRARY_PATH=/run/opengl-driver/lib"
-      ];
-    };
-  };
+          Environment = [
+            "CUDA_VISIBLE_DEVICES=0"
+            "LD_LIBRARY_PATH=/run/opengl-driver/lib"
+          ];
+        };
+      };
+    })
+    serveEngines);
 }

@@ -1,0 +1,86 @@
+diff --git a/src/serve/request_log.cpp b/src/serve/request_log.cpp
+--- a/src/serve/request_log.cpp
++++ b/src/serve/request_log.cpp
+@@ -434,6 +434,10 @@
+              {"default_output_tokens", options.default_max_tokens},
+              {"default_thinking",
+               options.enable_thinking ? Json(*options.enable_thinking) : Json(nullptr)},
++          {"default_reasoning_effort",
++           options.default_reasoning_effort
++               ? Json(ninfer::reasoning_effort_name(*options.default_reasoning_effort))
++               : Json(nullptr)},
+              {"default_thinking_budget", std::move(default_thinking_budget)},
+              {"default_preserve_thinking",
+               options.preserve_thinking ? Json(*options.preserve_thinking) : Json(nullptr)}};
+diff --git a/src/serve/serve_options.cpp b/src/serve/serve_options.cpp
+--- a/src/serve/serve_options.cpp
++++ b/src/serve/serve_options.cpp
+@@ -85,8 +85,8 @@
+            "[--default-max-tokens N] [--default-thinking-budget N] "
+            "[--vision] [--no-cuda-graph] [--no-prefix-reuse] "
+-           "[--chat-template FILE] [--lm-head-draft] [--verify-tree] [--no-thinking] "
+-           "[--preserve-thinking] "
+-           "[--cors] "
++           "[--chat-template FILE] [--lm-head-draft] [--verify-tree] [--no-thinking] "
++           "[--reasoning-effort low|medium|xhigh] [--preserve-thinking] "
++           "[--cors] "
+            "[--temperature F] [--top-p F] [--top-k N] [--min-p F] [--presence-penalty F] "
+            "[--frequency-penalty F] [--seed N] [--greedy]\n"
+            "       [--log-level trace|debug|info|warning|error|critical|off]\n"
+@@ -111,6 +111,9 @@
+            "       --default-thinking-budget caps model-origin thinking for enabled requests; "
+            "control tokens count toward the request output limit\n"
+            "       --preserve-thinking retains closed-turn assistant reasoning in later prompts\n"
++           "       --reasoning-effort sets the default reasoning effort for requests that omit "
++           "one; it applies only while thinking is enabled, and a per-request effort always "
++           "wins\n"
+            "       sampler defaults come from the loaded model and resolved thinking mode; "
+            "server flags and request fields override individual values.\n"
+            "       --greedy forces temperature 0 (exact argmax).\n";
+@@ -292,5 +295,17 @@
+         } else if (arg == "--no-thinking") {
+             options.enable_thinking = false;
++        } else if (arg == "--reasoning-effort") {
++            const std::string value = require_value("--reasoning-effort");
++            if (value == "low") {
++                options.default_reasoning_effort = ninfer::ReasoningEffort::Low;
++            } else if (value == "medium") {
++                options.default_reasoning_effort = ninfer::ReasoningEffort::Medium;
++            } else if (value == "xhigh") {
++                options.default_reasoning_effort = ninfer::ReasoningEffort::XHigh;
++            } else {
++                throw std::invalid_argument("invalid reasoning-effort: " + value +
++                                            " (expected low, medium, or xhigh)");
++            }
+         } else if (arg == "--preserve-thinking") {
+             options.preserve_thinking = true;
+         } else if (arg == "--cors") {
+diff --git a/src/serve/serve_options.h b/src/serve/serve_options.h
+--- a/src/serve/serve_options.h
++++ b/src/serve/serve_options.h
+@@ -50,6 +50,9 @@
+     bool use_cuda_graph     = true;
+     bool allow_prefix_reuse = true;
+     std::optional<bool> enable_thinking;
++    // Default reasoning effort for requests that omit one (--reasoning-effort);
++    // applies only while thinking is enabled. A per-request effort always wins.
++    std::optional<ninfer::ReasoningEffort> default_reasoning_effort;
+     std::optional<bool> preserve_thinking;
+     std::optional<std::uint32_t> default_thinking_budget;
+     int default_max_tokens = kDefaultMaxTokens;
+diff --git a/src/serve/translate.cpp b/src/serve/translate.cpp
+--- a/src/serve/translate.cpp
++++ b/src/serve/translate.cpp
+@@ -186,6 +186,12 @@
+             break;
+         }
+     }
++
++    if (!effort && result.enable_thinking != false && server.default_reasoning_effort) {
++        // The server default applies unless thinking is explicitly disabled;
++        // an explicit request effort (field or chat_template_kwargs) always wins.
++        result.reasoning_effort = *server.default_reasoning_effort;
++    }
+     if (request.continuation == ninfer::PromptContinuationMode::ContinueFinalAssistant &&
+         result.enable_thinking == true) {
+         invalid_prompt_option("assistant prefill cannot be combined with enabled thinking",

@@ -34,7 +34,8 @@ in
   };
 
   # DSH-default-model-facing headroom proxy: routes the default agent model
-  # (ninfer qwen3.8-27b on :8080) through the compression layer. --lossless
+  # (the gate's default row — ninfer qwen3.8-27b on its child :8081) through
+  # the compression layer. --lossless
   # (marker-free compaction): DSH has no headroom_retrieve MCP tool, so default
   # CCR mode would inject markers it cannot redeem and corrupt its context.
   systemd.user.services.headroom-proxy-ninfer = {

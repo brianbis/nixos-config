@@ -3,9 +3,9 @@
 # Each recipe declares: the model weights (HF repo + pinned revision), the
 # inference engine (tabbyapi/exllamav3 or sglang), the launch arguments, and
 # the serving parameters. The lib.nix factory transforms each recipe into:
-#   - a oneshot download service (hf download, revision-gated)
-#   - a socket-activated engine service (idle wrapper, on-demand VRAM)
-#   - a prep target (wants the download)
+#   - the oneshot download service (hf download, revision-gated)
+#   - a lifecycle engine service (idle wrapper, on-demand VRAM)
+#   - the prep target (wants the download)
 #
 # "Updatable": change the `revision` here (or `nix flake update exllamav3`
 # for the engine) and the next service activation re-downloads / rebuilds.
@@ -41,9 +41,9 @@
       ctxTokens = 262144;
       kvTokens = 263168;
     };
-    # Port assignments (front = socket-activated catalog face, child = loopback engine).
-    frontPort = 18091;
-    childPort = 18092;
+    # The ledger row in ../../../catalog/default.nix owns this model's port
+    # and systemd unit name, so the gate's table and these units cannot drift.
+    catalogKey = "qwen3827b_exl3_sc5bpw";
     # The tabbyapi config asset (mounted into the engine's working dir).
     configAsset = ./assets/qwen3827b-exl3-sc5bpw-config.yml;
     # Memory settings for the idle wrapper.
@@ -77,8 +77,9 @@
       ctxTokens = 262144;
       kvTokens = 262144;
     };
-    frontPort = 18093;
-    childPort = 18094;
+    # The ledger row in ../../../catalog/default.nix owns this model's port
+    # and systemd unit name, so the gate's table and these units cannot drift.
+    catalogKey = "qwen3827b_exl3_4bpw";
     configAsset = ./assets/qwen3827b-exl3-4bpw-config.yml;
     shm = "8g";
   };
@@ -113,8 +114,9 @@
       ctxTokens = 131072;
       kvTokens = 133368;
     };
-    frontPort = 18095;
-    childPort = 18096;
+    # The ledger row in ../../../catalog/default.nix owns this model's port
+    # and systemd unit name, so the gate's table and these units cannot drift.
+    catalogKey = "gemma4_12b_nvfp4";
     shm = "16g";
     # SGLang launch arguments (beyond the shared engine flags).
     sglangArgs = [
@@ -166,8 +168,9 @@
       ctxTokens = 131072;
       kvTokens = 731831;
     };
-    frontPort = 18097;
-    childPort = 18098;
+    # The ledger row in ../../../catalog/default.nix owns this model's port
+    # and systemd unit name, so the gate's table and these units cannot drift.
+    catalogKey = "lfm25_26b_bf16";
     shm = "16g";
     sglangArgs = [
       "--model-path" "LiquidAI/LFM2.5-2.6B"
@@ -212,8 +215,9 @@
       ctxTokens = 131072;
       kvTokens = 381008;
     };
-    frontPort = 18099;
-    childPort = 18100;
+    # The ledger row in ../../../catalog/default.nix owns this model's port
+    # and systemd unit name, so the gate's table and these units cannot drift.
+    catalogKey = "ornith15_35b_nvfp4";
     shm = "16g";
     sglangArgs = [
       "--model-path" "ornith-ai/Ornith-1.5-35B-A3B-NVFP4"

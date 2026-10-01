@@ -2,21 +2,25 @@
 #
 # Each recipe produces:
 #   - systemd.services.<id>-download   (oneshot, hf download, revision-gated)
-#   - systemd.services.<id>            (socket-activated engine, idle wrapper)
-#   - systemd.sockets.<id>             (socket unit, on-demand activation)
+#   - systemd.services.<id>            (lifecycle engine, idle wrapper)
 #   - systemd.targets.<id>-prep        (wants the download service)
 #
 # Two engine backends:
 #   - "tabbyapi": runs the exllamav3-based tabbyapi venv (pkgs.tabbyapi)
 #   - "sglang":   runs the existing sglang venv (pkgs.sglang)
 
-{ lib, pkgs, config, idleWrapper, hfTokenPath }:
+{ lib, pkgs, config, idleWrapper, hfTokenPath, catalog }:
 
 { id, recipe }:
 
 let
   inherit (recipe) engine;
 
+  # The ledger row in ../../../catalog/default.nix is the single source of
+  # truth for this model's port and systemd unit name.
+  row = catalog.models.${recipe.catalogKey};
+  childPort = row.port;
+  unit = row.unit;
   # ─── Download service ──────────────────────────────────────────────────────
 
   modelDir =
@@ -138,7 +142,7 @@ let
       ]
     else
       let
-        args = recipe.sglangArgs ++ [ "--port" (toString recipe.childPort) ];
+        args = recipe.sglangArgs ++ [ "--port" (toString childPort) ];
       in
       if enginePatch != null
       then
@@ -157,14 +161,19 @@ let
         [ "${enginePkg}/bin/sglang" "serve" ] ++ args;
 
   # The full ExecStart: python3 + idle wrapper + child command.
+  # The full ExecStart: python3 + idle wrapper in lifecycle mode + child
+  # command. Lifecycle mode binds no port and relays nothing — the gate owns
+  # the one public door and forwards to --child-port.
   execStart = lib.concatStringsSep " " ([
     "${pkgs.python3}/bin/python3"
     "${idleWrapper}/sglang_wrapper.py"
-    "--child-port" (toString recipe.childPort)
+    "--child-port" (toString childPort)
     "--idle-seconds" (toString idleSeconds)
     "--ready-timeout" "3600"
     "--shutdown-timeout" "60"
     "--kill-timeout" "30"
+    "--lifecycle-only"
+    "--activity-file" "${catalog.gate.activityDir}/${unit}"
     "--"
   ]
   ++ childCommand);
@@ -178,8 +187,8 @@ let
       # loopback host. They are intentionally NOT in the --config asset,
       # because the --config file has the highest merge priority (it is
       # merged last) and would otherwise override them. The idle wrapper
-      # relays the front socket to this child port, loopback-only.
-      "TABBY_NETWORK_PORT=${toString recipe.childPort}"
+      # The child listens here; the gate forwards to it. Loopback-only.
+      "TABBY_NETWORK_PORT=${toString childPort}"
       "TABBY_NETWORK_HOST=127.0.0.1"
       "LD_LIBRARY_PATH=${enginePkg}/lib:${enginePkg}/venv/lib/python3.12/site-packages/nvidia/cu13/lib:/run/opengl-driver/lib"
       "HF_HOME=${modelDir}"
@@ -206,6 +215,10 @@ let
     ];
 
 in
+assert
+  # Guard: the recipe id and the ledger's unit name must agree, or the gate
+  # would start a unit that does not exist.
+  row.unit == "omarchy-${id}";
 {
   # ─── tmpfiles: model directories ───────────────────────────────────────────
 
@@ -233,13 +246,13 @@ in
     after = [ "omarchy-${id}-download.service" ];
   };
 
-  # ─── Engine service (socket-activated, idle wrapper) ───────────────────────
+  # ─── Engine service (lifecycle daemon, idle wrapper) ───────────────────────
 
-  systemd.services."omarchy-${id}" = {
+  systemd.services.${unit} = {
     description =
-      "Omarchy ${recipe.name} ${engine} engine (socket-activated, unloads after ${toString idleSeconds}s idle)";
+      "Omarchy ${recipe.name} ${engine} engine (lifecycle daemon, unloads after ${toString idleSeconds}s idle)";
     requires = [ "omarchy-${id}-prep.target" ];
-    after = [ "omarchy-${id}-prep.target" "omarchy-${id}.socket" ];
+    after = [ "omarchy-${id}-prep.target" ];
 
     serviceConfig = {
       Type = "simple";
@@ -252,13 +265,5 @@ in
     };
   };
 
-  # ─── Socket unit ───────────────────────────────────────────────────────────
 
-  systemd.sockets."omarchy-${id}" = {
-    description = "Omarchy ${recipe.name} socket (socket activation, on-demand model residency)";
-    wantedBy = [ "sockets.target" ];
-    socketConfig = {
-      ListenStream = "127.0.0.1:${toString recipe.frontPort}";
-    };
-  };
 }

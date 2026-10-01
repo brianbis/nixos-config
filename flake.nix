@@ -94,6 +94,13 @@
       url = "github:redhat-et/ripwire";
       flake = false;
     };
+    # pm-skills: PM Skills Marketplace (phuryn) — its flattened dsh skill
+    # bundles install into the llm user's dsh skill root (home/llm/agent-home.nix).
+    # `nix flake update pm-skills` re-pins to upstream's default branch.
+    pm-skills = {
+      url = "github:phuryn/pm-skills";
+      flake = false;
+    };
     minuspod = {
       url = "github:ttlequals0/MinusPod";
       flake = false;
@@ -260,6 +267,12 @@
         src = inputs.hushmic;
         version = inputs.hushmic.shortRev;
       };
+
+      # pm-skills: PM Skills Marketplace flattened into dsh skill bundles (see home/llm/pm-skills.nix).
+      pmSkillsSkills =
+        pkgs.callPackage ./home/llm/pm-skills.nix {
+          src = inputs.pm-skills;
+        };
 
       # librepods: AirPods lifecycle daemon (Rust rewrite), patched to persist PPM state to state.json.
       librepods = pkgs.callPackage ./hosts/desktop/librepods/package.nix {
@@ -474,8 +487,23 @@
               lib = nixpkgs.lib;
             }).ca;
 
+          # The availability gate (the one public LLM door): its runtime payload
+          # — gate.py plus the routing table rendered from the ledger. Build it
+          # in isolation to inspect the table: jq . <(cat <out>/table.json).
+          llm-gate =
+            pkgs.callPackage ./hosts/desktop/llm/gate/package.nix {
+              lib = nixpkgs.lib;
+              inherit pkgs;
+              catalog = import ./catalog;
+            };
+
           # The pinned dsh source tree, exposed so home/llm/dsh/update-deps.py can materialize it.
           dsh-src = inputs.dsh.outPath;
+
+          # pm-skills (phuryn/pm-skills): flattened dsh skill bundles — the 69
+          # marketplace skills plus command workflow skills; agent-home.nix
+          # installs them into the llm user's $HOME/.dsh/skills.
+          pm-skills = pmSkillsSkills;
 
           # The dsh runtime (installed package) and its npm tarball (release
           # pipeline output); used by the NixOS config and `just dsh-repin`.
@@ -562,6 +590,7 @@
                 pkgs = pkgsU;
                 lib = nixpkgs.lib;
                 inherit inputs;
+                catalog = import ./catalog;
               };
             in
             builtins.elemAt m.home.packages 0;
@@ -694,6 +723,10 @@
                 inherit lib pkgs jail-nix;
               };
 
+              # The model/port ledger itself, so home modules can name a port
+              # without repeating one (the same value the llm system modules get).
+              catalog = import ./catalog;
+
               deepseekSecret = config.age.secrets.deepseek-api-key.path;
 
               # NVIDIA NIM (Build) cloud API key (Kimi K3); injected host-side by the headroom-proxy-nvidia user-service, keeping it out of the agent's environ.
@@ -724,6 +757,12 @@
             jail-nix
             llm-agents
             ;
+
+          # The model fleet's ledger: one data file (ports, units, VRAM,
+          # capability) that the llm modules and the gate all read, so an
+          # engine's port/unit exists in exactly one place. Pure data — no
+          # pkgs, no config.
+          catalog = import ./catalog;
         };
       };
     };
