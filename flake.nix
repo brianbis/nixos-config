@@ -454,9 +454,11 @@
 
       packages.${system} =
         let
-          # Shared catalog for agents-md generation (needs pkgs and jail-nix only)
+          # Shared catalog for agents-md generation (needs pkgs and jail-nix only).
+          # inherit (nixpkgs) lib, not (nixpkgs.lib): the latter asks for
+          # nixpkgs.lib.lib, which does not exist.
           sharedForAgents = import ./home/llm/catalog.nix {
-            inherit (nixpkgs.lib) lib;
+            inherit (nixpkgs) lib;
             inherit pkgs jail-nix;
           };
 

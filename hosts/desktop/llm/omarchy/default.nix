@@ -24,7 +24,6 @@ let
   recipes = import ./recipes.nix;
   factory = import ./lib.nix {
     inherit lib pkgs config catalog;
-    idleWrapper = pkgs.callPackage ../idle-wrapper { };
     hfTokenPath = config.age.secrets.hf-token.path;
   };
 

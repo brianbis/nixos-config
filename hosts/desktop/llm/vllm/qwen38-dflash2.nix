@@ -25,9 +25,9 @@ let
   row = catalog.models.qwen38_dflash2;
   childPort = row.port;
 
-  # The shared idle wrapper (child-process backend; the same
-  # wrapper the SGLang native engine runs).
-  idleWrapper = pkgs.callPackage ../idle-wrapper { };
+  # The shared lifecycle unit shape (../lifecycle.nix): the idle wrapper in
+  # lifecycle mode, no wantedBy, the activity file named after the unit.
+  lifecycle = import ../lifecycle.nix { inherit lib pkgs catalog; };
 
   # Checkpoint locations (downloaded by the prep services below).
   targetDir = "/var/lib/vllm/qwen38-nvfp4-target";
@@ -218,14 +218,17 @@ in
     ];
   };
 
-  /*
-   * NATIVE ENGINE (lifecycle child process)
-   *
-   * No wantedBy: started by the socket unit on demand and exits (code 0)
-   * after the idle window, leaving nothing resident between requests. It must
-   * not be pulled in at boot.
-   */
-  systemd.services.vllm-qwen38-dflash2 = {
+  # NATIVE ENGINE (lifecycle child process): the shared unit shape from
+  # ../lifecycle.nix — no wantedBy, started by the gate on demand, kept resident
+  # only while the gate stamps the activity file.
+  systemd.services.vllm-qwen38-dflash2 = lifecycle {
+    unit = row.unit;
+    wrapper = "sglang_wrapper.py";
+    inherit childPort idleSeconds childCommand;
+    readyTimeoutSeconds = 3600;
+    shutdownTimeoutSeconds = 60;
+    killTimeoutSeconds = 30;
+
     description =
       "vLLM Qwen3.8 DFlash2 native engine (on-demand, unloads after ${toString idleSeconds}s idle)";
 
@@ -237,45 +240,7 @@ in
     requires = [ "vllm-qwen38-dflash2-prep.target" ];
     after = [ "vllm-qwen38-dflash2-prep.target" ];
 
-    serviceConfig = {
-      Type = "simple";
-
-      ExecStart = lib.concatStringsSep " " ([
-        "${pkgs.python3}/bin/python3"
-        "${idleWrapper}/sglang_wrapper.py"
-        "--child-port"
-        (toString childPort)
-        "--idle-seconds"
-        (toString idleSeconds)
-        "--ready-timeout"
-        "3600"
-        "--shutdown-timeout"
-        "60"
-        "--kill-timeout"
-        "30"
-        # Lifecycle mode: no port bound here, nothing relayed — the gate owns
-        # the public door and forwards to --child-port; the activity file's
-        # mtime is what keeps this engine resident.
-        "--lifecycle-only"
-        "--activity-file"
-        "${catalog.gate.activityDir}/${row.unit}"
-        "--"
-      ]
-      ++ childCommand);
-
-      # The wrapper exits 0 in every normal path (idle unload, SIGTERM, child
-      # failure); only a wrapper crash (signal/coredump) restarts.
-      Restart = "on-abnormal";
-      RestartSec = "3";
-
-      # The host NVIDIA driver (libcuda.so.1); the CUDA runtime libraries ship
-      # inside the vllm venv (the nvidia-* wheels — nvidia/cu13/lib is on the
-      # loader path so the JIT'd flashinfer modules' NEEDED libcudart.so.13
-      # resolves to the same copy torch uses). The venv also bundles the C++
-      # runtime at ${pkgs.vllmDflash2}/lib (libstdc++), needed by the dlopen'd
-      # C-extension wheels (torch, flashinfer, ...); it is prepended so the
-      # loader finds it.
-      Environment = [
+    environment = [
         "CUDA_VISIBLE_DEVICES=0"
         "LD_LIBRARY_PATH=${pkgs.vllmDflash2}/lib:${pkgs.vllmDflash2}/venv/lib/python3.12/site-packages/nvidia/cu13/lib:/run/opengl-driver/lib"
         "HF_HOME=/var/lib/vllm/hf-cache"
@@ -321,12 +286,13 @@ in
         # provides it. (Overrides the unit default PATH; the rest is the usual
         # NixOS fallback set.)
         "PATH=${pkgs.vllmDflash2}/venv/bin:/run/wrappers/bin:/run/current-system/sw/bin:/usr/bin:/bin"
-      ];
+    ];
 
-      # HF_TOKEN is not needed at serve time (the model is a local dir), but is
-      # supplied optionally in case vLLM performs any HF lookup. The activation
-      # script writes it (see ./default.nix); the leading '-' makes the file
-      # optional so a missing file does not block startup.
+    # HF_TOKEN is not needed at serve time (the model is a local dir), but is
+    # supplied optionally in case vLLM performs any HF lookup. The activation
+    # script writes it (see ./default.nix); the leading '-' makes the file
+    # optional so a missing file does not block startup.
+    extraServiceConfig = {
       EnvironmentFile = [ "-/run/vllm/hf-token.env" ];
     };
   };

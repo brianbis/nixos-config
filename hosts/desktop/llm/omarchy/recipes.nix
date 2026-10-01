@@ -41,7 +41,7 @@
       ctxTokens = 262144;
       kvTokens = 263168;
     };
-    # The ledger row in ../../../catalog/default.nix owns this model's port
+    # The ledger row in ../../../../catalog/default.nix owns this model's port
     # and systemd unit name, so the gate's table and these units cannot drift.
     catalogKey = "qwen3827b_exl3_sc5bpw";
     # The tabbyapi config asset (mounted into the engine's working dir).
@@ -77,7 +77,7 @@
       ctxTokens = 262144;
       kvTokens = 262144;
     };
-    # The ledger row in ../../../catalog/default.nix owns this model's port
+    # The ledger row in ../../../../catalog/default.nix owns this model's port
     # and systemd unit name, so the gate's table and these units cannot drift.
     catalogKey = "qwen3827b_exl3_4bpw";
     configAsset = ./assets/qwen3827b-exl3-4bpw-config.yml;
@@ -114,7 +114,7 @@
       ctxTokens = 131072;
       kvTokens = 133368;
     };
-    # The ledger row in ../../../catalog/default.nix owns this model's port
+    # The ledger row in ../../../../catalog/default.nix owns this model's port
     # and systemd unit name, so the gate's table and these units cannot drift.
     catalogKey = "gemma4_12b_nvfp4";
     shm = "16g";
@@ -168,7 +168,7 @@
       ctxTokens = 131072;
       kvTokens = 731831;
     };
-    # The ledger row in ../../../catalog/default.nix owns this model's port
+    # The ledger row in ../../../../catalog/default.nix owns this model's port
     # and systemd unit name, so the gate's table and these units cannot drift.
     catalogKey = "lfm25_26b_bf16";
     shm = "16g";
@@ -215,7 +215,7 @@
       ctxTokens = 131072;
       kvTokens = 381008;
     };
-    # The ledger row in ../../../catalog/default.nix owns this model's port
+    # The ledger row in ../../../../catalog/default.nix owns this model's port
     # and systemd unit name, so the gate's table and these units cannot drift.
     catalogKey = "ornith15_35b_nvfp4";
     shm = "16g";

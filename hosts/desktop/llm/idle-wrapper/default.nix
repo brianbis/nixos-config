@@ -5,9 +5,9 @@
 # the thin per-backend entry points (ninfer_wrapper.py, vllm_wrapper.py,
 # sglang_wrapper.py). Each service runs `python3 <dir>/<backend>_wrapper.py`;
 # Python puts the script's own directory on sys.path, so the entry point
-# imports the shared library directly. The relay/health/idle machinery lives
-# in idle_wrapper.py once; the entry points carry only their lifecycle
-# backend.
+# imports the shared library directly. The idle/health/lifecycle machinery
+# lives in idle_wrapper.py once; an entry point supplies only its backend
+# (how to start the engine, how to stop it, its own defaults).
 { stdenv, lib }:
 
 stdenv.mkDerivation {
@@ -26,7 +26,7 @@ stdenv.mkDerivation {
   '';
 
   meta = with lib; {
-    description = "Socket-activated idle wrapper for on-demand LLM model servers";
+    description = "Lifecycle idle wrapper for on-demand LLM model servers";
     license = licenses.asl20;
     platforms = platforms.all;
   };

@@ -351,24 +351,32 @@ let
   };
   allModelArgs = [ baseArgs coderArgs ];
 
-  # The shared idle wrapper (../idle-wrapper) in lifecycle mode: the gate starts
-  # the unit, the wrapper keeps the model resident and exits (code 0) once the
-  # gate stops stamping the unit's activity file.
-  idleWrapper = pkgs.callPackage ../idle-wrapper { };
+  # The shared lifecycle unit shape (../lifecycle.nix): the idle wrapper in
+  # lifecycle mode, no wantedBy, the activity file named after the unit.
+  lifecycle = import ../lifecycle.nix { inherit lib pkgs catalog; };
 
   serveUnit = args:
     let
-      unit = "strata${args.suffix}";
+      unit = "strata${args.suffix}-serve";
     in
-    {
+    lifecycle {
+      unit = unit;
+      wrapper = "sglang_wrapper.py";
+      childPort = args.child;
+      idleSeconds = idleSeconds;
+      readyTimeoutSeconds = readyTimeout;
+      shutdownTimeoutSeconds = 60;
+      killTimeoutSeconds = 30;
+      childCommand = [ args.serveBin ];
       description = "Strata Qwen3.8-Flash-Next server (${args.family} ${args.model}, lifecycle daemon, unloads after ${toString idleSeconds}s idle)";
+
       # No wantedBy: the gate (../gate) starts this unit when a request names
-      # the model and the card has room, and the wrapper exits (code 0) after
-      # the idle window — releasing the model's VRAM and the mapped RAM
-      # experts. strata-prep.target (the weight downloads) is pulled in on
-      # first use, not at boot.
+      # the model and the card has room. strata-prep.target (the weight downloads)
+      # is pulled in on first use, not at boot; unloading releases the model's
+      # VRAM and its mapped RAM experts.
       requires = [ "strata-prep.target" ];
       after = [ "strata-prep.target" ];
+
       # setup.py's step 1 shells out to a bare `nvidia-smi` (it probes the GPU
       # through that helper binary, not the device nodes directly); the
       # service's default PATH lacks it. nvidia-smi ships in the driver
@@ -379,51 +387,21 @@ let
       # curl is on the PATH for the server's before-load hook (it POSTs /unload
       # to the sibling model).
       path = [ config.hardware.nvidia.package.bin pkgs.curl ];
-      serviceConfig = {
-        Type = "simple";
-        # The engine's CPU expert pool (one worker per logical CPU) shares the CFS
-        # pie with the llamacpp fleet (llamacpp-muse/bonsai stay online at boot),
-        # headroom's compression calls and the agent toolchain. At equal weight the
-        # decode stalls whenever those are busy; CPUWeight (a raw [Service] lvalue,
-        # no NixOS module option for it in this pin) doubles strata's share under
-        # contention without starving the rest (they keep the remainder of the pie).
-        CPUWeight = 200;
-        # The standard idle wrapper in lifecycle mode: it binds no port and
-        # relays nothing — the gate forwards to --child-port. The launcher
-        # spawns on start (the server loads the model at process start), and
-        # the wrapper exits (code 0) once the gate stops stamping
-        # --activity-file, terminating the server and releasing the model's
-        # VRAM and the mapped RAM experts. The free-VRAM guard and the
-        # before-load hook (in the launcher's config) still keep the two
-        # models from loading into a GPU the other (or a game) is using, which
-        # covers a manual `systemctl start`. Only a wrapper crash restarts.
-        ExecStart = lib.concatStringsSep " " ([
-          "${pkgs.python3}/bin/python3"
-          "${idleWrapper}/sglang_wrapper.py"
-          "--child-port"
-          (toString args.child)
-          "--idle-seconds"
-          (toString idleSeconds)
-          "--ready-timeout"
-          (toString readyTimeout)
-          "--shutdown-timeout"
-          "60"
-          "--kill-timeout"
-          "30"
-          "--lifecycle-only"
-          "--activity-file"
-          "${catalog.gate.activityDir}/${unit}-serve"
-          "--"
-        ] ++ [ args.serveBin ]);
-        Restart = "on-abnormal";
-        RestartSec = "3";
-        Environment = [
-          "CUDA_VISIBLE_DEVICES=0"
-          # The engine links the nixpkgs CUDA libs via rpath; this is the
-          # host driver userspace (libcuda.so.1), same as the other engines.
-          "LD_LIBRARY_PATH=/run/opengl-driver/lib"
-        ];
-      };
+
+      environment = [
+        "CUDA_VISIBLE_DEVICES=0"
+        # The engine links the nixpkgs CUDA libs via rpath; this is the
+        # host driver userspace (libcuda.so.1), same as the other engines.
+        "LD_LIBRARY_PATH=/run/opengl-driver/lib"
+      ];
+
+      # The engine's CPU expert pool (one worker per logical CPU) shares the CFS
+      # pie with the llamacpp fleet (llamacpp-muse/bonsai stay online at boot),
+      # headroom's compression calls and the agent toolchain. At equal weight the
+      # decode stalls whenever those are busy; CPUWeight (a raw [Service] lvalue,
+      # no NixOS module option for it in this pin) doubles strata's share under
+      # contention without starving the rest (they keep the remainder of the pie).
+      extraServiceConfig = { CPUWeight = 200; };
     };
 
   # The per-model "direct" debug channel (the unit bodies above carry the

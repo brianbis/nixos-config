@@ -72,24 +72,25 @@ let
 
   # The headroom fronts, kept under their historical names because
   # home/llm/services.nix, agents-manifest.nix and the tool configs all read
-  # them. `*UpstreamUrl` is what the front proxies to.
-  headroomPort = ports.headroom;
-  headroomProxyUrl = urlOfPort headroomPort;
-  headroomUpstreamUrl = urlOfPort ports.llamacpp;
-  headroomCloudPort = ports.headroomCloud;
-  headroomCloudProxyUrl = urlOfPort headroomCloudPort;
-  headroomCloudUpstreamUrl = "https://api.deepseek.com/v1";
-  headroomClaudePort = ports.headroomClaude;
-  headroomClaudeProxyUrl = urlOfPort headroomClaudePort;
-  headroomClaudeUpstreamUrl = urlOfPort ports.llamacpp;
-  headroomNinferPort = ports.headroomNinfer;
-  headroomNinferProxyUrl = urlOfPort headroomNinferPort;
-  # The gate fronts the engine, so this proxy upstreams the engine's own port.
-  headroomNinferUpstreamUrl = urlOfPort ports.ninfer;
-  headroomNvidiaPort = ports.headroomNvidia;
-  headroomNvidiaProxyUrl = urlOfPort headroomNvidiaPort;
-  headroomNvidiaUpstreamUrl = "https://integrate.api.nvidia.com/v1";
+  # them: <face>Port / <face>ProxyUrl / <face>UpstreamUrl. `*UpstreamUrl` is
+  # what the front proxies to — a local engine's port, or an upstream API.
+  headroomFaces = {
+    headroom = { port = ports.headroom; upstreamUrl = urlOfPort ports.llamacpp; };
+    headroomCloud = { port = ports.headroomCloud; upstreamUrl = "https://api.deepseek.com/v1"; };
+    headroomClaude = { port = ports.headroomClaude; upstreamUrl = urlOfPort ports.llamacpp; };
+    # The gate fronts the engine, so this proxy upstreams the engine's own port.
+    headroomNinfer = { port = ports.headroomNinfer; upstreamUrl = urlOfPort ports.ninfer; };
+    headroomNvidia = { port = ports.headroomNvidia; upstreamUrl = "https://integrate.api.nvidia.com/v1"; };
+  };
 
+  headroomExports =
+    lib.concatMapAttrs
+      (name: f: {
+        "${name}Port" = f.port;
+        "${name}ProxyUrl" = urlOfPort f.port;
+        "${name}UpstreamUrl" = f.upstreamUrl;
+      })
+      headroomFaces;
   # ── Views the gate and the renderers share ────────────────────────────────
   allModels = lib.attrValues fleet;
   localModels = lib.filter (m: ! m.hosted) allModels;
@@ -147,21 +148,6 @@ in
     legacyModels
     providerLabel
     providerNames
-    headroomPort
-    headroomProxyUrl
-    headroomUpstreamUrl
-    headroomCloudPort
-    headroomCloudProxyUrl
-    headroomCloudUpstreamUrl
-    headroomClaudePort
-    headroomClaudeProxyUrl
-    headroomClaudeUpstreamUrl
-    headroomNinferPort
-    headroomNinferProxyUrl
-    headroomNinferUpstreamUrl
-    headroomNvidiaPort
-    headroomNvidiaProxyUrl
-    headroomNvidiaUpstreamUrl
     allModels
     localModels
     hostedModels
@@ -170,4 +156,4 @@ in
     rows
     defaultRow
     ;
-}
+} // headroomExports

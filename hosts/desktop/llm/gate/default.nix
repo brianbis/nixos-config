@@ -16,8 +16,6 @@ let
   table = import ../../../../catalog/lib.nix lib catalog;
 
   gatePkg = pkgs.callPackage ./package.nix { inherit catalog; };
-
-  activityDir = "/run/llm-gate/activity";
 in
 {
   # One row per engine, rendered into the stub's table at build time.

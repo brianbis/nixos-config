@@ -9,7 +9,7 @@
 #   - "tabbyapi": runs the exllamav3-based tabbyapi venv (pkgs.tabbyapi)
 #   - "sglang":   runs the existing sglang venv (pkgs.sglang)
 
-{ lib, pkgs, config, idleWrapper, hfTokenPath, catalog }:
+{ lib, pkgs, config, hfTokenPath, catalog }:
 
 { id, recipe }:
 
@@ -21,6 +21,10 @@ let
   row = catalog.models.${recipe.catalogKey};
   childPort = row.port;
   unit = row.unit;
+
+  # The shared lifecycle unit shape (../lifecycle.nix): the idle wrapper in
+  # lifecycle mode, no wantedBy, the activity file named after the unit.
+  lifecycle = import ../lifecycle.nix { inherit lib pkgs catalog; };
   # ─── Download service ──────────────────────────────────────────────────────
 
   modelDir =
@@ -159,25 +163,6 @@ let
         ]
       else
         [ "${enginePkg}/bin/sglang" "serve" ] ++ args;
-
-  # The full ExecStart: python3 + idle wrapper + child command.
-  # The full ExecStart: python3 + idle wrapper in lifecycle mode + child
-  # command. Lifecycle mode binds no port and relays nothing — the gate owns
-  # the one public door and forwards to --child-port.
-  execStart = lib.concatStringsSep " " ([
-    "${pkgs.python3}/bin/python3"
-    "${idleWrapper}/sglang_wrapper.py"
-    "--child-port" (toString childPort)
-    "--idle-seconds" (toString idleSeconds)
-    "--ready-timeout" "3600"
-    "--shutdown-timeout" "60"
-    "--kill-timeout" "30"
-    "--lifecycle-only"
-    "--activity-file" "${catalog.gate.activityDir}/${unit}"
-    "--"
-  ]
-  ++ childCommand);
-
   # Environment for the engine service.
   engineEnv =
     if engine == "tabbyapi"
@@ -186,7 +171,7 @@ let
       # tabbyAPI config: the TABBY_NETWORK_* env vars set the child port +
       # loopback host. They are intentionally NOT in the --config asset,
       # because the --config file has the highest merge priority (it is
-      # merged last) and would otherwise override them. The idle wrapper
+      # merged last) and would otherwise override them.
       # The child listens here; the gate forwards to it. Loopback-only.
       "TABBY_NETWORK_PORT=${toString childPort}"
       "TABBY_NETWORK_HOST=127.0.0.1"
@@ -248,19 +233,23 @@ assert
 
   # ─── Engine service (lifecycle daemon, idle wrapper) ───────────────────────
 
-  systemd.services.${unit} = {
+  systemd.services.${unit} = lifecycle {
+    inherit unit childPort idleSeconds childCommand;
+    wrapper = "sglang_wrapper.py";
+    readyTimeoutSeconds = 3600;
+    shutdownTimeoutSeconds = 60;
+    killTimeoutSeconds = 30;
+
     description =
       "Omarchy ${recipe.name} ${engine} engine (lifecycle daemon, unloads after ${toString idleSeconds}s idle)";
+
     requires = [ "omarchy-${id}-prep.target" ];
     after = [ "omarchy-${id}-prep.target" ];
 
-    serviceConfig = {
-      Type = "simple";
-      ExecStart = execStart;
-      Restart = "on-abnormal";
-      RestartSec = "3";
-      Environment = engineEnv;
-      # Optional HF token (for hub-layout models that resolve at serve time).
+    environment = engineEnv;
+
+    # Optional HF token (for hub-layout models that resolve at serve time).
+    extraServiceConfig = {
       EnvironmentFile = [ "-/run/vllm/hf-token.env" ];
     };
   };

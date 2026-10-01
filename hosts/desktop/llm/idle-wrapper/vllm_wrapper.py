@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Socket-activated idle wrapper for a docker-based vLLM container.
+Lifecycle wrapper for a docker-based vLLM container.
 
-See idle_wrapper.py for the shared machinery (socket activation, transparent
-TCP relay, forced Connection: close, local /health, clean exit-0). This file
-supplies the docker-container lifecycle:
+See idle_wrapper.py for the shared machinery (the idle window, the activity
+file the gate stamps, the clean exit-0, the health probe). This file supplies
+the docker-container lifecycle:
 
   - The "child" is a docker container managed by a NixOS oci-containers
     systemd service (named `docker-<container>`).
@@ -19,10 +19,9 @@ supplies the docker-container lifecycle:
     running it falls back to `docker stop` / `docker kill` to guarantee
     VRAM release.
 
-vLLM emits no request-log-jsonl, so the idle signal is the set of live
-relays + active handlers + recent client socket activity (the wrapper relays
-every request and forces the child to close, so a completed request drops its
-relay).
+The idle signal is the activity file the gate stamps: it heartbeats while a
+request is in flight, and stops when the last response finishes, so nothing
+here has to infer busyness from relay state.
 """
 
 from __future__ import annotations
@@ -35,10 +34,8 @@ import time
 from idle_wrapper import (
     Backend,
     State,
-    close_connections,
     log,
     main,
-    probe_health,
 )
 
 DEFAULT_IDLE_SECONDS = 300.0
@@ -337,106 +334,6 @@ async def ensure_container(state: State) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Idle monitor
-# ---------------------------------------------------------------------------
-
-
-async def docker_idle_monitor(
-    state: State,
-    stop_event: asyncio.Event,
-) -> None:
-    """
-    Poll once per second:
-
-      - container was ready but /health now fails (crash) -> stop the service
-        (exit 0); the next connection re-activates it and retries the load
-        lazily
-      - container not up and nothing in flight -> stop the service (exit 0);
-        the wrapper has nothing to do
-      - container idle (no live relays, no active handlers, no recent client
-        activity) -> stop the container and stop the service (exit 0)
-    """
-
-    while not state.stopping:
-        await asyncio.sleep(1)
-
-        if not state.container_up:
-            if not state.connections and state.active_handlers == 0:
-                log.info("nothing to do; stopping service")
-                stop_event.set()
-                return
-            continue
-
-        if not state.container_ready:
-            # Still starting up (or a failed startup is being reaped); wait.
-            continue
-
-        # TEMPORARY diagnostic heartbeat (log-only, no behavior change).
-        #
-        # The monitor is otherwise silent while it is blocked, so the journal
-        # cannot tell "idle is kept fresh by a poller" from "a relay/handler is
-        # stuck" from "the stop path is failing". Log the blocking state once a
-        # minute while the container is up and ready:
-        #   idle keeps growing but stays < timeout, handlers/relays ~0
-        #       -> an unnoticed poller keeps resetting last_activity (H2)
-        #   relays or handlers stuck > 0 with no traffic
-        #       -> a pinned relay / stuck handler (H5)
-        #   idle >= timeout yet the container is still up on the next line
-        #       -> the stop path itself is the problem (H3)
-        if int(time.monotonic()) % 60 == 0:
-            log.info(
-                "idle-monitor: handlers=%d relays=%d idle=%.0fs",
-                state.active_handlers,
-                len(state.connections),
-                time.monotonic() - state.last_activity,
-            )
-
-        # A ready container that no longer answers /health has crashed.
-        if not await probe_health(state.args.child_port, timeout=3.0):
-            log.error(
-                "container %s failed /health; stopping service",
-                state.args.container,
-            )
-
-            close_connections(state)
-
-            state.stopping = True
-
-            async with state.lifecycle_lock:
-                await stop_container(state)
-
-            stop_event.set()
-            return
-
-        if state.active_handlers:
-            continue
-
-        # A live relay means the container is servicing a client, even if there
-        # has been no socket activity for a long time.
-        if state.connections:
-            continue
-
-        idle = time.monotonic() - state.last_activity
-
-        if idle < state.args.idle_seconds:
-            continue
-
-        log.info(
-            "idle for %.1fs (timeout %.1fs); stopping container and exiting",
-            idle,
-            state.args.idle_seconds,
-        )
-
-        state.stopping = True
-
-        async with state.lifecycle_lock:
-            await stop_container(state)
-
-        stop_event.set()
-        return
-
-
-# ---------------------------------------------------------------------------
 # Backend
 # ---------------------------------------------------------------------------
 
@@ -470,17 +367,12 @@ def validate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
         parser.error("--pull-timeout must be > 0")
 
 
-def extra_tasks(state: State) -> list[asyncio.Task]:
-    return []
-
-
 async def stop(state: State) -> None:
     """Stop the container. Called under the lifecycle lock."""
     await stop_container(state)
 
 
 BACKEND = Backend(
-    noun="container",
     log_prefix="vllm-wrapper",
     default_idle_seconds=DEFAULT_IDLE_SECONDS,
     default_ready_timeout=DEFAULT_READY_TIMEOUT,
@@ -489,8 +381,6 @@ BACKEND = Backend(
     ensure=ensure_container,
     is_ready=lambda s: s.container_up and s.container_ready,
     stop=stop,
-    idle_monitor=docker_idle_monitor,
-    extra_tasks=extra_tasks,
     add_args=add_args,
     validate=validate,
 )

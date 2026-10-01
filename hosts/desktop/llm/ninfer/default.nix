@@ -99,37 +99,9 @@ let
 
   # Shared idle wrapper (../idle-wrapper): the child-process backend's lifecycle
   # machinery, once. Lifecycle mode binds no port — the gate owns the door.
-  idleWrapper = pkgs.callPackage ../idle-wrapper { };
-
-  # The wrapper's ExecStart for one engine: the shared idle wrapper (child
-  # backend) plus the per-model child command. Lifecycle mode: the wrapper
-  # binds no port and relays nothing — the gate (../gate) is the front door,
-  # starts this unit with `systemctl start --no-block`, and forwards to
-  # --child-port itself. The old --model-id flag has no consumer any more: the
-  # gate answers GET /v1/models from its own table, so the model-picker probe
-  # (dsh-web hits it at boot) never reaches an engine at all.
-  serveExecStart = e:
-    lib.concatStringsSep " " ([
-      "${pkgs.python3}/bin/python3"
-      "${idleWrapper}/ninfer_wrapper.py"
-      "--child-port"
-      (toString e.row.port)
-      "--idle-seconds"
-      (toString idleSeconds)
-      "--ready-timeout"
-      "1800"
-      "--shutdown-timeout"
-      "30"
-      "--kill-timeout"
-      "10"
-      "--request-log"
-      e.requestLog
-      "--lifecycle-only"
-      "--activity-file"
-      "${catalog.gate.activityDir}/${e.row.unit}"
-      "--"
-    ]
-    ++ e.childCommand);
+  # The shared lifecycle unit shape (../lifecycle.nix): the idle wrapper in
+  # lifecycle mode, no wantedBy, the activity file named after the unit.
+  lifecycle = import ../lifecycle.nix { inherit lib pkgs catalog; };
 
   # The model-serving child. Loopback-only: the wrapper (and thus the socket unit) is the only thing that can reach it.
   childCommand = [
@@ -225,7 +197,9 @@ let
   # The launch options are deliberately NOT generalized across the two engines: stock is int8 KV / 240k context; gzenz is nvfp4 KV / 555k logical ceiling (YaRN) with --kv-capacity auto (sized to fit VRAM; an explicit 555000 pool does NOT fit this card).
   # No --reasoning-effort: the fork's serve binary has no such flag (its Qwen3.8 template defaults to xhigh thinking; a per-request reasoning_effort always wins).
   # --weights-profile qwen38-nvfp4 is REQUIRED: the fork's auto-detection misroutes the qwen3.8/nvfp4 identity to the Qwen36Nvfp4 (W8G32_F16S) contract, but our artifact is the official FP8 profile (Qwen38Nvfp4); without the override the token_embedding tensor format mismatches and the child aborts at load.
-  # --request-log-jsonl is required by the idle wrapper (in-flight tracking); --pending-timeout-ms 900000 and --default-max-tokens 200000 override the fork's too-aggressive defaults.
+  # --request-log-jsonl is what ninfer-serve itself writes (the gate, not the
+  # wrapper, decides when the model is idle); --pending-timeout-ms 900000 and
+  # --default-max-tokens 200000 override the fork's too-aggressive defaults.
   childCommandGzenz = [
     "${ninferGzenz}/bin/ninfer-serve"
     "${modelsDir}/${ninferModelFile}"
@@ -387,27 +361,22 @@ let
   serveEngines = [
     {
       row = catalog.models.qwen38_nvfp4_ninfer;
-      requestLog = requestLog;
       childCommand = childCommand;
     }
     {
       row = catalog.models.qwen36_a3b_ninfer;
-      requestLog = "${logDir}/requests-a3b.jsonl";
       childCommand = childCommandA3B;
     }
     {
       row = catalog.models.qwen38_nvfp4_ninfer_gzenz;
-      requestLog = requestLogGzenz;
       childCommand = childCommandGzenz;
     }
     {
       row = catalog.models.qwen38_swift_abliterated_nvfp4_ninfer;
-      requestLog = requestLogSwift;
       childCommand = childCommandSwift;
     }
     {
       row = catalog.models.qwen38_nvfp4_ninfer_cinference;
-      requestLog = requestLogCinference;
       childCommand = childCommandCinference;
     }
   ];
@@ -426,31 +395,26 @@ in
   system.activationScripts.ninferModelA3B.text = downloadNinferModel "ninfer-qwen36-a3b" ninferModelRepoA3B modelsDir ninferModelFileA3B;
   # No socket unit and no front port: the gate owns the one public door, so an
   # engine's own loopback port is private plumbing that only the gate forwards
-  # to. Each unit is a lifecycle daemon — the gate starts it on demand, it stays
-  # resident while the gate keeps stamping its activity file, and it exits (code
-  # 0) once that file ages past the idle window, which is what releases the VRAM.
-  # No wantedBy: nothing here may be boot-resident.
+  # to. Each unit is the shared lifecycle shape (../lifecycle.nix): started on
+  # demand, resident only while the gate stamps its activity file, and it exits
+  # (code 0) once that file ages past the idle window — which releases the VRAM.
   systemd.services = lib.listToAttrs (map
     (e: {
       name = e.row.unit;
-      value = {
+      value = lifecycle {
+        unit = e.row.unit;
+        wrapper = "ninfer_wrapper.py";
+        childPort = e.row.port;
+        idleSeconds = idleSeconds;
+        readyTimeoutSeconds = 1800;
+        shutdownTimeoutSeconds = 30;
+        killTimeoutSeconds = 10;
+        childCommand = e.childCommand;
         description = "NInfer engine for ${e.row.name} (${e.row.provider}) — lifecycle daemon, unloads after ${toString idleSeconds}s idle";
-
-        serviceConfig = {
-          Type = "simple";
-
-          ExecStart = serveExecStart e;
-
-          # The wrapper exits 0 in every normal path (idle unload, SIGTERM,
-          # child failure); only a wrapper crash (signal/coredump) restarts.
-          Restart = "on-abnormal";
-          RestartSec = "3";
-
-          Environment = [
-            "CUDA_VISIBLE_DEVICES=0"
-            "LD_LIBRARY_PATH=/run/opengl-driver/lib"
-          ];
-        };
+        environment = [
+          "CUDA_VISIBLE_DEVICES=0"
+          "LD_LIBRARY_PATH=/run/opengl-driver/lib"
+        ];
       };
     })
     serveEngines);
