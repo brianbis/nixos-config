@@ -3,7 +3,10 @@
   "browser.newtabpage.activity-stream.feeds.section.topstories" = false;
   "full-screen-api.ignore-widgets" = true;
   "full-screen-api.warning.timeout" = 0;
-  "browser.uiCustomization.state" = builtins.readFile ./toolbar-state.json;
+  # Toolbar layout lives in dotfiles/firefox/ like the other Firefox data
+  # files, but this one is a pref VALUE baked into user.js — editing it
+  # needs a switch, unlike userChrome.css which is a live symlink.
+  "browser.uiCustomization.state" = builtins.readFile ../../dotfiles/firefox/toolbar-state.json;
 
   "extensions.autoDisableScopes" = 0;
   "extensions.enabledScopes" = 15;

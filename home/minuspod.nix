@@ -4,9 +4,13 @@ let
   src = inputs.minuspod;
 
   # Offline npm cache for the frontend (tsc + vite run offline via npmConfigHook).
+  # Re-pinned at this nixpkgs pin: buildNpmPackage cross-checks the fetched lockfile
+  # against src's, and the pin's nodejs 24.21.0/npm resolve a different closure than
+  # the old pin's, so the stale hash failed the consistency check (procedure:
+  # lib.fakeHash -> build -> copy the got: value back).
   npmDeps = pkgs.fetchNpmDeps {
     src = src + "/frontend";
-    hash = "sha256-k0XfJSBbVU8lfh+Td2kHDus7dWZHLLZV7sRbznEVT5A=";
+    hash = "sha256-rwmyDHo7QBRpzGXTCPt42cbYYAi+F2/tbBEO9GBIrZI=";
   };
 
   # faster-whisper needs a CUDA CTranslate2 (nixpkgs' core is CPU-only unless
@@ -159,8 +163,10 @@ let
     # compression front (catalog.ports.headroom), so the compression layer stays
     # in the path exactly as it did when this pointed straight at it.
     MINUSPOD_LLM_BASE_URL = "http://127.0.0.1:${toString catalog.gate.port}/v1";
-    # Consolidated thinking mode; the router preset's default reasoning_effort is xhigh.
-    MINUSPOD_LLM_MODEL = catalog.models.qwen38_thinking.id;
+    # The gate's own default row (catalog.gate.default — the ledger's gate
+    # policy): the model a request that names none gets, relayed through the
+    # compression front.
+    MINUSPOD_LLM_MODEL = catalog.gate.default.id;
     MINUSPOD_TRANSCRIBE_PROVIDER = "local";
     MINUSPOD_MASTER_PASSPHRASE = "change-me";
   };

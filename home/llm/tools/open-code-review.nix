@@ -42,8 +42,10 @@ buildGoModule {
   ldflags = [
     "-s"
     "-w"
-    "-X" "main.Version=${version}"
-    "-X" "main.GitCommit=5c7b383"
+    "-X"
+    "main.Version=${version}"
+    "-X"
+    "main.GitCommit=5c7b383"
   ];
 
   # No vendor/ in source, so buildGoModule runs `go mod vendor` and verifies

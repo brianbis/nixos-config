@@ -19,6 +19,12 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # nix-alien: run unpatched foreign-ELF binaries ("just run" anything).
+    # Upstream flake; keeps its OWN nixpkgs pin (no follows): the bundled
+    # nix-index-with-db must match the nixpkgs its resolver runs against, and
+    # upstream warns overriding inputs causes mismatches.
+    nix-alien.url = "github:thiagokokada/nix-alien";
+
     nur.url = "github:nix-community/NUR";
 
     # Apple Music desktop client
@@ -40,6 +46,15 @@
     # Linux + iPhone Continuity bridge (clipboard, files, messages, notifications).
     tether = {
       url = "github:zackb/tether/main";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    # ArtCraft Crafting Apps (storytold): twelve pure-Rust creative apps, packaged
+    # from upstream's prebuilt Linux release tarballs (fetchurl + autoPatchelf).
+    # Pinned to the update/craft-apps branch — the newest release set (its only
+    # delta over main is apps.json); `nix flake update nix-craftapps` re-pins it.
+    nix-craftapps = {
+      url = "github:olafkfreund/nix-craftapps/update/craft-apps";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -99,6 +114,13 @@
     # `nix flake update pm-skills` re-pins to upstream's default branch.
     pm-skills = {
       url = "github:phuryn/pm-skills";
+      flake = false;
+    };
+    # vulnhunter (capitalone/VulnHunter) — agentic AI security tool shipped as
+    # Claude Code skills; flattened into dsh skill bundles (home/llm/vulnhunter-skills.nix)
+    # and installed into the llm user's dsh skill root (home/llm/agent-home.nix).
+    vulnhunter = {
+      url = "github:capitalone/vulnhunter";
       flake = false;
     };
     minuspod = {
@@ -208,7 +230,7 @@
     # (bumps this ref to the newest npm dist-tag + refreshes all three pins
     # atomically).
     dsh = {
-      url = "github:deepseek-ai/deepseek-harness/dsh-v0.1.7-rc.2";
+      url = "github:deepseek-ai/deepseek-harness/dsh-v0.2.1-rc.2";
       flake = false;
     };
   };
@@ -241,46 +263,251 @@
           cccl = p.cccl.override { cudaOlder = _: false; };
         });
       };
+      ltraceSkipCheck = final: prev: {
+        ltrace = prev.ltrace.overrideAttrs (_: _: { doCheck = false; });
+      };
+      sageTestsSkipInstallCheck = final: prev: {
+        sage-tests = prev.sage-tests.overrideAttrs (_: {
+          doInstallCheck = false;
+        });
+      };
+      aiderLiteLLMExceptions = final: prev: {
+        aider-chat = prev.aider-chat.overrideAttrs (_: prevA: {
+          postPatch = toString (prevA.postPatch or "") + ''
+            sed -i '/^EXCEPTIONS = \[/a\    ExInfo("VectorStoreSearchError", False, None),' aider/exceptions.py
+          '';
+        });
+      };
+      semgrepRuntimeDeps = final: prev: {
+        semgrep = (prev.semgrep.override (old: {
+          # semgrep-core 1.180.0 is a prebuilt 255 MB non-PIE binary whose own RUNPATH
+          # (/src/semgrep-pro/...:$ORIGIN/libs) is LONGER than the one we set. The recipe
+          # does interpreter + rpath in one patchelf call, which grows .dynstr and forces
+          # patchelf 0.19.2 to shift the whole file: it aborts in shiftFile (patchelf.cc:547,
+          # assertion `splitIndex == -1', exit 134) and every jail that carries semgrep dies.
+          # Same two operations, ordered: --set-rpath first fits the existing .dynstr (no
+          # shift), and the interpreter patch (28 -> 84 chars) then has room. Verified on the
+          # wheel binary: both calls return 0 and the patched binary answers `-version' with
+          # every NEEDED lib resolved through the new rpath.
+          semgrep-core = old.semgrep-core.overrideAttrs (_: _: {
+            postFixup = nixpkgs.lib.optionalString final.stdenv.hostPlatform.isLinux ''
+              patchelf --set-rpath "$out/bin/libs:${nixpkgs.lib.makeLibraryPath [ final.stdenv.cc.libc ]}" $out/bin/semgrep-core
+              patchelf --set-interpreter "$(cat ${final.stdenv.cc}/nix-support/dynamic-linker)" $out/bin/semgrep-core
+            '';
+          });
+        })).overrideAttrs (_: _: { dontCheckRuntimeDeps = true; });
+      };
+
+      anyioPytestNoise = final: prev: {
+        pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+          (pyFinal: pyPrev: {
+            anyio = pyPrev.anyio.overridePythonAttrs (old: {
+              pytestFlags = (old.pytestFlags or [ ]) ++ [
+                "-Wignore::pytest.PytestUnraisableExceptionWarning"
+              ];
+              disabledTests = (old.disabledTests or [ ]) ++ [
+                "test_tls_connectable"
+                "test_single_thread"
+              ];
+            });
+          })
+        ];
+      };
+      pytestPostgresqlStartupRace = final: prev: {
+        pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+          (pyFinal: pyPrev: {
+            "pytest-postgresql" = pyPrev.pytest-postgresql.overridePythonAttrs (old: {
+              disabledTests = (old.disabledTests or [ ]) ++ [
+                "test_executor_init_with_password"
+              ];
+            });
+          })
+        ];
+      };
+
+      psycopgCancelRace = final: prev: {
+        pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+          (pyFinal: pyPrev: {
+            psycopg = pyPrev.psycopg.overridePythonAttrs (old: {
+              # tests/test_generators.py::test_cancel sends SELECT pg_sleep(180), polls
+              # pg_stat_activity until that query reads 'active', then cancels it and
+              # demands ExecStatus.FATAL_ERROR + SQLSTATE 57014. The poll races: the
+              # cancel can land once the query has already answered, so the result
+              # comes back EXEC_COMPLETE and the assert fails (assert 2 == FATAL_ERROR).
+              # Intermittent — 1 failed of 5146 in an otherwise green suite — and the
+              # same class nixpkgs itself disables there (test_break_attempts, test_wait_r
+              # carry the "Flaky, fails intermittently" comment). Deselect this node id
+              # exactly rather than by name: 26 tests in the suite contain the substring
+              # test_cancel, and pytest's -k (what disabledTests feeds) would drop them all.
+              # One pytestFlags element, no space: nixpkgs hands each element to pytest
+              # verbatim, so "--deselect <id>" would arrive as one unrecognised path arg.
+              pytestFlags = (old.pytestFlags or [ ]) ++ [
+                "--deselect=tests/test_generators.py::test_cancel"
+              ];
+            });
+          })
+        ];
+      };
+
+      jupyterServerFdLeakRace = final: prev: {
+        pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+          (pyFinal: pyPrev: {
+            jupyter-server = pyPrev.jupyter-server.overridePythonAttrs (old: {
+              # jupyter-server 2.21.0's own suite fails the jail's python3 env
+              # (ps.jupyter in home/llm/jails.nix): the check phase ran 940 passed /
+              # 1 failed in 599.58s, the failure being
+              # tests/services/kernels/test_connection.py::test_no_fd_leak_on_disconnect_with_orphaned_kernel_info_channel
+              # — "AssertionError: FD leak detected: 6 FDs leaked after 100 disconnects
+              # with orphaned kernel_info_channel". The test opens 100 connections whose
+              # kernel_info reply never arrives, disconnects each, then asserts
+              # final_fds - baseline_fds <= 5 over /proc/self/fd. The ceiling is a race,
+              # not a leak: the loop's last `conn` is still bound when final_fds is read,
+              # so its own sockets are open, and how many of the other 99 close in the
+              # two gc.collect() rounds around `await asyncio.sleep(2)` decides the count.
+              # nixpkgs already disables the timing-sensitive sibling in this same file
+              # (test_disconnect_resolves_orphaned_kernel_info_future, "timing sensitive");
+              # this new 2.21.0 test is the same class, one node id short of the ceiling.
+              # Deselect the node id exactly, not the name: an entry carrying :: turns
+              # into --deselect=<path>::<name> in pytest-check-hook.sh, so no sibling
+              # test in the file is touched.
+              disabledTestPaths = (old.disabledTestPaths or [ ]) ++ [
+                "tests/services/kernels/test_connection.py::test_no_fd_leak_on_disconnect_with_orphaned_kernel_info_channel"
+              ];
+            });
+          })
+        ];
+      };
+
+      openaiMtlsExampleTimeout = final: prev: {
+        pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+          (pyFinal: pyPrev: {
+            openai = pyPrev.openai.overridePythonAttrs (old: {
+              # openai 2.53.0's suite: 1 failed, 859 passed, 5 skipped in 94.81s.
+              # The failure is test_mtls_example_presents_full_client_chain
+              # [mtls_httpx2_async.py]: the test starts a local ThreadingHTTPServer
+              # with mTLS and runs examples/mtls_httpx2_async.py as a subprocess
+              # with a 15s wall-clock deadline (subprocess.TimeoutExpired at
+              # tests/test_mtls_http_client.py:109). The parametrisation is four
+              # examples (mtls_httpx.py, mtls_httpx_async.py, mtls_httpx2.py,
+              # mtls_httpx2_async.py); only the async httpx2 client misses the
+              # deadline — a cold interpreter + httpx2/anyio/pydantic import
+              # inside a build oversubscribed by --max-jobs 16. Timing-sensitive
+              # deadline, same class as the sibling deselects above. Deselect the
+              # bracketed node id exactly (an entry with :: becomes
+              # --deselect=<id> verbatim in pytest-check-hook.sh), so the three
+              # passing siblings still run.
+              disabledTestPaths = (old.disabledTestPaths or [ ]) ++ [
+                "tests/test_mtls_http_client.py::test_mtls_example_presents_full_client_chain[mtls_httpx2_async.py]"
+              ];
+            });
+          })
+        ];
+      };
+
+      scikitLearnCallbackLokyRace = final: prev: {
+        pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+          (pyFinal: pyPrev: {
+            scikit-learn = pyPrev.scikit-learn.overridePythonAttrs (old: {
+              # scikit-learn 1.9.0's suite: 1 failed, 34288 passed, 12717 skipped,
+              # 224 xfailed, 118 xpassed, 4465 warnings in 1453.56s. The one
+              # failure is callback/tests/test_callback_support.py::test_function_no_callback_support
+              # [RecordingCallback-processes-2] — _pickle.PicklingError: Could not
+              # pickle the task to send it to the workers. The Parallel task fn
+              # (clone_and_fit) is defined *inside* the test fn, so loky has to
+              # rebuild it in the worker process by re-importing the test module;
+              # nixpkgs runs the suite as `-m pytest --pyargs sklearn` from $TMPDIR
+              # (preCheck does `cd $TMPDIR`), so that module resolves through the
+              # *installed* package, not the source tree the suite would otherwise
+              # run in. Same joblib 1.5.3 / pytest 9.1.1 / pytest-xdist 3.8.0 in a
+              # plain venv: all 8 parametrisations pass, so it is the build's import
+              # layout, not an upstream defect — only the prefer=processes + n_jobs=2
+              # variant ships the closure at all.
+              # Deselect by NAME: disabledTests feeds pytest -k (nixpkgs' own
+              # mechanism for this package, already used for the scipy-deprecation
+              # and NuSVC skips). A --deselect=<path>::<id> entry cannot work here,
+              # because --pyargs collects the installed package's paths — a store
+              # path this override cannot know at eval time. Drops the 8
+              # parametrisations of this test; the rest of the callback suite runs.
+              disabledTests = (old.disabledTests or [ ]) ++ [
+                "test_function_no_callback_support"
+              ];
+            });
+          })
+        ];
+      };
+
+      nodeSharedIsolatePumpRace = final: prev: {
+        # nodejs-slim 26.12.0's cctest: 1 failed of 269 tests from 36 suites,
+        # make exit 2. The failure is
+        # EnvironmentTest/SharedIsolateTest.EnvironmentsComeAndGoWhileSiblingsRun/SharedIsolateData
+        # — node 26's new embedding test (test/cctest/test_environment_shared_isolate.cc)
+        # that runs three Environments through one libuv loop; the SharedIsolateData
+        # param is the variant that registers the isolate with the platform, opens
+        # an inspector Session and spawns a worker_threads Worker (line 344-361),
+        # and PumpUntilAllTicked (line 251) gives up after at most 10000
+        # uv_run(UV_RUN_ONCE) turns with FAIL() << "an Environment stopped running
+        # its timers or immediates" — progress is bounded in turns, not in wall
+        # time, so a pump starved by the surrounding build gives up. The other
+        # param (IsolateDataPerEnvironmentWithoutPlatform) passed, as did the
+        # other 267 tests.
+        # The skip mechanism: cctest reads GTEST_FILTER (Makefile line 22
+        # GTEST_FILTER ?= *, line 306 cctest --gtest_filter=$(GTEST_FILTER)) —
+        # CI_SKIP_TESTS, already in checkFlags, only reaches jstest/test-ci-js.
+        # stdenv's genericBuild appends checkFlagsArray to the make arguments, so
+        # a command-line GTEST_FILTER= assignment beats the ?= default, and the
+        # leading - makes it a gtest negation filter: the sibling param and the
+        # rest of cctest still run.
+        # The attr: this closure's nodejs-slim-26.12.0 comes from llama-cpp 0.6.0,
+        # which asks for nodejs_latest (pkgs/by-name/ll/llama-cpp/package.nix line
+        # 35) — the symlinkJoin wrapper that builds from nodejs-slim_latest. The
+        # plain nodejs-slim attr is the 24.21.0 LTS this closure does not build,
+        # so overriding it leaves the failing drv untouched.
+        nodejs-slim_latest = prev.nodejs-slim_latest.overrideAttrs (old: {
+          checkFlags = (old.checkFlags or [ ]) ++ [
+            "GTEST_FILTER=-EnvironmentTest/SharedIsolateTest.EnvironmentsComeAndGoWhileSiblingsRun/SharedIsolateData"
+          ];
+        });
+      };
+
+      urwidPython314TestWorkaround = final: prev: {
+        python314 = prev.python314.override {
+          packageOverrides = pyFinal: pyPrev: {
+            urwid = pyPrev.urwid.overridePythonAttrs (_: {
+              doCheck = false;
+            });
+          };
+        };
+      };
 
       # Base package set for the NixOS configuration.
       pkgs = import nixpkgs {
         inherit system;
 
-        overlays = [ headroomOverlay ccclPatchWorkaround ];
+        overlays = [ headroomOverlay ccclPatchWorkaround ltraceSkipCheck aiderLiteLLMExceptions semgrepRuntimeDeps anyioPytestNoise pytestPostgresqlStartupRace psycopgCancelRace jupyterServerFdLeakRace openaiMtlsExampleTimeout scikitLearnCallbackLokyRace nodeSharedIsolatePumpRace ];
       };
 
-      # --- locally built packages -----------------------------------------
-      # Built locally from the flakeless source inputs above; exposed as flake
-      # packages and/or nixpkgs overlays so the NixOS modules can consume them.
-      # dsh: the DeepSeek Harness agent runtime (pnpm monorepo). The pnpm side
-      # is pinned by a single fetchPnpmDeps store hash in home/llm/dsh/
-      # (tarball.nix); the npm side by the committed lock pin files there.
-      # Bumped by `just dsh-repin` (newest npm-published release tag).
       dshPkg = import ./home/llm/dsh {
         inherit pkgs;
         src = inputs.dsh;
         versionCheckHomeHook = inputs.llm-agents.packages.${system}.versionCheckHomeHook;
       };
 
-      # hushmic: built locally because nixpkgs' recipe uses deprecated xorg.libX11-style names.
+
       hushmic = pkgs.callPackage ./hosts/desktop/hushmic/package.nix {
         src = inputs.hushmic;
         version = inputs.hushmic.shortRev;
       };
 
-      # pm-skills: PM Skills Marketplace flattened into dsh skill bundles (see home/llm/pm-skills.nix).
       pmSkillsSkills =
         pkgs.callPackage ./home/llm/pm-skills.nix {
           src = inputs.pm-skills;
         };
 
-      # librepods: AirPods lifecycle daemon (Rust rewrite), patched to persist PPM state to state.json.
-      librepods = pkgs.callPackage ./hosts/desktop/librepods/package.nix {
-        src = inputs.librepods;
-      };
-
-      # librepodsTray: LibrePods battery system-tray indicator (StatusNotifierItem) reading the daemon's state.json.
-      librepodsTray = pkgs.callPackage ./hosts/desktop/librepods/tray.nix { };
+      vulnhunterSkills =
+        pkgs.callPackage ./home/llm/vulnhunter-skills.nix {
+          src = inputs.vulnhunter;
+          version = inputs.vulnhunter.shortRev;
+        };
 
       # recurse: AI-native IDE for reverse engineering (see hosts/desktop/recurse/package.nix).
       recurse = pkgs.callPackage ./hosts/desktop/recurse/package.nix {
@@ -371,17 +598,19 @@
             ]);
         in
         # Strata's setup.py proves its python deps with a .strata-pip.json stamp
-        # in sys.prefix (setup.py pip_install, L376-380); without it the first
-        # start would pip-install into the read-only store and die. The list
-        # mirrors setup.py's PY_PACKAGES names exactly; for a source:"local"
-        # engine the NVIDIA wheel list is never reached (setup.py L866-868).
-        # Injected via overrideAttrs: the make-venv hook ends with runHook postInstall.
-        (pythonSet.mkVirtualEnv "strata-serve-env" (workspace.deps.default))
-          .overrideAttrs(_a: {
-            postInstall = ''
-              echo '["cmake", "jinja2", "numpy", "ninja", "pillow", "psutil", "pyyaml", "regex", "requests", "tqdm"]' > $out/.strata-pip.json
-            '';
-          });
+          # in sys.prefix (setup.py pip_install); without it the first start would
+          # pip-install into the read-only store and die. 0.1.40's pip step reads
+          # requirements.txt (not a hardcoded list) and the check is a bare
+          # importability test, so every package in that file must exist in the
+          # pipless venv - including win32-only colorama (upstream gates it on
+          # sys_platform == "win32", setup.py does not). For a source:"local"
+          # engine the NVIDIA wheel list is never reached.
+          # Injected via overrideAttrs: the make-venv hook ends with runHook postInstall.
+        (pythonSet.mkVirtualEnv "strata-serve-env" (workspace.deps.default)).overrideAttrs (_a: {
+          postInstall = ''
+            echo '["colorama", "cmake", "jinja2", "numpy", "ninja", "pillow", "psutil", "pyyaml", "regex", "requests", "tqdm"]' > $out/.strata-pip.json
+          '';
+        });
 
       # strataVisionAppPkg: the engine app layout plus the GPU vision encoder (mtmd, sm_120);
       # what services.strata runs.
@@ -400,19 +629,6 @@
           exllamav3Src = inputs.exllamav3;
           tabbyapiSrc = inputs.tabbyapi;
         };
-
-      # llama-cppPkg: llama.cpp router server (pinned source + CUDA + sleep-exit patch), built against the unfree-enabled pkgs.
-      llama-cppPkg = cudaToolkitPkgs.callPackage ./hosts/desktop/llm/llamacpp/package.nix {
-        src = inputs.llama-cpp;
-      };
-
-      # llama-cpp-bonsaiPkg: Bonsai fork build (same recipe, fork's npmDepsHash + a fork-specific sleep-exit patch; the stock patch no longer applies).
-      llama-cpp-bonsaiPkg = cudaToolkitPkgs.callPackage ./hosts/desktop/llm/llamacpp/package.nix {
-        src = inputs.llama-cpp-bonsai;
-        npmDepsHash = "sha256-2Q7XhaLAArmviOLdQsNbYTfdyDE5pW9lR26cRHEVl9k=";
-        sleepExitPatch = ./hosts/desktop/llm/llamacpp/llama-cpp-bonsai-sleep-exit.patch;
-      };
-
 
     in
     {
@@ -502,10 +718,10 @@
           # The pinned dsh source tree, exposed so home/llm/dsh/update-deps.py can materialize it.
           dsh-src = inputs.dsh.outPath;
 
-          # pm-skills (phuryn/pm-skills): flattened dsh skill bundles — the 69
-          # marketplace skills plus command workflow skills; agent-home.nix
-          # installs them into the llm user's $HOME/.dsh/skills.
           pm-skills = pmSkillsSkills;
+
+
+          vulnhunter-skills = vulnhunterSkills;
 
           # The dsh runtime (installed package) and its npm tarball (release
           # pipeline output); used by the NixOS config and `just dsh-repin`.
@@ -535,12 +751,6 @@
 
           # TabbyAPI + EXL3 (exllamav3) runtime (omarchy recipes).
           tabbyapi = tabbyapiPkg;
-
-          # llama.cpp router server.
-          llama-cpp = llama-cppPkg;
-
-          # llama.cpp Bonsai fork (Ternary-Bonsai-2-27B).
-          llama-cpp-bonsai = llama-cpp-bonsaiPkg;
 
           # Archipelago Multi-Game Randomizer and Server (see let-block).
           archipelago = archipelagoPkg;
@@ -587,6 +797,11 @@
               pkgsU = import inputs.nixpkgs {
                 inherit system;
                 config.allowUnfree = true;
+                # the same pytest fixes the system pkgs carry (anyio, pytest-postgresql,
+                # psycopg's cancel race): this import is a fresh fixed point, so without
+                # them its python3.13 env would build the unpatched packages and fail
+                # the same checkPhase.
+                overlays = [ anyioPytestNoise pytestPostgresqlStartupRace psycopgCancelRace ];
               };
               m = import ./home/minuspod.nix {
                 pkgs = pkgsU;
@@ -647,13 +862,44 @@
               # CUDA cccl patch workaround (see ccclPatchWorkaround); also applied to the system pkgs.
               ccclPatchWorkaround
 
-              (final: prev: {
-                hushmic = hushmic;
-              })
+              # The jails are built by the home-manager modules, which see this system pkgs
+              # set (useGlobalPkgs), not the flake-level pkgs above — so every overlay that
+              # fixes a package a jail consumes has to be applied here too, or the jail
+              # closure builds the unpatched package (aider's testsuite: 25 failures).
+              ltraceSkipCheck
+
+              aiderLiteLLMExceptions
+
+              semgrepRuntimeDeps
+
+              # netexec (nxc) is on the jail PATH, and its httpx/httpcore chain dies on
+              # anyio's failing testsuite — same fix as the base pkgs above.
+              anyioPytestNoise
+
+              # minuspod's python3.13 env pulls sqlframe -> pytest-postgresql, whose
+              # postgres-fixture race fails the same way — same fix as the base pkgs.
+              pytestPostgresqlStartupRace
+
+              # psycopg's own pg_sleep cancel test races the same postgres fixture.
+              psycopgCancelRace
+
+              # The jail's python3 env carries ps.jupyter -> jupyter-server 2.21.0, whose
+              # new FD-leak test fails in the build sandbox — same fix as the base pkgs.
+              jupyterServerFdLeakRace
+
+              # The system closure carries its own python3.14-scikit-learn (the jail
+              # python env's ps.scikit-learn), so the loky-pickle skip has to be
+              # applied here too — the same drv that failed run 1 stayed in the
+              # requisites untouched by the base-pkgs overlay.
+              scikitLearnCallbackLokyRace
+
+              # llama-cpp 0.6.0 pulls nodejs_latest (nodejs-slim_latest, 26.12.0)
+              # into the system closure, so its cctest skip belongs here too — the
+              # base-pkgs overlay alone leaves that drv unpatched.
+              nodeSharedIsolatePumpRace
 
               (final: prev: {
-                librepods = librepods;
-                librepodsTray = librepodsTray;
+                hushmic = hushmic;
               })
 
               (final: prev: {
@@ -681,25 +927,24 @@
               })
 
               (final: prev: {
-                llama-cpp = llama-cppPkg;
-              })
-
-              (final: prev: {
-                llama-cpp-bonsai = llama-cpp-bonsaiPkg;
-              })
-
-              (final: prev: {
                 strata-engine = strataEnginePkg;
                 strata-vision-app = strataVisionAppPkg;
                 strata-serve-env = strataServeEnv;
               })
-
               # Tether — Linux + iPhone Continuity bridge (upstream overlay).
               tether.overlays.default
 
               # headroom-ai context compression for the jailed LLM agents (same def as the base pkgs).
               headroomOverlay
 
+              (final: prev: {
+                typescript-language-server =
+                  prev.typescript-language-server.overrideAttrs (old: {
+                    pnpmDeps = old.pnpmDeps.overrideAttrs (_: {
+                      outputHash = "sha256-xR/EF60lVBsITKgH7wCM2wHM46PFQevD51KfCENSUH4=";
+                    });
+                  });
+              })
               # Force Discord into X11 (XWayland): its Wayland renderer SIGSEGVs on Plasma 6 + NVIDIA; applied as an overlay so both home.packages and the autostart get the flag.
               (final: prev: {
                 discord = prev.discord.override {
@@ -748,7 +993,7 @@
             home-manager.users.b = import ./home;
 
             # The llm agent user's home: writable state root of the "system" jail variants (run as llm via sudo -u llm).
-            home-manager.users.llm = import ./home/llm/agent-home.nix;
+                        home-manager.users.llm = import ./home/llm/agent-home.nix;
           })
         ];
 

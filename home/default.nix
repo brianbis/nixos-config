@@ -11,6 +11,7 @@ in
     ./firefox
     ../hosts/desktop/archipelago/games/sts2/sts.nix
     ../hosts/desktop/archipelago/games/balatro/balatro.nix
+    ../hosts/desktop/archipelago/games/refunct/refunct.nix
     ../hosts/desktop/archipelago/poptracker.nix
     ../hosts/desktop/archipelago/universal-tracker.nix
     ../hosts/desktop/archipelago/balatroap-poptracker.nix
@@ -24,6 +25,7 @@ in
     ./wezterm.nix
     ./dotfiles.nix
     ./minuspod.nix
+    ./craftapps.nix
     plasma-manager.homeModules.plasma-manager
   ];
 

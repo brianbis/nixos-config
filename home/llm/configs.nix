@@ -5,26 +5,38 @@
 
 let
   inherit (shared)
-    headroomProxyUrl
+    gateUrl
     headroomCloudProxyUrl
     providerLabel
     models
+    defaultModel
     opencodeProviders
     crushConfigFor
     claudeConfig
+    stdioMcpFor
+    opencodeMcpFor
     ;
 
   crushConfig = crushConfigFor userHome;
 
+  # opencode's mcp section: the same four code-analysis servers crush and claude
+  # get, in opencode's local-server shape (type "local" + one argv array).
   opencodeConfig = builtins.toJSON (opencodeProviders // {
     "$schema" = "https://opencode.ai/config.json";
+    mcp = opencodeMcpFor userHome;
   });
 
+  # Claude Code reads user-scope MCP servers from the top-level mcpServers key of
+  # ~/.claude.json (settings.json has no such key), so jail-home.nix merges this
+  # object into that file rather than owning it.
+  claudeMcpServers = builtins.toJSON (stdioMcpFor userHome);
+
   aiderConfig = ''
-    # Local OpenAI-compatible endpoint via the Headroom proxy (whichever
-    # local backend is currently serving :8000: vLLM or llama.cpp)
-    openai-api-base: ${headroomProxyUrl}/v1
-    openai-api-key: ${providerLabel.${models.gemma4awq.providerName}.api_key}
+    # The single LLM door: the availability gate loads/redirects whichever local
+    # engine fits and relays through the headroom compression front, so aider
+    # sees every local model instead of only the resident engine's.
+    openai-api-base: ${gateUrl}/v1
+    openai-api-key: ${providerLabel.${defaultModel.providerName}.api_key}
 
     # DeepSeek cloud endpoint via the Headroom proxy
     deepseek-api-base: ${headroomCloudProxyUrl}/v1
@@ -33,9 +45,7 @@ let
     # Model shortcuts (from the shared model catalog). Only the model served
     # by the backend you actually started is reachable.
     alias:
-      awq: "${models.gemma4awq.providerName}/${models.gemma4awq.id}"
-      nvfp4: "${models.gemma4nvfp4.providerName}/${models.gemma4nvfp4.id}"
-      muse: "${models.muse.providerName}/${models.muse.id}"
+      bonsai: "${models.bonsai2_27b_pq2_instruct.providerName}/${models.bonsai2_27b_pq2_instruct.id}"
       pro: "${models.deepseekPro.providerName}/${models.deepseekPro.id}"
       flash: "${models.deepseekFlash.providerName}/${models.deepseekFlash.id}"
       strata: "${models.strata_qwen38.providerName}/${models.strata_qwen38.id}"
@@ -50,5 +60,5 @@ let
   '';
 in
 {
-  inherit crushConfig opencodeConfig aiderConfig claudeConfig;
+  inherit crushConfig opencodeConfig aiderConfig claudeConfig claudeMcpServers;
 }

@@ -18,7 +18,6 @@ let
     "{{agentHome}}" = manifest.formatted.agentHome;
     "{{agentUsername}}" = manifest.formatted.agentUsername;
     "{{userHome}}" = manifest.formatted.userHome;
-    "{{modelsDir}}" = manifest.formatted.modelsDir;
     "{{konsoleScrollback}}" = manifest.formatted.konsoleScrollback;
     "{{readonlyMountsUser}}" = manifest.formatted.readonlyMountsUser;
     "{{readonlyMountsSystem}}" = manifest.formatted.readonlyMountsSystem;

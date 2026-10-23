@@ -241,51 +241,51 @@ in
     after = [ "vllm-qwen38-dflash2-prep.target" ];
 
     environment = [
-        "CUDA_VISIBLE_DEVICES=0"
-        "LD_LIBRARY_PATH=${pkgs.vllmDflash2}/lib:${pkgs.vllmDflash2}/venv/lib/python3.12/site-packages/nvidia/cu13/lib:/run/opengl-driver/lib"
-        "HF_HOME=/var/lib/vllm/hf-cache"
-        "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True"
-        "VLLM_USE_FLASHINFER_SAMPLER=0"
-        "VLLM_WSL2_ENABLE_PIN_MEMORY=1"
-        "VLLM_DFLASH_FORCE_EAGER=1"
-        "VLLM_XQA_DEDICATED_STREAM=1"
-        "TRITON_CACHE_DIR=/var/lib/vllm/vllm-cache/triton"
-        # FlashInfer writes its JIT build artifacts (the compiled XQA .so +
-        # ninja workdir) under $FLASHINFER_WORKSPACE_BASE/.cache/flashinfer/
-        # <version>/<arch>/cached_ops. Pin the base to /var/lib/vllm so the
-        # cache is persistent and in a known place (consistent with
-        # TRITON_CACHE_DIR / HF_HOME) instead of the service user's ~/.cache.
-        # The dir is created at runtime (flashinfer mkdir -p's it).
-        "FLASHINFER_WORKSPACE_BASE=/var/lib/vllm/flashinfer"
-        # Triton 3.7.1's nvidia backend locates libcuda.so.1 by shelling out
-        # to `/sbin/ldconfig -p`, which does not exist on NixOS (and nixpkgs'
-        # ldconfig has its cache path baked to a store path, so it could never
-        # work here). TRITON_LIBCUDA_PATH is triton's override knob: it
-        # short-circuits the ldconfig lookup and is used as the -L directory
-        # when triton compiles its driver.c shim.
-        "TRITON_LIBCUDA_PATH=/run/opengl-driver/lib"
-        # Triton compiles that driver.c shim (cuda_utils) on first CUDA driver
-        # init, using $CC or a gcc/clang found on PATH; the unit's default
-        # PATH has no compiler. Point CC at the stdenv cc-wrapper (it carries
-        # the -B/-L flags the raw gcc lacks; the result is cached under
-        # TRITON_CACHE_DIR, so this only matters on the first run after a
-        # triton version change).
-        "CC=${pkgs.stdenv.cc}/bin/cc"
-        # FlashInfer JIT-compiles the XQA decode kernel (nvcc + ninja) on the
-        # first decode. Its get_cuda_path() shells out to `which nvcc` unless
-        # CUDA_HOME is set (and `which` is not on the unit's PATH), so point
-        # it at the derivation's $out/cuda-home — assembled from the nixpkgs
-        # toolkit + the venv's libcudart (see dflash2-package.nix). The pip
-        # nvidia-cuda-nvcc wheel is only the nvcc driver (no cicc/nvvm), which
-        # is why the venv's own toolchain cannot do this.
-        "CUDA_HOME=${pkgs.vllmDflash2}/cuda-home"
-        # flashinfer's ninja build compiles the host C++ with $CXX and the
-        # CUDA side with nvcc -ccbin $CC.
-        "CXX=${pkgs.stdenv.cc}/bin/c++"
-        # flashinfer's run_ninja() invokes bare `ninja`; the venv's ninja wheel
-        # provides it. (Overrides the unit default PATH; the rest is the usual
-        # NixOS fallback set.)
-        "PATH=${pkgs.vllmDflash2}/venv/bin:/run/wrappers/bin:/run/current-system/sw/bin:/usr/bin:/bin"
+      "CUDA_VISIBLE_DEVICES=0"
+      "LD_LIBRARY_PATH=${pkgs.vllmDflash2}/lib:${pkgs.vllmDflash2}/venv/lib/python3.12/site-packages/nvidia/cu13/lib:/run/opengl-driver/lib"
+      "HF_HOME=/var/lib/vllm/hf-cache"
+      "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True"
+      "VLLM_USE_FLASHINFER_SAMPLER=0"
+      "VLLM_WSL2_ENABLE_PIN_MEMORY=1"
+      "VLLM_DFLASH_FORCE_EAGER=1"
+      "VLLM_XQA_DEDICATED_STREAM=1"
+      "TRITON_CACHE_DIR=/var/lib/vllm/vllm-cache/triton"
+      # FlashInfer writes its JIT build artifacts (the compiled XQA .so +
+      # ninja workdir) under $FLASHINFER_WORKSPACE_BASE/.cache/flashinfer/
+      # <version>/<arch>/cached_ops. Pin the base to /var/lib/vllm so the
+      # cache is persistent and in a known place (consistent with
+      # TRITON_CACHE_DIR / HF_HOME) instead of the service user's ~/.cache.
+      # The dir is created at runtime (flashinfer mkdir -p's it).
+      "FLASHINFER_WORKSPACE_BASE=/var/lib/vllm/flashinfer"
+      # Triton 3.7.1's nvidia backend locates libcuda.so.1 by shelling out
+      # to `/sbin/ldconfig -p`, which does not exist on NixOS (and nixpkgs'
+      # ldconfig has its cache path baked to a store path, so it could never
+      # work here). TRITON_LIBCUDA_PATH is triton's override knob: it
+      # short-circuits the ldconfig lookup and is used as the -L directory
+      # when triton compiles its driver.c shim.
+      "TRITON_LIBCUDA_PATH=/run/opengl-driver/lib"
+      # Triton compiles that driver.c shim (cuda_utils) on first CUDA driver
+      # init, using $CC or a gcc/clang found on PATH; the unit's default
+      # PATH has no compiler. Point CC at the stdenv cc-wrapper (it carries
+      # the -B/-L flags the raw gcc lacks; the result is cached under
+      # TRITON_CACHE_DIR, so this only matters on the first run after a
+      # triton version change).
+      "CC=${pkgs.stdenv.cc}/bin/cc"
+      # FlashInfer JIT-compiles the XQA decode kernel (nvcc + ninja) on the
+      # first decode. Its get_cuda_path() shells out to `which nvcc` unless
+      # CUDA_HOME is set (and `which` is not on the unit's PATH), so point
+      # it at the derivation's $out/cuda-home — assembled from the nixpkgs
+      # toolkit + the venv's libcudart (see dflash2-package.nix). The pip
+      # nvidia-cuda-nvcc wheel is only the nvcc driver (no cicc/nvvm), which
+      # is why the venv's own toolchain cannot do this.
+      "CUDA_HOME=${pkgs.vllmDflash2}/cuda-home"
+      # flashinfer's ninja build compiles the host C++ with $CXX and the
+      # CUDA side with nvcc -ccbin $CC.
+      "CXX=${pkgs.stdenv.cc}/bin/c++"
+      # flashinfer's run_ninja() invokes bare `ninja`; the venv's ninja wheel
+      # provides it. (Overrides the unit default PATH; the rest is the usual
+      # NixOS fallback set.)
+      "PATH=${pkgs.vllmDflash2}/venv/bin:/run/wrappers/bin:/run/current-system/sw/bin:/usr/bin:/bin"
     ];
 
     # HF_TOKEN is not needed at serve time (the model is a local dir), but is

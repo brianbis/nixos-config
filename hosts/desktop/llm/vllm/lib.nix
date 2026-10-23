@@ -1,9 +1,10 @@
 # Factory for the on-demand vLLM containers (see ./default.nix).
 #
 # Each container is a NixOS oci-containers definition (docker backend) that is
-# not started at boot: the gemma containers are started manually (`just
-# vllm-gemma4-*`), and the DFlash2 engine is started by the gate on demand
-# idle wrapper (../idle-wrapper/vllm_wrapper.py) on the first request.
+# not started at boot: the K2-Horizon and LensVLM containers are started
+# manually (`just vllm-*`), and the DFlash2 engine is started by the gate on
+# demand via the idle wrapper (../idle-wrapper/vllm_wrapper.py) on the first
+# request.
 { image
 , model
 , servedName
@@ -13,15 +14,15 @@
 , quantization ? null
 , kvCacheDtype ? null
 , extraArgs ? [ ]
-  # Parsers default to gemma4 (the existing containers); the DFlash2
-  # container passes the qwen3 / qwen3_coder parsers.
-, toolCallParser ? "gemma4"
-, reasoningParser ? "gemma4"
+  # Parsers are per-checkpoint, so every caller names them: k2_horizon for
+  # K2-Horizon, qwen3 / qwen3_coder for LensVLM.
+, toolCallParser
+, reasoningParser
   # Docker `--pull` policy. "missing" (the default) pulls only when the image
   # is absent locally — a last-resort safety net for containers whose image
   # is pulled at activation time.
 , pull ? "missing"
-  # Extra volumes. When empty, the shared hf-cache mount is used (the gemma
+  # Extra volumes. When empty, the shared hf-cache mount is used (the docker
   # containers); the DFlash2 container supplies its own mount set.
 , volumes ? [ ]
   # Extra environment, merged over the base.

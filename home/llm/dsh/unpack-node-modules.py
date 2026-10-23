@@ -13,6 +13,7 @@ integrity by update-deps.py). Entries marked `dev: true` or restricted to
 other os/cpu were filtered out at evaluation time (mirrors
 `npm prune --omit=dev` and npm's optional-dep filtering).
 """
+
 import json
 import os
 import sys
@@ -49,6 +50,7 @@ def main():
         # move it into place. The `data` filter strips setuid bits and
         # resolves links (reproducible).
         import tempfile
+
         tmp = tempfile.mkdtemp(dir=dest_dir)
         try:
             with tarfile.open(tarball) as t:
@@ -63,6 +65,7 @@ def main():
         finally:
             if os.path.isdir(tmp):
                 import shutil
+
                 shutil.rmtree(tmp)
         count += 1
 

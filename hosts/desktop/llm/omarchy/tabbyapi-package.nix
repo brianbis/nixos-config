@@ -37,10 +37,12 @@
 let
   # The exllamav3 version from the flake input source (exllamav3/version.py:
   # `__version__ = "1.5.1"`).
-  exllamav3Version = let
-    raw = builtins.readFile (exllamav3Src + "/exllamav3/version.py");
-    v = lib.trim (lib.removeSuffix "\n" (lib.removePrefix "__version__ = " raw));
-  in lib.removeSuffix "\"" (lib.removePrefix "\"" v);
+  exllamav3Version =
+    let
+      raw = builtins.readFile (exllamav3Src + "/exllamav3/version.py");
+      v = lib.trim (lib.removeSuffix "\n" (lib.removePrefix "__version__ = " raw));
+    in
+    lib.removeSuffix "\"" (lib.removePrefix "\"" v);
 
   # name -> { url, sha256, filename } for every pinned wheel; the exllamav3
   # entry is version-keyed (see the file header).
@@ -87,8 +89,8 @@ let
   # The pinned set with the exllamav3 version label substituted in.
   requirements = writeText "tabbyapi-requirements.txt" (
     lib.replaceStrings
-      ["@exllamav3VersionLabel@"]
-      [wheelSpecs.exllamav3.versionLabel]
+      [ "@exllamav3VersionLabel@" ]
+      [ wheelSpecs.exllamav3.versionLabel ]
       (builtins.readFile ./requirements.txt)
   );
 

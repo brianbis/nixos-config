@@ -13,7 +13,7 @@ identity-key := "/run/agenix-tpm/key.txt"
 # many derivations build at once. 4-way is the safe setting. These are
 # client-side flags, so they apply to the very next build (no chicken-and-egg:
 # no successful switch required first).
-build-flags := "--cores 4 --max-jobs 4"
+build-flags := "--cores 1 --max-jobs 16"
 
 secret-edit name:
     @mkdir -p {{secrets-dir}}
@@ -89,19 +89,13 @@ generations:
 rollback:
     sudo nixos-rebuild switch --rollback --flake . {{build-flags}}
 
-# vLLM docker containers (the Gemma + K2-Horizon checkpoints). The Qwen3.8
+# vLLM docker containers (the K2-Horizon + LensVL checkpoints). The Qwen3.8
 # DFlash2 engine is now a NATIVE process (see vllm-dflash2-* below), not a
 # container. Only ever run ONE at a time: they fight over VRAM.
 
-vllm-containers := "docker-vllm-gemma4-nvfp4-turbo docker-vllm-gemma4-awq docker-vllm-k2horizon-nvfp4 docker-vllm-lensvlm"
+vllm-containers := "docker-vllm-k2horizon-nvfp4 docker-vllm-lensvlm"
 
 # Start commands
-
-vllm-gemma4-nvfp4-turbo:
-    sudo systemctl start docker-vllm-gemma4-nvfp4-turbo.service
-
-vllm-gemma4-awq:
-    sudo systemctl start docker-vllm-gemma4-awq.service
 
 vllm-k2horizon-nvfp4:
     sudo systemctl start docker-vllm-k2horizon-nvfp4.service
@@ -244,7 +238,11 @@ dsh-repin:
 
     curref="$(sed -n 's@^ *url = "github:deepseek-ai/deepseek-harness/\([^"]*\)".*$@\1@p' flake.nix | head -1)"
     currev="$(jq -r '.nodes.dsh.locked.rev' flake.lock)"
-    if [ "$curref" = "$newref" ] && [ "$currev" = "$tagrev" ]; then
+    # The pins are part of the "already there" test: the input can sit at the
+    # target rev while package-lock.json still names an older srcRev, which is
+    # exactly the state package.nix refuses at evaluation.
+    pinsrev="$(jq -r '._meta.srcRev // ""' "$D/package-lock.json")"
+    if [ "$curref" = "$newref" ] && [ "$currev" = "$tagrev" ] && [ "$pinsrev" = "$currev" ]; then
       echo "dsh-repin: already at latest ($ver @ ${tagrev:0:12}) — nothing to do"
       exit 0
     fi
@@ -273,20 +271,28 @@ dsh-repin:
     src="$(nix build --impure --no-link --print-out-paths .#packages.x86_64-linux.dsh-src)"
 
     # --- 2. npm-closure pin (package-lock.json + deps-sha256.json) -----------
-    # node (npm) + python3 come from nix shell (not on the default PATH);
-    # update-deps.py is stdlib-only.
-    nix shell nixpkgs#nodejs nixpkgs#python3 -c \
-      python3 "$D/update-deps.py" "$src" "$newrev"
+    # npm comes from the *pinned* nixpkgs nodejs, placed on PATH instead of being
+    # pulled in with `nix shell`: nix shell runs the command in a sandbox whose
+    # /etc/ssl/certs symlink dangles (the nss-cacert store path is not bound in),
+    # so node has no CA bundle and every registry https fails with
+    # UNABLE_TO_GET_ISSUER_CERT_LOCALLY — npm retries 3x with a ~50s backoff, so
+    # ~560 packages would take hours. update-deps.py is stdlib-only; python3 is
+    # already on the default PATH (line 285 uses it).
+    node="$(nix eval --impure --raw --expr '(import (builtins.getFlake "/etc/nixos").inputs.nixpkgs { system = "x86_64-linux"; }).nodejs.outPath')"
+    PATH="$node/bin:$PATH" python3 "$D/update-deps.py" "$src" "$newrev"
 
     # --- 3. fetchPnpmDeps store pin (the hash in tarball.nix) -----------------
     sed -i -E 's/^( *)hash = .*$/\1hash = "";/' "$D/tarball.nix"
-    report.err="$(mktemp)"
-    if ! nix build --impure --no-link --print-out-paths .#packages.x86_64-linux.dsh-tarball > /dev/null 2>"$report.err"; then
-      got="$(grep -oE 'output:[[:space:]]*sha256-[0-9a-f]{64}' "$report.err" | head -1 | grep -oE '[0-9a-f]{64}')"
-      [ -n "$got" ] || { echo "dsh-repin: dsh-tarball build failed and no hash was reported:" >&2; tail -25 "$report.err" >&2; exit 1; }
-      b64="$(python3 -c "import sys,base64; sys.stdout.write(base64.b64encode(bytes.fromhex('$got')).decode())")"
-      sed -i -E "s/^( *)hash = \"\".*/\1hash = \"sha256-$b64\";/" "$D/tarball.nix"
-      echo "dsh-repin: fetchPnpmDeps hash -> sha256-$b64"
+    report_err="$(mktemp)"
+    if ! nix build --impure --no-link --print-out-paths .#packages.x86_64-linux.dsh-tarball > /dev/null 2>"$report_err"; then
+      # nix 2.34 prints the wanted hash as `got:    sha256-<base64>`; older nix
+      # printed `output: sha256-<hex64>`. Accept either — the base64 form is already
+      # the value fetchPnpmDeps wants, so no hex->base64 step for it.
+      got="$(grep -E '^[[:space:]]*got:' "$report_err" | head -1 | grep -oE 'sha256-[A-Za-z0-9+/]{43}=')"
+      [ -n "$got" ] || got="$(hex="$(grep -oE 'output:[[:space:]]*sha256-[0-9a-f]{64}' "$report_err" | head -1 | grep -oE '[0-9a-f]{64}')"; [ -n "$hex" ] && printf 'sha256-%s' "$(python3 -c "import sys,base64; sys.stdout.write(base64.b64encode(bytes.fromhex('$hex')).decode())")")"
+      [ -n "$got" ] || { echo "dsh-repin: dsh-tarball build failed and no hash was reported:" >&2; tail -25 "$report_err" >&2; exit 1; }
+      sed -i -E "s|^( *)hash = .*$|\1hash = \"$got\";|" "$D/tarball.nix"
+      echo "dsh-repin: fetchPnpmDeps hash -> $got"
       # Rebuild so the release tree is actually produced (also verifies).
       nix build --impure --no-link --print-out-paths .#packages.x86_64-linux.dsh-tarball > /dev/null
     else
@@ -317,37 +323,28 @@ llm-models:
 llm-unload model:
     curl -s -X POST http://127.0.0.1:8100/unload -H 'Content-Type: application/json' -d '{"model":"{{model}}"}' | jq .
 
-# llama.cpp shortcuts
+# llama.cpp (the Bonsai fork router) shortcuts
 
 llamacpp-start:
-    sudo systemctl start llamacpp-muse.service
+    sudo systemctl start llamacpp-bonsai.service
 
 llamacpp-stop:
-    sudo systemctl stop llamacpp-muse.service
+    sudo systemctl stop llamacpp-bonsai.service
 
 llamacpp-restart:
-    sudo systemctl restart llamacpp-muse.service
+    sudo systemctl restart llamacpp-bonsai.service
 
 llamacpp-status:
-    sudo systemctl status llamacpp-muse.service --no-pager
+    sudo systemctl status llamacpp-bonsai.service --no-pager
 
 llamacpp-logs:
-    sudo journalctl -u llamacpp-muse.service -f
+    sudo journalctl -u llamacpp-bonsai.service -f
 
 llamacpp-health:
-    curl -s http://127.0.0.1:8000/health || echo "llama.cpp not responding"
-
-llamacpp-load-muse:
-    curl -s -X POST http://127.0.0.1:8000/load -H 'Content-Type: application/json' -d '{"model":"/var/lib/llama/models/muse-glimmer-30B/muse-glimmer-30B-kquant-dynamic.gguf"}' || echo "load failed"
-
-llamacpp-load-qwen:
-    curl -s -X POST http://127.0.0.1:8000/load -H 'Content-Type: application/json' -d '{"model":"/var/lib/llama/models/Qwen3.8-27B-Q8_0.gguf"}' || echo "load failed"
-
-llamacpp-models:
-    ls -lh /var/lib/llama/models
+    curl -s http://127.0.0.1:8010/health || echo "llama.cpp not responding"
 
 llamacpp-psi:
-    sudo systemctl is-active --quiet llamacpp-muse.service && echo "running" || echo "stopped"
+    sudo systemctl is-active --quiet llamacpp-bonsai.service && echo "running" || echo "stopped"
 
 # Short aliases
 alias lc-start := llamacpp-start

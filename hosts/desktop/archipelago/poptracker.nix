@@ -11,7 +11,11 @@ let
   };
 
   # NEEDED libs not bundled in the PyInstaller archive (libstdc++.so.6 via the base compiler).
-  runtimeLibs = with pkgs; [ SDL2 SDL2_ttf SDL2_image openssl_3 zlib (stdenv.cc.cc.lib) ];
+  # The ELF needs sonames libssl.so.3/libcrypto.so.3 with OPENSSL_3.0.0 symbol versions, so it
+  # must stay on an OpenSSL 3.x build: openssl_3 (3.0.x) was dropped from nixpkgs as end-of-life,
+  # so take the 3.5 LTS, which still exports every OPENSSL_3.0.0 symbol. Do not follow pkgs.openssl
+  # here — a future pin may move it to OpenSSL 4.x, whose soname would no longer satisfy NEEDED.
+  runtimeLibs = with pkgs; [ SDL2 SDL2_ttf SDL2_image openssl_3_5 zlib (stdenv.cc.cc.lib) ];
 
   # The shell fragment ${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}, built by
   # concatenation so Nix' ${ interpolation never sees the literal.

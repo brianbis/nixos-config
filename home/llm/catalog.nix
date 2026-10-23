@@ -44,7 +44,12 @@ let
 
   # The default row the gate loads when nothing is resident and a request names
   # no model — exposed so docs/consumers can name it without repeating an id.
-  gateDefaultModel = catalog.gate.default.id;
+  # `defaultModel` is that same row in the per-tool shape (id, providerName,
+  # url, context, …), so every consumer that wants "the default model" — dsh's
+  # session starter, the graphify and recurse launchers, the docs — reads this
+  # one binding instead of naming a row of its own.
+  defaultModel = catalog.defaultModel;
+  gateDefaultModel = defaultModel.id;
 
   # LSP catalog, keyed by crush language name: which language server each language uses, the package to mount (host copy, shared with home/packages.nix), and the file types / root markers for init.
   lsps = with pkgs; {
@@ -188,7 +193,7 @@ let
           base_url = "${m.url}/v1";
           api_key = p.api_key;
           models = (acc.${m.providerName}.models or [ ]) ++ [ (crushModelEntry m) ];
-        } // lib.optionalAttrs (m.providerName == "llamacpp" && m ? thinkingBudget) {
+        } // lib.optionalAttrs (m.providerName == "llamacpp_bonsai" && m ? thinkingBudget) {
           extra_body = { thinking_budget_tokens = m.thinkingBudget; };
         };
       })
@@ -215,9 +220,51 @@ let
     # `vllm_dflash2_direct` twin that only existed to dodge opencode's
     # one-baseURL-per-provider rule; the gate makes that twin unnecessary.)
     provider = lib.genAttrs providerNames (opencodeProvider);
-    model = "${models.gemma4awq.providerName}/${models.gemma4awq.id}";
-    small_model = "${models.gemma4awq.providerName}/${models.gemma4awq.id}";
+    model = "${defaultModel.providerName}/${defaultModel.id}";
+    small_model = "${defaultModel.providerName}/${defaultModel.id}";
   };
+
+  # The MCP servers every agent tool gets: the four tools that ship a stdio MCP
+  # server (knife, graphify, graphlore, ripwire), declared ONCE here and rendered
+  # into each client's shape below, so crush/opencode/claude/dsh all serve the same
+  # set. `command`/`args` are what the client spawns; `cwd`/`env` pin the project
+  # root for the servers that need one.
+  #
+  # The graph path is ABSOLUTE, not the servers' default `graphify-out/graph.json`
+  # relative to cwd: a dsh-web MCP process runs with cwd `/` (hosts/desktop/dsh-web.nix
+  # sets no WorkingDirectory, so systemd defaults `/`), and the agent builds the
+  # graph into $HOME/graphify-out/ (AGENTS.md), so the home is threaded through here.
+  # graphlore carries its project root in `env` as well as `cwd` because crush's
+  # MCPConfig has no cwd field — env is the one shape all three clients honour.
+  mcpServersFor = home: {
+    knife = { command = "knife"; args = [ "mcp" ]; };
+    graphify = { command = "graphify-mcp"; args = [ "${home}/graphify-out/graph.json" ]; };
+    graphlore = {
+      command = "graphlore";
+      args = [ ];
+      cwd = home;
+      env = { GRAPHLORE_PROJECT_DIR = home; };
+    };
+    ripwire = { command = "ripwire"; args = [ "--mcp" ]; };
+  };
+
+  # crush and Claude Code read the same stdio shape (type/command/args/env).
+  stdioMcpFor = home: lib.mapAttrs
+    (_n: s: {
+      type = "stdio";
+      command = s.command;
+      args = s.args;
+    } // lib.optionalAttrs (s ? env) { inherit (s) env; })
+    (mcpServersFor home);
+
+  # opencode's local-server shape: type "local" + command as one argv array.
+  opencodeMcpFor = home: lib.mapAttrs
+    (_n: s: {
+      type = "local";
+      command = [ s.command ] ++ s.args;
+      enabled = true;
+    } // lib.optionalAttrs (s ? cwd) { inherit (s) cwd; } // lib.optionalAttrs (s ? env) { environment = s.env; })
+    (mcpServersFor home);
 
   # dsh's home user layer ($DSH_HOME/cordis.patch.yml, hot-reloaded). rc.2 removed the standalone user-settings document ($DSH_HOME/settings.yaml): user settings now live in the profile patch layers, and this home-level layer applies above every profile (web/tui/headless), so one file serves them all. Every route names DEEPSEEK_API_KEY: pi-ai's openai-completions insists on a credential even for local endpoints.
   dshHomePatch =
@@ -258,8 +305,11 @@ let
               ms;
           })
         (lib.groupBy (m: m.providerName) allModels);
-      # Default agent model: the home layer wins over the base bundle's built-in default (deepseek-official), so new sessions start on the local NVFP4 route.
-      defaultModel = models.qwen38_nvfp4_ninfer;
+      # The default selection reads the shared defaultModel binding at the top of
+      # this file, so it cannot drift from the gate's row; the home layer still
+      # wins over the base bundle's built-in default (deepseek-official).
+      # dsh refuses an effort a model does not declare (llm-pi-ai's resolveReasoningLevel throws UNSUPPORTED_REASONING_EFFORT, and a row with no reasoningEfforts materializes as non-reasoning, where the only supported level is `off`), so the effort rides only on rows that declare levels.
+      defaultEffort = lib.optionalString (defaultModel ? reasoningEfforts) "\n    reasoningEffort: low";
     in
     ''
       # Managed by home-manager (writeDshHomePatch); do not edit by hand.
@@ -269,8 +319,53 @@ let
       - id: agent-default-model
         config:
           provider: ${defaultModel.providerName}
-          model: ${defaultModel.id}
-          reasoningEffort: low
+          model: ${defaultModel.id}${defaultEffort}
+
+      # The four code-analysis MCP servers, in dsh's profile-patch row shape. These
+      # carry the SAME ids as the web profile layer (dotfiles/dsh/cordis.patch.yml),
+      # so the two layers manage one setting each instead of duplicating a serverName:
+      # the home-level row makes the servers visible to every profile (the TUI jail
+      # `dsh`/`dshs`), and the web layer keeps the web profile's copy explicit.
+      # @@HOME@@ is replaced with config.home.homeDirectory by home/llm/jail-home.nix,
+      # so each home points at its own graphify-out (b: /home/b, the llm agent: /home/llm).
+      - insert:
+          - id: mcp-knife
+            name: "@deepseek-ai/dsh-mcp-client"
+            config:
+              serverName: knife
+              transport: stdio
+              command: knife
+              args: [mcp]
+              cwd: !!js process.cwd()
+      - insert:
+          - id: mcp-graphify
+            name: "@deepseek-ai/dsh-mcp-client"
+            config:
+              serverName: graphify
+              transport: stdio
+              command: graphify-mcp
+              args: ["@@HOME@@/graphify-out/graph.json"]
+              cwd: !!js process.cwd()
+      - insert:
+          - id: mcp-graphlore
+            name: "@deepseek-ai/dsh-mcp-client"
+            config:
+              serverName: graphlore
+              transport: stdio
+              command: graphlore
+              args: []
+              cwd: @@HOME@@
+              env:
+                GRAPHLORE_PROJECT_DIR: @@HOME@@
+      - insert:
+          - id: mcp-ripwire
+            name: "@deepseek-ai/dsh-mcp-client"
+            config:
+              serverName: ripwire
+              transport: stdio
+              command: ripwire
+              args: [--mcp]
+              cwd: !!js process.cwd()
     '';
 
   # The dsh web profile's patch layer ($DSH_HOME/profiles/web/cordis.patch.yml) is a static dotfile (dotfiles/dsh/cordis.patch.yml), installed by home/llm/jail-home.nix (writeDshWebProfilePatch).
@@ -330,11 +425,16 @@ let
       }
     ];
 
-    # Headroom MCP server: exposes headroom_retrieve (plus headroom_compress / headroom_stats) as callable tools so the model can turn the proxy's hash= compression markers back into original content.
-    mcp.headroom = {
-      type = "stdio";
-      command = "headroom";
-      args = [ "mcp" "serve" "--proxy-url" "${headroomProxyUrl}" ];
+    # The four code-analysis MCP servers (knife / graphify / graphlore / ripwire)
+    # plus the headroom retrieval server, all in crush's stdio shape. crush's MCPConfig
+    # has no cwd field, so graphlore's project root rides in `env` (GRAPHLORE_PROJECT_DIR)
+    # and the graphify graph path is absolute — see mcpServersFor above.
+    mcp = (stdioMcpFor base) // {
+      headroom = {
+        type = "stdio";
+        command = "headroom";
+        args = [ "mcp" "serve" "--proxy-url" "${headroomProxyUrl}" ];
+      };
     };
 
     # Language servers derived from the shared LSP catalog; each is annotated with file_types + root_markers so crush only initializes a server when that language appears in the mounted project.
@@ -344,13 +444,18 @@ let
     providers = crushProviders;
   };
 
-  # Claude Code user settings (settings.json); the env block routes the agent through the Claude-facing headroom proxy to the local llama.cpp, using the catalog's default local model.
+  # Claude Code user settings (settings.json); the env block routes the agent
+  # through the Claude-facing headroom proxy, which forwards to the boot-resident
+  # Bonsai llama-server (the Anthropic face is a passthrough, so it cannot sit
+  # on the gate), naming that engine's own thinking row.
   claudeConfig = builtins.toJSON {
     env = {
       ANTHROPIC_BASE_URL = headroomClaudeProxyUrl;
       ANTHROPIC_AUTH_TOKEN = "sk-local";
-      ANTHROPIC_MODEL = models.gemma4awq.id;
-      ANTHROPIC_SMALL_FAST_MODEL = models.gemma4awq.id;
+      # The face is a passthrough to its own engine, so Claude Code names that
+      # engine's thinking row — the gate's default would not exist behind it.
+      ANTHROPIC_MODEL = models.bonsai2_27b_pq2_thinking.id;
+      ANTHROPIC_SMALL_FAST_MODEL = models.bonsai2_27b_pq2_thinking.id;
     };
   };
 
@@ -367,6 +472,7 @@ in
     headroomCloudUpstreamUrl
     headroomClaudePort
     headroomClaudeProxyUrl
+    headroomClaudeUpstreamUrl
     headroomNinferPort
     headroomNinferProxyUrl
     headroomNinferUpstreamUrl
@@ -386,10 +492,14 @@ in
     opencodeProviders
     dshHomePatch
     rtkRewriteHook
+    mcpServersFor
+    stdioMcpFor
+    opencodeMcpFor
     agentHome
     agentUsername
     crushConfigFor
     claudeConfig
+    defaultModel
     gateDefaultModel
     ;
 }

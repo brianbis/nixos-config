@@ -17,6 +17,10 @@
 #     build_engine reuses a source:"local" engine only when those fingerprints
 #     match the current source (a `git pull`), so without them every start would
 #     recompile the engine (and fail: no compiler/CUDA in the service).
+#     The parts list must track setup.py's ENGINE_SOURCES / VISION_SOURCES
+#     verbatim: 0.1.40.3 added "cmake" to ENGINE_SOURCES, and the stale tuple
+#     here made setup.py distrust this engine at every start (step 4 died
+#     looking for the g++/nvcc the service does not carry).
 { stdenv
 , lib
 , cmake
@@ -86,7 +90,7 @@ stdenv.mkDerivation {
         "archs": [120],
         "ptx": False,
         "cuda": "${cudaToolkit.version}",
-        "src": source_hash(("CMakeLists.txt", "src", "include", "third_party/ggml")),
+        "src": source_hash(("CMakeLists.txt", "cmake", "src", "include", "third_party/ggml")),
         "vision_src": source_hash(("tools/vision",)),
     }
     with open(os.path.join(os.environ["OUT"], "app", "engine", "BUILD.json"), "w") as fh:

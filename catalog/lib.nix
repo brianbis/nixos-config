@@ -73,11 +73,18 @@ let
   # The headroom fronts, kept under their historical names because
   # home/llm/services.nix, agents-manifest.nix and the tool configs all read
   # them: <face>Port / <face>ProxyUrl / <face>UpstreamUrl. `*UpstreamUrl` is
-  # what the front proxies to — a local engine's port, or an upstream API.
+  # what the front proxies to — a local engine's port, the gate, or an upstream API.
   headroomFaces = {
-    headroom = { port = ports.headroom; upstreamUrl = urlOfPort ports.llamacpp; };
+    headroom = { port = ports.headroom; upstreamUrl = gateUrl; };
     headroomCloud = { port = ports.headroomCloud; upstreamUrl = "https://api.deepseek.com/v1"; };
-    headroomClaude = { port = ports.headroomClaude; upstreamUrl = urlOfPort ports.llamacpp; };
+    # The Anthropic face is a passthrough: headroom optimizes the request and
+    # forwards it to an upstream that speaks /v1/messages natively. llama-server
+    # does (the gate does not), so this face keeps an engine as its upstream —
+    # the boot-resident Bonsai router.
+    headroomClaude = {
+      port = ports.headroomClaude;
+      upstreamUrl = urlOfPort ports.llamacppBonsai;
+    };
     # The gate fronts the engine, so this proxy upstreams the engine's own port.
     headroomNinfer = { port = ports.headroomNinfer; upstreamUrl = urlOfPort ports.ninfer; };
     headroomNvidia = { port = ports.headroomNvidia; upstreamUrl = "https://integrate.api.nvidia.com/v1"; };
@@ -136,6 +143,12 @@ let
       relay = relayPort d;
       inherit (d) hosted vramMib;
     };
+
+  # The default row in the shape a tool config reads (providerName, id, name,
+  # url, context, maxTok, …), so every consumer that wants "the default model"
+  # — dsh's session starter, the graphify and recurse launchers, the docs —
+  # resolves the gate's own choice instead of naming a row of its own.
+  defaultModel = legacyModels.${gate.defaultKey};
 in
 {
   inherit
@@ -155,5 +168,6 @@ in
     idRoutes
     rows
     defaultRow
+    defaultModel
     ;
 } // headroomExports

@@ -1,17 +1,50 @@
 # Shared home-manager options for the homes hosting jailed LLM tooling:
 # b's home (user jails) and the llm agent user's home (system jails).
 # Ensures bubblewrap mount points exist and renders per-tool configs so both homes stay identical in content.
-{ config, lib, shared, ... }:
+{ config, lib, pkgs, shared, ... }:
 
 let
   userHome = config.home.homeDirectory;
   tool-configs = import ./configs.nix { inherit shared userHome; };
-  dshWebProfilePatch = builtins.readFile ../../dotfiles/dsh/cordis.patch.yml;
+  # The web-profile patch is one static file for both managed homes, so the three
+  # paths that name a home (the graphify graph, graphlore's cwd, and its
+  # GRAPHLORE_PROJECT_DIR) carry the @@HOME@@ token, replaced here with this home.
+  dshWebProfilePatch =
+    builtins.replaceStrings [ "@@HOME@@" ] [ userHome ]
+      (builtins.readFile ../../dotfiles/dsh/cordis.patch.yml);
+  # The home-level patch carries the same @@HOME@@ token (its MCP rows name this
+  # home's graphify-out and graphlore root), so both patch layers are rendered
+  # from one text with this home substituted.
+  dshHomePatch =
+    builtins.replaceStrings [ "@@HOME@@" ] [ userHome ]
+      shared.dshHomePatch;
   searxngSearchProvider = builtins.readFile ../../dotfiles/dsh/searxng-search-provider.mjs;
+  # dsh-crosstalk's compiled lib/: index.js imports its siblings by relative path,
+  # so the whole module set is installed together (a partial tree fails at import).
+  crosstalkLibDir = ../../dotfiles/dsh/crosstalk;
+  crosstalkModules = [ "atomic" "deliver" "identity" "index" "message" "registry" "tools" "types" ];
+
   # Embed the content as one single-quoted shell word: each embedded
   # apostrophe becomes '\'' so free-form comment text can never break the
   # script's quoting.
   shellQuote = s: "'" + builtins.replaceStrings [ "'" ] [ "'\\''" ] s + "'";
+
+  # One module of dsh-crosstalk's lib/: plain-file + cmp-guard write, same as
+  # the other out-of-tree plugin files. Assumes <name>.js in dotfiles/dsh/crosstalk/.
+  writeCrosstalkModule = n:
+    let
+      dest = "$HOME/.dsh/profiles/web/crosstalk/${n}.js";
+      content = builtins.readFile (crosstalkLibDir + "/${n}.js");
+    in ''
+      $DRY_RUN_CMD printf '%s' ${shellQuote content} \
+        > "${dest}.tmp"
+      if [ -f "${dest}" ] \
+        && cmp -s "${dest}.tmp" "${dest}"; then
+        $DRY_RUN_CMD rm -f "${dest}.tmp"
+      else
+        $DRY_RUN_CMD mv -f "${dest}.tmp" "${dest}"
+      fi
+    '';
 in
 {
   # Ensure the jailed agents' writable dirs exist as tracked empty files so
@@ -29,65 +62,73 @@ in
   home.activation.writeLLMConfigs =
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       $DRY_RUN_CMD mkdir -p \
-        $HOME/.config/crush/hooks \
-        $HOME/.config/opencode \
-        $HOME/.local/share/opencode \
-        $HOME/.config/headroom \
-        $HOME/.local/share/headroom \
-        $HOME/.claude
+        "$HOME/.config/crush/hooks" \
+        "$HOME/.config/opencode" \
+        "$HOME/.local/share/opencode" \
+        "$HOME/.config/headroom" \
+        "$HOME/.local/share/headroom" \
+        "$HOME/.claude"
 
       # Crush rtk rewrite hook (used by the PreToolUse hook in crush.json)
-      $DRY_RUN_CMD rm -f $HOME/.config/crush/hooks/rtk-rewrite.sh
-      $DRY_RUN_CMD printf '%s\n' '${shared.rtkRewriteHook}' \
-        > $HOME/.config/crush/hooks/rtk-rewrite.sh
-      $DRY_RUN_CMD chmod +x $HOME/.config/crush/hooks/rtk-rewrite.sh
+      $DRY_RUN_CMD rm -f "$HOME/.config/crush/hooks/rtk-rewrite.sh"
+      $DRY_RUN_CMD printf '%s\n' ${shellQuote shared.rtkRewriteHook} \
+        > "$HOME/.config/crush/hooks/rtk-rewrite.sh"
+      $DRY_RUN_CMD chmod +x "$HOME/.config/crush/hooks/rtk-rewrite.sh"
 
       # Aider
-      $DRY_RUN_CMD rm -f $HOME/.aider.conf.yml
-      $DRY_RUN_CMD printf '%s\n' '${tool-configs.aiderConfig}' > $HOME/.aider.conf.yml
+      $DRY_RUN_CMD rm -f "$HOME/.aider.conf.yml"
+      $DRY_RUN_CMD printf '%s\n' ${shellQuote tool-configs.aiderConfig} > "$HOME/.aider.conf.yml"
 
       # Crush
-      $DRY_RUN_CMD rm -f $HOME/.config/crush/crush.json
-      $DRY_RUN_CMD printf '%s\n' '${tool-configs.crushConfig}' \
-        > $HOME/.config/crush/crush.json
+      $DRY_RUN_CMD rm -f "$HOME/.config/crush/crush.json"
+      $DRY_RUN_CMD printf '%s\n' ${shellQuote tool-configs.crushConfig} \
+        > "$HOME/.config/crush/crush.json"
 
       # OpenCode
-      $DRY_RUN_CMD rm -f $HOME/.config/opencode/opencode.json
-      $DRY_RUN_CMD printf '%s\n' '${tool-configs.opencodeConfig}' \
-        > $HOME/.config/opencode/opencode.json
+      $DRY_RUN_CMD rm -f "$HOME/.config/opencode/opencode.json"
+      $DRY_RUN_CMD printf '%s\n' ${shellQuote tool-configs.opencodeConfig} \
+        > "$HOME/.config/opencode/opencode.json"
 
-      # Claude Code (settings.json routes it through the Claude-facing
-      # headroom proxy to local llama.cpp; state file only created if missing so
-      # session history survives re-activation)
-      $DRY_RUN_CMD [ -f $HOME/.claude.json ] || printf '{}\n' > $HOME/.claude.json
-      $DRY_RUN_CMD rm -f $HOME/.claude/settings.json
-      $DRY_RUN_CMD printf '%s\n' '${tool-configs.claudeConfig}' \
-        > $HOME/.claude/settings.json
+      # Claude Code: settings.json carries the env block (the Claude-facing
+      # headroom proxy to local llama.cpp). The MCP servers are NOT a settings.json
+      # key — Claude Code reads user-scope servers from the top-level mcpServers of
+      # ~/.claude.json, the same file that carries its session history — so the
+      # update is a jq merge that keeps every other key and only adds/overwrites
+      # our own server rows. jq is named by store path so the system closure
+      # realises it for this activation step; a file jq cannot parse is left
+      # untouched (with a warning) rather than replaced by garbage.
+      $DRY_RUN_CMD [ -f "$HOME/.claude.json" ] || printf '{}\n' > "$HOME/.claude.json"
+
+      if ${pkgs.jq}/bin/jq -c --argjson mcp ${shellQuote tool-configs.claudeMcpServers} '. + {mcpServers: ((.mcpServers // {}) + $mcp)}' "$HOME/.claude.json" > "$HOME/.claude.json.tmp"; then
+        if [ -f "$HOME/.claude.json" ] \
+          && cmp -s "$HOME/.claude.json.tmp" "$HOME/.claude.json"; then
+          $DRY_RUN_CMD rm -f "$HOME/.claude.json.tmp"
+        else
+          $DRY_RUN_CMD mv -f "$HOME/.claude.json.tmp" "$HOME/.claude.json"
+        fi
+      else
+        $DRY_RUN_CMD rm -f "$HOME/.claude.json.tmp"
+        echo "WARN: $HOME/.claude.json is not valid JSON; MCP servers not merged." >&2
+      fi
+      $DRY_RUN_CMD rm -f "$HOME/.claude/settings.json"
+      $DRY_RUN_CMD printf '%s\n' ${shellQuote tool-configs.claudeConfig} \
+        > "$HOME/.claude/settings.json"
     '';
 
-  # dsh's home user layer ($DSH_HOME/cordis.patch.yml): rc.2 removed the
-  # standalone settings document, so user settings live in the profile patch
-  # layers; the home-level layer applies to every profile. dsh watches the file
-  # at runtime and publishes empty settings while it is missing, so the cmp
-  # guard keeps an unchanged activation a filesystem no-op instead of a
-  # delete/add swap that would churn dsh's settings state. The legacy
-  # $DSH_HOME/settings.yaml is removed: rc.2 renames it to .imported at startup
-  # and re-imports its sections into the profile layer, double-managing the
-  # same settings.
   home.activation.writeDshHomePatch =
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      $DRY_RUN_CMD mkdir -p $HOME/.dsh
+      $DRY_RUN_CMD mkdir -p "$HOME/.dsh"
 
-      $DRY_RUN_CMD printf '%s' ${shellQuote shared.dshHomePatch} \
-        > $HOME/.dsh/cordis.patch.yml.tmp
-      $DRY_RUN_CMD chmod 600 $HOME/.dsh/cordis.patch.yml.tmp
-      if [ -f $HOME/.dsh/cordis.patch.yml ] \
-        && cmp -s $HOME/.dsh/cordis.patch.yml.tmp $HOME/.dsh/cordis.patch.yml; then
-        $DRY_RUN_CMD rm -f $HOME/.dsh/cordis.patch.yml.tmp
+      $DRY_RUN_CMD printf '%s' ${shellQuote dshHomePatch} \
+        > "$HOME/.dsh/cordis.patch.yml.tmp"
+      $DRY_RUN_CMD chmod 600 "$HOME/.dsh/cordis.patch.yml.tmp"
+      if [ -f "$HOME/.dsh/cordis.patch.yml" ] \
+        && cmp -s "$HOME/.dsh/cordis.patch.yml.tmp" "$HOME/.dsh/cordis.patch.yml"; then
+        $DRY_RUN_CMD rm -f "$HOME/.dsh/cordis.patch.yml.tmp"
       else
-        $DRY_RUN_CMD mv -f $HOME/.dsh/cordis.patch.yml.tmp $HOME/.dsh/cordis.patch.yml
+        $DRY_RUN_CMD mv -f "$HOME/.dsh/cordis.patch.yml.tmp" "$HOME/.dsh/cordis.patch.yml"
       fi
-      $DRY_RUN_CMD rm -f $HOME/.dsh/settings.yaml
+      $DRY_RUN_CMD rm -f "$HOME/.dsh/settings.yaml"
     '';
 
   # dsh's web-profile patch layer: watched at runtime, and dsh creates the file
@@ -95,17 +136,15 @@ in
   # write (as in writeDshHomePatch) keeps unchanged activations a filesystem no-op.
   home.activation.writeDshWebProfilePatch =
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      $DRY_RUN_CMD mkdir -p $HOME/.dsh/profiles/web
+      $DRY_RUN_CMD mkdir -p "$HOME/.dsh/profiles/web"
 
       $DRY_RUN_CMD printf '%s' ${shellQuote dshWebProfilePatch} \
-        > $HOME/.dsh/profiles/web/cordis.patch.yml.tmp
-      if [ -f $HOME/.dsh/profiles/web/cordis.patch.yml ] \
-        && cmp -s $HOME/.dsh/profiles/web/cordis.patch.yml.tmp \
-          $HOME/.dsh/profiles/web/cordis.patch.yml; then
-        $DRY_RUN_CMD rm -f $HOME/.dsh/profiles/web/cordis.patch.yml.tmp
+        > "$HOME/.dsh/profiles/web/cordis.patch.yml.tmp"
+      if [ -f "$HOME/.dsh/profiles/web/cordis.patch.yml" ] \
+        && cmp -s "$HOME/.dsh/profiles/web/cordis.patch.yml.tmp" "$HOME/.dsh/profiles/web/cordis.patch.yml"; then
+        $DRY_RUN_CMD rm -f "$HOME/.dsh/profiles/web/cordis.patch.yml.tmp"
       else
-        $DRY_RUN_CMD mv -f $HOME/.dsh/profiles/web/cordis.patch.yml.tmp \
-          $HOME/.dsh/profiles/web/cordis.patch.yml
+        $DRY_RUN_CMD mv -f "$HOME/.dsh/profiles/web/cordis.patch.yml.tmp" "$HOME/.dsh/profiles/web/cordis.patch.yml"
       fi
     '';
 
@@ -114,17 +153,26 @@ in
   # profile package.json's `type`. Not watched at runtime — a dsh restart loads it.
   home.activation.writeDshSearxngSearchProvider =
     lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      $DRY_RUN_CMD mkdir -p $HOME/.dsh/profiles/web
+      $DRY_RUN_CMD mkdir -p "$HOME/.dsh/profiles/web"
 
       $DRY_RUN_CMD printf '%s' ${shellQuote searxngSearchProvider} \
-        > $HOME/.dsh/profiles/web/searxng-search-provider.mjs.tmp
-      if [ -f $HOME/.dsh/profiles/web/searxng-search-provider.mjs ] \
-        && cmp -s $HOME/.dsh/profiles/web/searxng-search-provider.mjs.tmp \
-          $HOME/.dsh/profiles/web/searxng-search-provider.mjs; then
-        $DRY_RUN_CMD rm -f $HOME/.dsh/profiles/web/searxng-search-provider.mjs.tmp
+        > "$HOME/.dsh/profiles/web/searxng-search-provider.mjs.tmp"
+      if [ -f "$HOME/.dsh/profiles/web/searxng-search-provider.mjs" ] \
+        && cmp -s "$HOME/.dsh/profiles/web/searxng-search-provider.mjs.tmp" "$HOME/.dsh/profiles/web/searxng-search-provider.mjs"; then
+        $DRY_RUN_CMD rm -f "$HOME/.dsh/profiles/web/searxng-search-provider.mjs.tmp"
       else
-        $DRY_RUN_CMD mv -f $HOME/.dsh/profiles/web/searxng-search-provider.mjs.tmp \
-          $HOME/.dsh/profiles/web/searxng-search-provider.mjs
+        $DRY_RUN_CMD mv -f "$HOME/.dsh/profiles/web/searxng-search-provider.mjs.tmp" "$HOME/.dsh/profiles/web/searxng-search-provider.mjs"
       fi
+    '';
+
+  # dsh-crosstalk's compiled lib/ (see the crosstalk row in the web profile patch):
+  # plain-file + cmp-guard writes, same as the other out-of-tree plugin. Not watched
+  # at runtime — the patch layer that mounts it is, so a rebuild lands on the next
+  # dsh start.
+  home.activation.writeDshCrosstalkLib =
+    lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      $DRY_RUN_CMD mkdir -p "$HOME/.dsh/profiles/web/crosstalk"
+
+      ${builtins.concatStringsSep "\n" (map writeCrosstalkModule crosstalkModules)}
     '';
 }

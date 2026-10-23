@@ -63,16 +63,16 @@ rustPlatform.buildRustPackage rec {
     # workspace bumps the egui rev: set the entries to lib.fakeHash and copy
     # the `got: sha256-…` value back.
     outputHashes = {
-      "ecolor-0.36.2" = "sha256-pexXIiZKSu0RvPSr0Xa16d4F0zrGifqXTNTrCk0FnoE=";
-      "eframe-0.36.2" = "sha256-pexXIiZKSu0RvPSr0Xa16d4F0zrGifqXTNTrCk0FnoE=";
-      "egui-0.36.2" = "sha256-pexXIiZKSu0RvPSr0Xa16d4F0zrGifqXTNTrCk0FnoE=";
-      "egui-wgpu-0.36.2" = "sha256-pexXIiZKSu0RvPSr0Xa16d4F0zrGifqXTNTrCk0FnoE=";
-      "egui-winit-0.36.2" = "sha256-pexXIiZKSu0RvPSr0Xa16d4F0zrGifqXTNTrCk0FnoE=";
-      "egui_glow-0.36.2" = "sha256-pexXIiZKSu0RvPSr0Xa16d4F0zrGifqXTNTrCk0FnoE=";
-      "egui_system_fonts-0.36.2" = "sha256-pexXIiZKSu0RvPSr0Xa16d4F0zrGifqXTNTrCk0FnoE=";
-      "emath-0.36.2" = "sha256-pexXIiZKSu0RvPSr0Xa16d4F0zrGifqXTNTrCk0FnoE=";
-      "epaint-0.36.2" = "sha256-pexXIiZKSu0RvPSr0Xa16d4F0zrGifqXTNTrCk0FnoE=";
-      "epaint_default_fonts-0.36.2" = "sha256-pexXIiZKSu0RvPSr0Xa16d4F0zrGifqXTNTrCk0FnoE=";
+      "ecolor-0.36.2" = "sha256-rwOE466Vg4hSmlDJwjh1Z14wH/fOEI95C7GO1Iymf6c=";
+      "eframe-0.36.2" = "sha256-rwOE466Vg4hSmlDJwjh1Z14wH/fOEI95C7GO1Iymf6c=";
+      "egui-0.36.2" = "sha256-rwOE466Vg4hSmlDJwjh1Z14wH/fOEI95C7GO1Iymf6c=";
+      "egui-wgpu-0.36.2" = "sha256-rwOE466Vg4hSmlDJwjh1Z14wH/fOEI95C7GO1Iymf6c=";
+      "egui-winit-0.36.2" = "sha256-rwOE466Vg4hSmlDJwjh1Z14wH/fOEI95C7GO1Iymf6c=";
+      "egui_glow-0.36.2" = "sha256-rwOE466Vg4hSmlDJwjh1Z14wH/fOEI95C7GO1Iymf6c=";
+      "egui_system_fonts-0.36.2" = "sha256-rwOE466Vg4hSmlDJwjh1Z14wH/fOEI95C7GO1Iymf6c=";
+      "emath-0.36.2" = "sha256-rwOE466Vg4hSmlDJwjh1Z14wH/fOEI95C7GO1Iymf6c=";
+      "epaint-0.36.2" = "sha256-rwOE466Vg4hSmlDJwjh1Z14wH/fOEI95C7GO1Iymf6c=";
+      "epaint_default_fonts-0.36.2" = "sha256-rwOE466Vg4hSmlDJwjh1Z14wH/fOEI95C7GO1Iymf6c=";
     };
   };
 

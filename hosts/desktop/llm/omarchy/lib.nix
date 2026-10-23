@@ -75,56 +75,12 @@ let
 
   idleSeconds = 120;
 
-  enginePatch = recipe.enginePatch or null;
-
   # ─── Engine runtime package ────────────────────────────────────────────────
-  # The tabbyapi venv, or the sglang venv — for recipes that declare
-  # enginePatch, the sglang venv with that patch applied (a hardlink copy of
-  # the sglang package; only the patched file diverges, so no data duplication).
+  # The tabbyapi venv, or the sglang venv.
   enginePkg =
     if engine == "tabbyapi"
     then pkgs.tabbyapi
-    else
-      if enginePatch != null
-      then
-        pkgs.stdenv.mkDerivation {
-          pname = "sglang-${id}";
-          version = "0.5.19";
-          nativeBuildInputs = [ pkgs.patch ];
-          dontUnpack = true;
-          dontConfigure = true;
-          dontBuild = true;
-          installPhase = ''
-            # The omarchy-pinned verification group (the same hashes the
-            # container launch checks): the engine patch must match before it
-            # is applied.
-            echo '${recipe.enginePatchSha256}  ${enginePatch}' | sha256sum -c -
-            # Copy the sglang runtime and apply the patch to the copy. A
-            # plain copy (not cp -al): in a sandboxed build $out lives on a
-            # different filesystem from the store, so hardlinks are EXDEV.
-            cp -a ${pkgs.sglang}/. $out
-            # cp -a carries the store's 0555 dir modes (and the store root's
-            # mode onto $out itself); make the tree writable so mkdir/patch
-            # can work (nix normalizes the modes when it copies $out into
-            # the store).
-            chmod -R u+w $out
-            target="$out/venv/lib/python3.12/site-packages/sglang/srt/models/gemma4_unified.py"
-            # Double quotes: $target must expand in the shell.
-            echo "${recipe.engineFilePreSha256}  $target" | sha256sum -c -
-            # The diff is repo-root relative (python/sglang/srt/models/...);
-            # the venv's site-packages is the sglang package root. patch(1)
-            # refuses symlinks, so patch a copy at the repo-root path and
-            # copy the result back.
-            mkdir -p "$out/python/sglang/srt/models"
-            cp "$target" "$out/python/sglang/srt/models/gemma4_unified.py"
-            (cd "$out" && patch -p0 < ${enginePatch})
-            # The patched file must match the omarchy pin.
-            echo "${recipe.engineFilePostSha256}  $out/python/sglang/srt/models/gemma4_unified.py" | sha256sum -c -
-            cp "$out/python/sglang/srt/models/gemma4_unified.py" "$target"
-            echo "${recipe.engineFilePostSha256}  $target" | sha256sum -c -
-          '';
-        }
-      else pkgs.sglang;
+    else pkgs.sglang;
 
   # The child command (what the idle wrapper execs).
   childCommand =
@@ -136,8 +92,8 @@ let
         configPath = "${pkgs.writeText "omarchy-config-${id}" (builtins.readFile recipe.configAsset)}";
       in
       # Launch the venv's own python (not a thin $out/bin symlink): CPython
-      # detects the venv from the launch path's parent dir (pyvenv.cfg), so a
-      # symlink rooted elsewhere makes sys.prefix the base interpreter's.
+        # detects the venv from the launch path's parent dir (pyvenv.cfg), so a
+        # symlink rooted elsewhere makes sys.prefix the base interpreter's.
       [
         "${enginePkg}/venv/bin/python3"
         "${enginePkg}/app/main.py"
@@ -148,21 +104,7 @@ let
       let
         args = recipe.sglangArgs ++ [ "--port" (toString childPort) ];
       in
-      if enginePatch != null
-      then
-        # The omarchy launch group, undockerified: verify the pinned patch and
-        # patched-file hashes, then exec the engine (mirrors the container's
-        # bash -lc launch).
-        [
-          (pkgs.writeShellScript "omarchy-launch-${id}" ''
-            set -euo pipefail
-            echo '${recipe.enginePatchSha256}  ${enginePatch}' | sha256sum -c -
-            echo '${recipe.engineFilePostSha256}  ${enginePkg}/venv/lib/python3.12/site-packages/sglang/srt/models/gemma4_unified.py' | sha256sum -c -
-            exec "${enginePkg}/bin/sglang" serve ${lib.concatStringsSep " " args}
-          '')
-        ]
-      else
-        [ "${enginePkg}/bin/sglang" "serve" ] ++ args;
+      [ "${enginePkg}/bin/sglang" "serve" ] ++ args;
   # Environment for the engine service.
   engineEnv =
     if engine == "tabbyapi"
@@ -201,9 +143,9 @@ let
 
 in
 assert
-  # Guard: the recipe id and the ledger's unit name must agree, or the gate
-  # would start a unit that does not exist.
-  row.unit == "omarchy-${id}";
+# Guard: the recipe id and the ledger's unit name must agree, or the gate
+# would start a unit that does not exist.
+row.unit == "omarchy-${id}";
 {
   # ─── tmpfiles: model directories ───────────────────────────────────────────
 

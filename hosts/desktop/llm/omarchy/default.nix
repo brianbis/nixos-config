@@ -1,8 +1,8 @@
 # Omarchy model recipes: undockerified LLM engines with no port of their own.
 #
-# Five models on the RTX 5090 (32 GB):
+# Four models on the RTX 5090 (32 GB):
 #   - 2× TabbyAPI/EXL3 (Qwen3.8-27B, exllamav3 backend)
-#   - 3× SGLang (Gemma-4-12B NVFP4, LFM2.5-2.6B BF16, Ornith-1.5-35B NVFP4)
+#   - 2× SGLang (LFM2.5-2.6B BF16, Ornith-1.5-35B NVFP4)
 #
 # All engines are lifecycle daemons (on-demand VRAM residency): the gate
 # (../gate) starts them when a request names their model and the idle wrapper

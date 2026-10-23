@@ -31,6 +31,7 @@ Usage: update-deps.py <src-dir> <src-rev>
 Stdlib only on purpose: the justfile runs this inside `nix shell
 nixpkgs#nodejs nixpkgs#python3`, a minimal environment.
 """
+
 import concurrent.futures
 import glob
 import hashlib
@@ -86,16 +87,22 @@ def rewrite_manifest(pj_path, versions):
     """Return the package.json with workspace: deps rewritten in place."""
     with open(pj_path) as f:
         meta = json.load(f)
-    for section in ("dependencies", "devDependencies",
-                    "optionalDependencies", "peerDependencies"):
+    for section in (
+        "dependencies",
+        "devDependencies",
+        "optionalDependencies",
+        "peerDependencies",
+    ):
         deps = meta.get(section) or {}
         for name, value in list(deps.items()):
             if not isinstance(value, str) or not value.startswith("workspace:"):
                 continue
             if name not in versions:
-                die(f"{name}: workspace: dep not found in workspace map "
-                    f"(have {len(versions)} members)")
-            rest = value[len("workspace:"):]
+                die(
+                    f"{name}: workspace: dep not found in workspace map "
+                    f"(have {len(versions)} members)"
+                )
+            rest = value[len("workspace:") :]
             version = versions[name]
             if rest in ("", "*"):
                 deps[name] = version
@@ -112,10 +119,10 @@ def npm_lockfile(src, out_lock):
     The working directory is always cleaned up, so a failed run leaves no
     state behind (an earlier version leaked .lockfile-tmp/ on npm failure).
     """
-    meta = rewrite_manifest(os.path.join(src, "apps", "cli", "package.json"),
-                            workspace_versions(src))
-    tmp = os.path.join(os.path.dirname(os.path.abspath(out_lock)),
-                       ".lockfile-tmp")
+    meta = rewrite_manifest(
+        os.path.join(src, "apps", "cli", "package.json"), workspace_versions(src)
+    )
+    tmp = os.path.join(os.path.dirname(os.path.abspath(out_lock)), ".lockfile-tmp")
     shutil.rmtree(tmp, ignore_errors=True)
     try:
         os.makedirs(tmp)
@@ -124,13 +131,22 @@ def npm_lockfile(src, out_lock):
         npm = shutil.which("npm")
         if not npm:
             die("npm not on PATH")
-        r = subprocess.run([npm, "install", "--package-lock-only",
-                            "--ignore-scripts",
-                            "--registry=https://registry.npmjs.org"],
-                           cwd=tmp, capture_output=True, text=True)
+        r = subprocess.run(
+            [
+                npm,
+                "install",
+                "--package-lock-only",
+                "--ignore-scripts",
+                "--registry=https://registry.npmjs.org",
+            ],
+            cwd=tmp,
+            capture_output=True,
+            text=True,
+        )
         if r.returncode != 0:
             raise RuntimeError(
-                f"npm install --package-lock-only failed:\n{r.stdout}\n{r.stderr}")
+                f"npm install --package-lock-only failed:\n{r.stdout}\n{r.stderr}"
+            )
         shutil.move(os.path.join(tmp, "package-lock.json"), out_lock)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -167,6 +183,7 @@ def fetch(url, integrity, cache_dir):
         os.replace(path + ".part", path)
     data = open(path, "rb").read()
     import base64
+
     algo, b64 = integrity.split("-", 1)
     if algo != "sha512":
         die(f"unsupported integrity algo {algo!r} for {url}")
@@ -185,9 +202,9 @@ def main():
     here = os.path.dirname(os.path.abspath(__file__))
     out_lock = os.path.join(here, "package-lock.json")
     out_sha = os.path.join(here, "deps-sha256.json")
-    cache_dir = os.path.join(os.environ.get("XDG_CACHE_HOME",
-                                            os.path.expanduser("~/.cache")),
-                             "dsh-deps")
+    cache_dir = os.path.join(
+        os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "dsh-deps"
+    )
     os.makedirs(cache_dir, exist_ok=True)
 
     npm_lockfile(src, out_lock)
@@ -219,8 +236,7 @@ def main():
     to_fetch = [u for u in wanted if u not in existing]
     print(f"{len(to_fetch)} to download, {len(wanted) - len(to_fetch)} cached")
     with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
-        futures = {pool.submit(fetch, u, wanted[u], cache_dir): u
-                   for u in to_fetch}
+        futures = {pool.submit(fetch, u, wanted[u], cache_dir): u for u in to_fetch}
         for fut in concurrent.futures.as_completed(futures):
             u = futures[fut]
             existing[u] = fut.result()

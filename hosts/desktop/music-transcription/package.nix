@@ -31,7 +31,8 @@ let
   # so clearing `nativeCheckInputs` stops the huge test-dep trees (huggingface-hub
   # -> jupyter/twine/falcon/openai, ...) from being built at all. Applying it to
   # every package (guarded by `? overridePythonAttrs`) is the robust, general fix.
-  noCheck = v: if v ? overridePythonAttrs
+  noCheck = v:
+    if v ? overridePythonAttrs
     then v.overridePythonAttrs { doCheck = false; nativeCheckInputs = [ ]; }
     else v;
   py = python312.override {

@@ -86,62 +86,6 @@
 
   # ─── SGLang models ─────────────────────────────────────────────────────────
 
-  gemma4-12b-nvfp4 = {
-    name = "Gemma-4-12B-it";
-    servedName = "unsloth/gemma-4-12b-it-NVFP4";
-    engine = "sglang";
-    family = "gemma";
-    format = "ModelOpt · NVFP4";
-    capabilities = {
-      chat = true;
-      reasoning = false;
-      tools = false;
-      vision = false;
-    };
-    sizeGb = 8.7;
-    weights = {
-      repository = "unsloth/gemma-4-12b-it-NVFP4";
-      revision = "b1f649734b34aa5575b03d186abd1b9be3d0d5c4";
-      layout = "hub";
-      dir = "";
-      # HF-hub layout: the model is downloaded to the HF cache and served via
-      # --model-path <repo-id> (sglang resolves it from HF_HOME).
-      sentinels = [
-        "models--unsloth--gemma-4-12b-it-NVFP4/refs/b1f649734b34aa5575b03d186abd1b9be3d0d5c4"
-      ];
-    };
-    serving = {
-      ctxTokens = 131072;
-      kvTokens = 133368;
-    };
-    # The ledger row in ../../../../catalog/default.nix owns this model's port
-    # and systemd unit name, so the gate's table and these units cannot drift.
-    catalogKey = "gemma4_12b_nvfp4";
-    shm = "16g";
-    # SGLang launch arguments (beyond the shared engine flags).
-    sglangArgs = [
-      "--model-path" "unsloth/gemma-4-12b-it-NVFP4"
-      "--revision" "b1f649734b34aa5575b03d186abd1b9be3d0d5c4"
-      "--tp" "1"
-      "--host" "127.0.0.1"
-      "--context-length" "131072"
-      "--mem-fraction-static" "0.8827875"
-      "--attention-backend" "triton"
-      "--enable-cache-report"
-      "--trust-remote-code"
-      "--reasoning-parser" "gemma4"
-      "--tool-call-parser" "gemma4"
-    ];
-    # The gemma4 engine patch (NVFP4 republished config compat), applied to a
-    # hardlink copy of the sglang venv at build time. The omarchy-pinned
-    # hashes (the container launch's verification group) gate both the patch
-    # and the result.
-    enginePatch = ./assets/gemma4-engine-patch.diff;
-    enginePatchSha256 = "dede8848dbcbfcfc6507da963a65d120add93101b6ff5fb54a03f19e86233d11";
-    engineFilePreSha256 = "d5498b253f35e83ab0aaf219a2c2bf2f42c6bbd3f95ffce02760e78b2e38a4e9";
-    engineFilePostSha256 = "b0614b99a0d7fe654ed102fb5db04c578e3be6042896f73f9418965e6672c737";
-  };
-
   lfm25-26b-bf16 = {
     name = "LFM2.5-2.6B";
     servedName = "LiquidAI/LFM2.5-2.6B";
@@ -173,19 +117,30 @@
     catalogKey = "lfm25_26b_bf16";
     shm = "16g";
     sglangArgs = [
-      "--model-path" "LiquidAI/LFM2.5-2.6B"
-      "--revision" "a334ee78cd38458bb71eda24109ac42dcec1309d"
-      "--host" "127.0.0.1"
-      "--tp" "1"
-      "--context-length" "131072"
-      "--mem-fraction-static" "0.874"
-      "--attention-backend" "flashinfer"
-      "--max-running-requests" "4"
-      "--cuda-graph-max-bs-decode" "4"
+      "--model-path"
+      "LiquidAI/LFM2.5-2.6B"
+      "--revision"
+      "a334ee78cd38458bb71eda24109ac42dcec1309d"
+      "--host"
+      "127.0.0.1"
+      "--tp"
+      "1"
+      "--context-length"
+      "131072"
+      "--mem-fraction-static"
+      "0.874"
+      "--attention-backend"
+      "flashinfer"
+      "--max-running-requests"
+      "4"
+      "--cuda-graph-max-bs-decode"
+      "4"
       "--enable-cache-report"
       "--trust-remote-code"
-      "--reasoning-parser" "qwen3-thinking"
-      "--tool-call-parser" "lfm2"
+      "--reasoning-parser"
+      "qwen3-thinking"
+      "--tool-call-parser"
+      "lfm2"
     ];
   };
 
@@ -220,21 +175,34 @@
     catalogKey = "ornith15_35b_nvfp4";
     shm = "16g";
     sglangArgs = [
-      "--model-path" "ornith-ai/Ornith-1.5-35B-A3B-NVFP4"
-      "--revision" "0f0b1b59b879ccde1353e6ebd0fb10c204d4c544"
-      "--tp" "1"
-      "--host" "127.0.0.1"
-      "--context-length" "131072"
-      "--mem-fraction-static" "0.90"
-      "--max-running-requests" "4"
-      "--cuda-graph-max-bs-decode" "4"
+      "--model-path"
+      "ornith-ai/Ornith-1.5-35B-A3B-NVFP4"
+      "--revision"
+      "0f0b1b59b879ccde1353e6ebd0fb10c204d4c544"
+      "--tp"
+      "1"
+      "--host"
+      "127.0.0.1"
+      "--context-length"
+      "131072"
+      "--mem-fraction-static"
+      "0.90"
+      "--max-running-requests"
+      "4"
+      "--cuda-graph-max-bs-decode"
+      "4"
       "--enable-cache-report"
       "--trust-remote-code"
-      "--reasoning-parser" "qwen3"
-      "--tool-call-parser" "qwen3_coder"
-      "--kv-cache-dtype" "fp8_e4m3"
-      "--attention-backend" "flashinfer"
-      "--moe-runner-backend" "flashinfer_cutlass"
+      "--reasoning-parser"
+      "qwen3"
+      "--tool-call-parser"
+      "qwen3_coder"
+      "--kv-cache-dtype"
+      "fp8_e4m3"
+      "--attention-backend"
+      "flashinfer"
+      "--moe-runner-backend"
+      "flashinfer_cutlass"
     ];
   };
 }

@@ -44,24 +44,27 @@ let
   # Production entries to install, keyed by their lockfile placement
   # (node_modules/... paths).
   entries =
-    lib.filter (k:
-      let e = lock.packages.${k};
-      in k != "" && !(e.dev or false) && linuxApplicable e && e ? resolved
-        && e ? integrity)
+    lib.filter
+      (k:
+        let e = lock.packages.${k};
+        in k != "" && !(e.dev or false) && linuxApplicable e && e ? resolved
+          && e ? integrity)
       (lib.attrNames lock.packages);
 
   # One fetchurl per unique tarball URL (fixed-output; the sha256 comes
   # from deps-sha256.json, which update-deps.py verified against the
   # lock's sha512 integrity).
   urls = lib.unique (lib.map (k: lock.packages.${k}.resolved) entries);
-  tarballs = lib.listToAttrs (lib.map (u: {
-    name = u;
-    value = fetchurl {
-      url = u;
-      sha256 = sha256.${u}
-        or (throw "deps-sha256.json is missing ${u} — run home/llm/dsh/update-deps.py");
-    };
-  }) urls);
+  tarballs = lib.listToAttrs (lib.map
+    (u: {
+      name = u;
+      value = fetchurl {
+        url = u;
+        sha256 = sha256.${u}
+          or (throw "deps-sha256.json is missing ${u} — run home/llm/dsh/update-deps.py");
+      };
+    })
+    urls);
 
   # Packages with install scripts (discovered from the lockfile, not
   # pinned by hand): their placement keys.
@@ -72,10 +75,12 @@ let
   # JSON is a store path (writeText): inlining it as an env var risks
   # exceeding MAX_ARG_STRLEN.
   unpackEntries = pkgs.writeText "dsh-${version}-unpack-entries.json"
-    (lib.toJSON (lib.map (k: {
-      key = k;
-      tarball = "${tarballs.${lock.packages.${k}.resolved}}";
-    }) entries));
+    (lib.toJSON (lib.map
+      (k: {
+        key = k;
+        tarball = "${tarballs.${lock.packages.${k}.resolved}}";
+      })
+      entries));
 
   nodeModules = runCommand "dsh-${version}-node-modules"
     {
@@ -87,9 +92,9 @@ let
   '';
 in
 # The lock pin must come from exactly the pinned source tree: update-deps.py
-# stamps package-lock.json with _meta.srcRev. A dsh source move without
-# `just dsh-repin` would otherwise install a stale closure (missing or
-# renamed production deps) with no build error, so fail loudly at eval time.
+  # stamps package-lock.json with _meta.srcRev. A dsh source move without
+  # `just dsh-repin` would otherwise install a stale closure (missing or
+  # renamed production deps) with no build error, so fail loudly at eval time.
 assert (lock._meta.srcRev or null) == commit
   || throw "stale home/llm/dsh/package-lock.json: the dsh source moved without a re-pin; run `just dsh-repin`";
 stdenv.mkDerivation {

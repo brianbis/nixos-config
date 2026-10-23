@@ -48,7 +48,7 @@ let
     # package-lock.json). Re-pin when `nix flake update recurse` moves the
     # lockfile: set to lib.fakeHash, build, copy the `got: sha256-…` value
     # back.
-    npmDepsHash = "sha256-e2JO4h5mRMbLO9eALce8UcQ8cNJ9H9R2Ty+9s8LlEVU=";
+    npmDepsHash = "sha256-jApkP4T+9qRxcG8n1VTv2vTcmv3pwnhvAbOm/YHSdWs=";
 
     npmBuildScript = "build";
 

@@ -66,8 +66,10 @@
 # relative to cwd) because the MCP server's process cwd is `/`: the dsh-web
 # service (hosts/desktop/dsh-web.nix) sets no WorkingDirectory, so systemd
 # defaults it to `/` and `!!js process.cwd()` below evaluates to `/`. The
-# agent builds the graph into the agent home ($HOME/graphify-out/), a stable
-# location this static profile can point at.
+# agent builds the graph into the home that owns this profile ($HOME/graphify-out/),
+# so the path carries the `@@HOME@@` token that home/llm/jail-home.nix replaces
+# with config.home.homeDirectory when it installs this file — b's home gets
+# /home/b, the llm agent home gets /home/llm.
 - insert:
     - id: mcp-graphify
       name: "@deepseek-ai/dsh-mcp-client"
@@ -75,7 +77,7 @@
         serverName: graphify
         transport: stdio
         command: graphify-mcp
-        args: ["/home/llm/graphify-out/graph.json"]
+        args: ["@@HOME@@/graphify-out/graph.json"]
         cwd: !!js process.cwd()
 
 # graphlore: richer third-party MCP server (28 tools) that wraps graphify's
@@ -99,9 +101,9 @@
         transport: stdio
         command: graphlore
         args: []
-        cwd: /home/llm
+        cwd: @@HOME@@
         env:
-          GRAPHLORE_PROJECT_DIR: /home/llm
+          GRAPHLORE_PROJECT_DIR: @@HOME@@
 
 # ripwire: "the ripgrep of AI context" (redhat-et/ripwire): a zero-dependency
 # C++23 CLI + stdio MCP server that builds a ranked symbol/call graph
@@ -124,3 +126,35 @@
         command: ripwire
         args: ["--mcp"]
         cwd: !!js process.cwd()
+
+# dsh-crosstalk (github.com/Jesse-njx/dsh-crosstalk): the missing horizontal
+# primitive. DSH's send_message/list_agents are strictly hierarchical (a parent
+# and its own subagents), so two sibling sessions — two repos, a coordinator
+# farming work out, a chatnode peer — cannot see or reach each other. This bundle
+# gives both tools a `peers` scope: `list_agents scope=peers` lists the other live
+# sessions on this machine, and `send_message to=<peer-name>` lands in the target
+# as a labeled relay turn ([message from session <name> (<cwd>)]) that wakes an
+# idle target and arrives at the next turn boundary when it is busy. No daemon:
+# one heartbeat JSON per session plus an inbox directory under
+# $DSH_HOME/crosstalk, written with files + atomic rename.
+#
+# Mounted as the compiled lib/ tree (dotfiles/dsh/crosstalk/*.js, built from the
+# upstream src/ with tsc) in the relative-module form instead of the
+# @dsh-crosstalk/bundle npm package: the flake cannot run pnpm to populate the
+# profile's node_modules, and the loader resolves a leading-`./` row name with
+# `new URL(name, baseUrl)` against the profile dir. index.js imports its siblings
+# relatively, so the whole tree must stay together in <profile>/crosstalk/ —
+# rebuild the set, never ship a subset.
+#
+# Trust model (upstream v0.1, kept as shipped): an inbound turn is a request from
+# a peer agent, NOT an instruction from the user, and the plugin's own system-prompt
+# section says so. Acceptance is same-OS-user only, so the user jail (`dsh`, uid b)
+# and the system jail (`dshs`, uid llm) never message each other; peers are the
+# other sessions of the SAME jail, each registry under that jail's own $DSH_HOME.
+- insert:
+    - id: crosstalk
+      name: "./crosstalk/index.js"
+      config:
+        accept: same-user
+        mode: open
+        notifyUser: true

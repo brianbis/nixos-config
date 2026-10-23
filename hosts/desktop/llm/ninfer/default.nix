@@ -36,6 +36,12 @@ let
         ffmpeg
         curl
         cudaPackages_13_1.cudatoolkit
+        # cmake/Dependencies.cmake asks pkg-config for these REQUIRED modules, and
+        # the code really uses them: hwloc>=2.5 (src/core/cpu/system.cpp builds the
+        # CPU-affinity bitmaps) and liburing>=2.5 (src/core/io/read_queue.{h,cpp}
+        # is the io_uring read queue). The pin has hwloc 2.15.0 and liburing 2.14.
+        hwloc
+        liburing
       ];
 
       postPatch =
@@ -43,6 +49,13 @@ let
           patch -p1 -N < ${patchFile}
         '';
 
+      # The CUDA 13.1 toolkit drags a gcc-15.3.0 libstdc++ into the link's -L
+      # search path ahead of the stdenv's own libstdc++ (gcc 16.2.0). The vendored
+      # xgrammar uses <semaphore>, whose std::__detail::__wait_impl/__notify_impl
+      # only exist in the 16.2.0 DSO (GLIBCXX_3.4.35) — so ld picks the 15.3.0 one
+      # and apps/ninfer dies with "undefined reference to std::__detail::__wait_impl".
+      # CMAKE_CXX_LINK_FLAGS lands before the toolkit's -L block, so the matching
+      # DSO wins the search. Verified against a one-file <semaphore> repro.
       configurePhase = ''
         cmake -S . -B build \
           -G Ninja \
@@ -50,7 +63,8 @@ let
           -DCMAKE_CUDA_ARCHITECTURES=120a \
           -DNINFER_BUILD_APPS=ON \
           -DBUILD_TESTING=OFF \
-          -DNINFER_BUILD_BENCHMARKS=OFF
+          -DNINFER_BUILD_BENCHMARKS=OFF \
+          -DCMAKE_CXX_LINK_FLAGS="-L ${pkgs.stdenv.cc.cc.lib.outPath}/lib"
       '';
 
       buildPhase = ''

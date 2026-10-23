@@ -7,8 +7,8 @@ let
     headroomCloudPort
     headroomNvidiaUpstreamUrl
     headroomNvidiaPort
-    headroomNinferUpstreamUrl
-    models
+    gateUrl
+    defaultModel
     lspAdds
     agentHome
     agentUsername
@@ -89,16 +89,21 @@ let
     '';
   };
 
-  # graphify: route its default LLM backend at the local NInfer endpoint. The dsh
+  # graphify: route its default LLM backend through the single LLM door. The dsh
   # jail's dummy OPENAI_API_KEY (no gemini/kimi/claude key) makes the openai backend
-  # win; OPENAI_BASE_URL carries /v1 since the client appends /chat/completions. Wrapped
-  # (not a global env var) so OPENAI_* doesn't leak into the other jailed tools; graphify-mcp is a passthrough.
+  # win; OPENAI_BASE_URL carries /v1 since the client appends /chat/completions. The
+  # model is the gate's own default row (`defaultModel`, inherited from the catalog
+  # renderer) rather than a row named here, so the labeling model follows the ledger
+  # without a second declaration; the gate loads it on demand and relays it through
+  # a compression front when that row names one. Wrapped (not a global env var)
+  # so OPENAI_* doesn't leak into the other jailed tools; graphify-mcp is a
+  # passthrough.
   graphifyNinfer = pkgs.symlinkJoin {
     name = "graphify";
     paths = [
       (pkgs.writeShellScriptBin "graphify" ''
-        export OPENAI_BASE_URL="${headroomNinferUpstreamUrl}/v1"
-        export OPENAI_MODEL="${models.qwen38_nvfp4_ninfer.id}"
+        export OPENAI_BASE_URL="${gateUrl}/v1"
+        export OPENAI_MODEL="${defaultModel.id}"
         export OPENAI_API_KEY="sk-local"
         exec ${pkgs.graphify}/bin/graphify "$@"
       '')
@@ -223,6 +228,8 @@ let
     { name = "rtk"; pkg = pkgs.rtk; }
     # headroom: context optimization layer that compresses everything an agent reads (built from ./home/llm/tools/headroom.nix).
     { name = "headroom"; pkg = pkgs.headroom; }
+    # knife: reverse engineer's binary Swiss-army knife (parse/triage/disassemble PE/ELF/Mach-O) whose built-in `knife mcp` stdio server exposes the same engine to an agent (built from ./home/llm/tools/knife.nix). It is one of the four MCP servers every agent tool gets (home/llm/catalog.nix mcpServersFor), so it has to be on the jail PATH like the other three.
+    { name = "knife"; pkg = pkgs.knife; }
 
     # graphify: codebase -> knowledge graph + stdio MCP server (built from ./home/llm/tools/graphify.nix); graphifyNinfer wraps the CLI so its LLM backend is the local NInfer endpoint.
     { name = "graphify"; pkg = graphifyNinfer; }
@@ -422,7 +429,7 @@ let
     { name = "cargo-audit"; pkg = pkgs."cargo-audit"; }
     { name = "govulncheck"; pkg = pkgs.govulncheck; }
     { name = "pip-audit"; pkg = pkgs."pip-audit"; }
-    { name = "safety"; pkg = pkgs.python3Packages.safety; }
+    # (safety dropped: its nixpkgs recipe sets broken = lib.versionAtLeast typer.version "0.27", and this pin's typer is 0.27+, so the package is refused at evaluation; pip-audit + osv-scanner cover the same PyPI advisory-DB check.)
 
     # --- Integrity / system audit (blue team): FIM, audit, observability. ---
     # (chkrootkit removed + rkhunter absent in the pinned nixpkgs; rootkit detection is covered by aide FIM + osquery + lynis.)

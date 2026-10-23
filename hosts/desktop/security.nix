@@ -24,7 +24,10 @@ in
   security.sudo.extraConfig = ''
     Defaults>llm umask=0002
   '';
-
+  security.pki.caCertificateBlacklist = [
+  "Comodo AAA Services root"
+  "emSign ECC Root CA - G3"
+];
   # TPM2 unseal: the age key is sealed in the TPM bound to PCRs 0,2,3; this
   # script unseals the key into tmpfs (/run/agenix-tpm) for agenix to use as
   # its identity. Runbook (sealing/rotation/recovery): docs/secrets.md.

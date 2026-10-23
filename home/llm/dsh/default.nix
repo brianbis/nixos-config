@@ -43,6 +43,7 @@ let
     src = "${tarball}/deepseek-ai-dsh-${version}.tgz";
     nodejs = node;
   });
-in {
+in
+{
   inherit version commit tarball node package;
 }

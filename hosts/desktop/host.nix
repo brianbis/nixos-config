@@ -117,6 +117,14 @@ in
   # an initrd activation script (hosts/desktop/security.nix) before the main
   # systemd starts, so the TPM device must exist by then.
   boot.initrd.kernelModules = [ "tpm_tis" "tpm_crb" ];
+  # Windows NTFS partitions (nvme1n1p1/p4/p5, nvme0n1p2). Declaring the fs
+  # type is what makes nixpkgs' tasks/filesystems/ntfs.nix put pkgs.ntfs3g in
+  # system.fsPackages — i.e. install /sbin/mount.ntfs + mount.ntfs-3g, the
+  # helper udisks2 needs for KDE's rw auto-mount. Without it there is no
+  # helper and mount(8) answers "wrong fs type ... missing codepage or
+  # helper program". Kernel is 6.18 (< 7.1), so the module takes the ntfs3g
+  # branch, not the ntfsprogs-plus one.
+  boot.supportedFilesystems.ntfs = true;
   security.tpm2.enable = true;
   security.tpm2.abrmd.enable = true;
   # Keep USB input devices (keyboard/mouse) awake: the default autosuspend

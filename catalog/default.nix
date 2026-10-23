@@ -51,17 +51,17 @@ rec {
     # The one public face for every local model.
     gate = 8100;
 
-    # Context-compression fronts (headroom). Boot-resident user services; the
-    # gate relays through them so the compression markers + the headroom MCP
+    # Context-compression fronts (headroom). Boot-resident user services that
+    # sit in front of an upstream: the compression markers + the headroom MCP
     # retrieve flow keep working on the routes that want them.
-    headroom = 8787; # -> llamacpp router
+    headroom = 8787; # -> gate
     headroomCloud = 8788; # -> api.deepseek.com (host-side key injection)
-    headroomClaude = 8789; # -> llamacpp router, Anthropic-shaped face
+    headroomClaude = 8789; # -> bonsai llama-server, Anthropic-shaped face
     headroomNinfer = 8791; # -> ninfer child
     headroomNvidia = 8792; # -> integrate.api.nvidia.com (host-side key)
 
-    # Boot-resident engines (always live; llama.cpp sleeps per-model internally).
-    llamacpp = 8000;
+    # Boot-resident engines (always live; the router sleeps its weights on its
+    # own idle window).
     llamacppBonsai = 8010;
 
     # On-demand engines: each binds ONLY its own loopback port while resident.
@@ -76,13 +76,10 @@ rec {
     strataCoder = 18088;
     tabbyapiSc5bpw = 18092;
     tabbyapi4bpw = 18094;
-    sglangGemma4 = 18096;
     sglangLfm25 = 18098;
     sglangOrnith = 18100;
 
     # vLLM docker containers: manual start (just vllm-*), never auto-loaded.
-    vllmGemma4Nvfp4 = 8021;
-    vllmGemma4Awq = 8022;
     vllmLensvlm = 8023;
     vllmK2horizon = 8020;
   };
@@ -92,20 +89,8 @@ rec {
   # the model is reached through a cloud headroom front (key injected host-side)
   # rather than through the gate.
   providers = {
-    llamacpp = {
-      label = "llama.cpp (local)";
-      hosted = false;
-    };
     llamacpp_bonsai = {
       label = "llama.cpp Bonsai fork (local)";
-      hosted = false;
-    };
-    vllm_awq = {
-      label = "vLLM AWQ (local)";
-      hosted = false;
-    };
-    vllm_nvfp4 = {
-      label = "vLLM NVFP4 (local)";
       hosted = false;
     };
     vllm_k2horizon = {
@@ -152,10 +137,6 @@ rec {
       label = "TabbyAPI EXL3 4bpw (local)";
       hosted = false;
     };
-    sglang_gemma4 = {
-      label = "SGLang Gemma-4 (local)";
-      hosted = false;
-    };
     sglang_lfm25 = {
       label = "SGLang LFM2.5 (local)";
       hosted = false;
@@ -185,102 +166,6 @@ rec {
   # ─── The models ───────────────────────────────────────────────────────────
   models = {
 
-    # ── llama.cpp router (:8000, boot-resident) ─────────────────────────────
-    # Requests reach these through the headroom compression front (8787) so the
-    # proxy's hash= markers + the headroom MCP retrieve flow keep working.
-    muse = {
-      provider = "llamacpp";
-      id = "muse-glimmer-30B";
-      name = "Muse-Glimmer-30B (kquant-dynamic GGUF)";
-      engine = "llamacpp";
-      unit = null;
-      port = ports.llamacpp;
-      relay = "headroom";
-      family = "muse";
-      context = 131072;
-      maxTok = 8192;
-      reason = true;
-      attachments = true;
-      vramMib = 30000;
-      onDemand = false;
-    };
-    qwen38_thinking = {
-      provider = "llamacpp";
-      id = "qwen3-8-27b-q8_0-thinking";
-      name = "Qwen3.8-27B Q8_0 Thinking";
-      engine = "llamacpp";
-      unit = null;
-      port = ports.llamacpp;
-      relay = "headroom";
-      family = "qwen3.8";
-      context = 262144;
-      maxTok = 8192;
-      reason = true;
-      attachments = true;
-      thinkingBudget = -1;
-      reasoningEfforts = {
-        low = "low";
-        medium = "medium";
-        xhigh = "xhigh";
-      };
-      vramMib = 27000;
-      onDemand = false;
-    };
-    qwen38_instruct = {
-      provider = "llamacpp";
-      id = "qwen3-8-27b-q8_0-instruct";
-      name = "Qwen3.8-27B Q8_0 Instruct";
-      engine = "llamacpp";
-      unit = null;
-      port = ports.llamacpp;
-      relay = "headroom";
-      family = "qwen3.8";
-      context = 262144;
-      maxTok = 8192;
-      reason = true;
-      attachments = true;
-      thinkingBudget = -1;
-      reasoningEfforts = {
-        low = "low";
-        medium = "medium";
-        xhigh = "xhigh";
-      };
-      vramMib = 27000;
-      onDemand = false;
-    };
-    qwen38heretic_q6k = {
-      provider = "llamacpp";
-      id = "qwen3-8-27b-heretic-q6_k";
-      name = "Qwen3.8-27B Heretic RVN Abliterated Uncensored Q6_K";
-      engine = "llamacpp";
-      unit = null;
-      port = ports.llamacpp;
-      relay = "headroom";
-      family = "qwen3.8";
-      context = 131072;
-      maxTok = 80000;
-      reason = true;
-      attachments = true;
-      vramMib = 21000;
-      onDemand = false;
-    };
-    mimo = {
-      provider = "llamacpp";
-      id = "mimo-v2.6-9b-bf16";
-      name = "MiMo-V2.6-Distill-Qwen-9B (bf16 GGUF)";
-      engine = "llamacpp";
-      unit = null;
-      port = ports.llamacpp;
-      relay = "headroom";
-      family = "mimo";
-      context = 262144;
-      maxTok = 240000;
-      reason = true;
-      attachments = true;
-      vramMib = 18000;
-      onDemand = false;
-    };
-
     # ── llama.cpp Bonsai fork router (:8010, boot-resident) ─────────────────
     # Two modes (thinking/instruct) over one router; effort is per-request.
     bonsai2_27b_pq2_thinking = {
@@ -288,7 +173,7 @@ rec {
       id = "bonsai2-27b-pq2_0-thinking";
       name = "Ternary-Bonsai-2-27B PQ2_0 Thinking";
       engine = "llamacpp";
-      unit = null;
+      unit = "llamacpp-bonsai";
       port = ports.llamacppBonsai;
       relay = null;
       family = "bonsai";
@@ -309,7 +194,7 @@ rec {
       id = "bonsai2-27b-pq2_0-instruct";
       name = "Ternary-Bonsai-2-27B PQ2_0 Instruct";
       engine = "llamacpp";
-      unit = null;
+      unit = "llamacpp-bonsai";
       port = ports.llamacppBonsai;
       relay = null;
       family = "bonsai";
@@ -581,28 +466,6 @@ rec {
       vramMib = 16000;
       onDemand = true;
     };
-    gemma4_12b_nvfp4 = {
-      provider = "sglang_gemma4";
-      id = "gemma-4-12b-nvfp4";
-      name = "Gemma-4-12B-it NVFP4 (SGLang)";
-      engine = "omarchy";
-      unit = "omarchy-gemma4-12b-nvfp4";
-      port = ports.sglangGemma4;
-      relay = null;
-      family = "gemma-4";
-      context = 131072;
-      maxTok = 32768;
-      reason = false;
-      attachments = false;
-      cost = {
-        input = 0;
-        output = 0;
-        inputCached = 0;
-        outputCached = 0;
-      };
-      vramMib = 12000;
-      onDemand = true;
-    };
     lfm25_26b_bf16 = {
       provider = "sglang_lfm25";
       id = "lfm2.5-2.6b";
@@ -652,52 +515,6 @@ rec {
     # onDemand = false: a container cold-starts in minutes, so the gate never
     # loads one behind a request — it serves these only while already live,
     # otherwise it redirects. Start them with `just vllm-*`.
-    gemma4awq = {
-      provider = "vllm_awq";
-      id = "gemma-4-awq";
-      name = "Gemma 4 26B MoE AWQ";
-      engine = "vllmDocker";
-      unit = "docker-vllm-gemma4-awq";
-      port = ports.vllmGemma4Awq;
-      relay = null;
-      family = "gemma-4";
-      context = 262144;
-      # Single-generation cap for a 32GB card alongside the 17GB AWQ weights.
-      maxTok = 65536;
-      reason = true;
-      attachments = true;
-      cost = {
-        input = 0;
-        output = 0;
-        inputCached = 0;
-        outputCached = 0;
-      };
-      vramMib = 20000;
-      onDemand = false;
-    };
-    gemma4nvfp4 = {
-      provider = "vllm_nvfp4";
-      id = "gemma-4-nvfp4";
-      name = "Gemma 4 31B NVFP4";
-      engine = "vllmDocker";
-      unit = "docker-vllm-gemma4-nvfp4-turbo";
-      port = ports.vllmGemma4Nvfp4;
-      relay = null;
-      family = "gemma-4";
-      # Must match --max-model-len in hosts/desktop/llm/vllm/gemma4-nvfp4-turbo.nix.
-      context = 32768;
-      maxTok = 30000;
-      reason = true;
-      attachments = false;
-      cost = {
-        input = 0.14;
-        output = 0.28;
-        inputCached = 0.014;
-        outputCached = 0.28;
-      };
-      vramMib = 24000;
-      onDemand = false;
-    };
     k2horizon_nvfp4 = {
       provider = "vllm_k2horizon";
       id = "k2-horizon-mova-36b-a4b-nvfp4";
@@ -807,11 +624,18 @@ rec {
 
   # ─── Gate policy ──────────────────────────────────────────────────────────
   # The availability stub's decisions, as data.
-  gate = {
+  gate = rec {
     # The one public face every jailed tool talks to (llm.local).
     port = ports.gate;
+    # The default row, named by its LEDGER KEY so every consumer — the gate's
+    # runtime table, dsh's default model, the docs — resolves the same row and
+    # cannot drift apart. The IQ1_M coder release: expert-pruned, so it loads
+    # while a smaller engine is already live (22000 MiB — same footprint as the
+    # previous default), and it carries reason + attachments, so it is
+    # compatible with what agents send.
+    defaultKey = "strata_qwen38_coder";
     # The model a request with no usable `model` (or an unknown one) gets.
-    default = models.qwen38_nvfp4_ninfer;
+    default = models.${defaultKey};
     # Free VRAM the card reports before the gate will even consider loading.
     cardFreeMib = 32768;
     # Where the gate stamps "this engine is still wanted": one file per unit

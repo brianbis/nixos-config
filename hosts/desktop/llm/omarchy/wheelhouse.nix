@@ -37,9 +37,24 @@ exllamav3Version:
               filename = "exllamav3-1.5.3+cu132.torch2.13.0-cp312-cp312-linux_x86_64.whl";
               versionLabel = "1.5.3+cu132.torch2.13.0";
             };
+            "1.6.1" = {
+              sha256 = "e6dfcaecb066cdbdf79072cd0200aa33421058a79edbcabb7d847c30c8a8dd45";
+              filename = "exllamav3-1.6.1+cu132.torch2.13.0-cp312-cp312-linux_x86_64.whl";
+              versionLabel = "1.6.1+cu132.torch2.13.0";
+            };
+            "1.6.2" = {
+              sha256 = "d42b4268ef46072b726d5a6205d0f08f4ed7e56a2cf8ef87c6237a128d4215ae";
+              filename = "exllamav3-1.6.2+cu132.torch2.13.0-cp312-cp312-linux_x86_64.whl";
+              versionLabel = "1.6.2+cu132.torch2.13.0";
+            };
+            "1.6.4" = {
+              sha256 = "436f0a22fbc496c9bd929053402e0c89a64bd9410c58182260b73a8f36ef1525";
+              filename = "exllamav3-1.6.4+cu132.torch2.13.0-cp312-cp312-linux_x86_64.whl";
+              versionLabel = "1.6.4+cu132.torch2.13.0";
+            };
           }
         ).${exllamav3Version}
-        or (throw "omarchy: no exllamav3 wheel pin for version ${exllamav3Version} - add its sha256 to the attrset above (wheel: https://github.com/turboderp-org/exllamav3/releases/download/v${exllamav3Version}/)");
+          or (throw "omarchy: no exllamav3 wheel pin for version ${exllamav3Version} - add its sha256 to the attrset above (wheel: https://github.com/turboderp-org/exllamav3/releases/download/v${exllamav3Version}/)");
     in
     {
       url = "https://github.com/turboderp-org/exllamav3/releases/download/v${exllamav3Version}/${pin.filename}";

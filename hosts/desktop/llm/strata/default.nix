@@ -226,7 +226,7 @@ let
   # stays uncached: it is not the model the agent work runs on and its
   # resident footprint plus 16 GiB would leave no headroom.
   coderConversationCache =
-    "--conversation-cache-mib 16384 --conversation-cache-slots 6 --conversation-cache-min-free-mib 4096";
+    "--conversation-cache-mib 16384 --conversation-cache-slots 2 --conversation-cache-min-free-mib 4096";
 
   launcherChild = launcherScript "strata-launch-child" "qwen" "" model childPort context idleSeconds baseMinFreeVramMib baseBeforeLoad "";
   launcherDirect = launcherScript "strata-launch-direct" "qwen" "" model childPort context 0 baseMinFreeVramMib baseBeforeLoad "";
@@ -325,7 +325,7 @@ let
     echo ${coderModelRevision} > "$rev_file"
     echo "strata: coder download complete"
   '';
-# The two serve stacks: same unit shape per model (lifecycle serve unit with the
+  # The two serve stacks: same unit shape per model (lifecycle serve unit with the
   # server's own idle unload, plus a manual "direct" debug mode).
   # Base keeps the historic unit names (suffix ""), the coder is suffixed.
   # The served model ids: the server's fixed family names (setup.py FAMILIES,
@@ -396,7 +396,7 @@ let
       ];
 
       # The engine's CPU expert pool (one worker per logical CPU) shares the CFS
-      # pie with the llamacpp fleet (llamacpp-muse/bonsai stay online at boot),
+      # pie with the llamacpp fleet (llamacpp-bonsai stays online at boot),
       # headroom's compression calls and the agent toolchain. At equal weight the
       # decode stalls whenever those are busy; CPUWeight (a raw [Service] lvalue,
       # no NixOS module option for it in this pin) doubles strata's share under

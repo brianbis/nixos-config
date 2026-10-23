@@ -14,7 +14,9 @@ What it does per request:
 
   1. Answers availability locally and cheaply: GET /v1/models lists what can
      be served right now (with what is actually resident), GET /gate/state
-     reports the whole fleet against the current VRAM.
+     reports the whole fleet against the current VRAM. Residency is the
+     gate's own bookkeeping — the units it started and that are still
+     running — never a probe of an engine's endpoints.
   2. Resolves the requested `model` against the table. Several engines can
      serve one served id; the highest `preference` wins.
   3. Loads on demand: if the requested model is not resident and its VRAM
@@ -223,9 +225,7 @@ def request_needs(body: bytes) -> dict:
     )
 
     needs_reason = (
-        b'"reasoning_effort"' in body
-        or b'"thinking"' in body
-        or b'"reasoning"' in body
+        b'"reasoning_effort"' in body or b'"thinking"' in body or b'"reasoning"' in body
     )
 
     return {"attach": needs_attach, "reason": needs_reason}
@@ -251,7 +251,9 @@ def rewrite_model(body: bytes, requested: str, served: str) -> bytes:
 
     pattern = re.compile(rb'"model"\s*:\s*"' + re.escape(requested.encode()) + b'"')
 
-    replaced, count = pattern.subn(b'"model": "' + served.encode() + b'"', body, count=1)
+    replaced, count = pattern.subn(
+        b'"model": "' + served.encode() + b'"', body, count=1
+    )
 
     if count == 0:
         # The field is absent or shaped differently: the upstream still gets
@@ -276,28 +278,68 @@ class Fleet:
             routes.sort(key=lambda r: -r.preference)
 
         self.default_rows = self.by_id.get(policy.default_id, [])
-        self.probe_cache: dict[int, tuple[float, bool]] = {}
+        self.active_cache: dict[str, tuple[float, bool]] = {}
+        self.resident_cache: tuple[float, list[Row]] = (0.0, [])
         self.vram_cache: tuple[float, int | None] = (0.0, None)
 
     def live(self, row: Row) -> bool:
-        """An engine is live when its own port answers /health.
+        """Is this row's model actually on the card — the gate's own facts.
 
-        The engine's own port is private plumbing — nothing else probes it —
-        so this is the authoritative "this model is resident" signal, and it
-        stays correct when the unit died on its own idle window.
+        The gate is the process starter, so it never asks an engine what it
+        can serve: the facts are the unit's state (systemctl) and the card's
+        accounting (the ledger's vramMib against the used memory). A
+        boot-resident llama.cpp router that slept on its idle window is an
+        active unit holding no weights, and a port that answers /health says
+        nothing about which model it could load into a full card.
+        """
+
+        if row.hosted or row.unit is None:
+            return False
+
+        return any(row is resident for resident in self.resident())
+
+    def resident(self) -> list[Row]:
+        """The rows the card is actually holding right now.
+
+        The gate is the process starter, so the units it started are the
+        models it put on the card, and one card holds one model: that is the
+        row that can answer. The keep-alive stamp is the gate's own record of
+        having started a unit, so nothing is ever asked of an engine.
+
+        When the gate has started nothing, the only models that can be
+        resident are the boot-resident routers, and the card's used memory is
+        what says they still hold their weights.
         """
 
         now = time.monotonic()
-        cached = self.probe_cache.get(row.port)
 
-        if cached and now - cached[0] < PROBE_CACHE_SECONDS:
-            return cached[1]
+        if now - self.resident_cache[0] < PROBE_CACHE_SECONDS:
+            return self.resident_cache[1]
 
-        up = probe_health(row.port)
+        active = [
+            row
+            for row in self.rows
+            if not row.hosted and row.unit is not None and unit_active(row.unit)
+        ]
 
-        self.probe_cache[row.port] = (now, up)
+        mine = [
+            row
+            for row in active
+            if os.path.exists(f"{self.policy.activity_dir}/{row.unit}")
+        ]
 
-        return up
+        if mine:
+            chosen = [max(mine, key=lambda r: r.vram_mib)]
+        else:
+            card = self.policy.card_free_mib
+            free = self.free_vram_mib()
+            used = (card - free) if (free is not None and card > 0) else None
+
+            chosen = [row for row in active if used is None or row.vram_mib <= used]
+
+        self.resident_cache = (now, chosen)
+
+        return chosen
 
     def free_vram_mib(self) -> int | None:
         now = time.monotonic()
@@ -343,13 +385,15 @@ class Fleet:
                 return row
 
         for row in self.candidates(requested):
-            if row.on_demand and compatible(row, needs) and self.fits(row):
+            if row.unit is not None and compatible(row, needs) and self.fits(row):
                 if await self.start(row):
                     return row
 
         # Nothing the caller named can serve: pick a live model that can
         # carry the request instead of no-opping. Same family first, then
-        # anything capability-compatible with the highest preference.
+        # anything capability-compatible with the highest preference; the
+        # row holding the most of the card wins a tie, because that is the
+        # one whose weights are actually resident.
         live = [r for r in self.rows if not r.hosted and self.live(r)]
         usable = [r for r in live if compatible(r, needs)]
 
@@ -360,7 +404,7 @@ class Fleet:
 
             return max(
                 same_family or usable,
-                key=lambda r: (r.preference, -r.vram_mib),
+                key=lambda r: (r.preference, r.vram_mib),
             )
 
         # Nothing local is resident and nothing local fits: hand the request
@@ -390,7 +434,9 @@ class Fleet:
             )
 
             if proc.returncode != 0:
-                log.error("systemctl start %s failed: %s", row.unit, proc.stderr.strip())
+                log.error(
+                    "systemctl start %s failed: %s", row.unit, proc.stderr.strip()
+                )
                 return False
 
         except OSError:
@@ -407,7 +453,11 @@ class Fleet:
             self.stamp(row.unit)
             await asyncio.sleep(0.5)
 
-        log.error("engine %s never became ready within %.0fs", row.unit, self.policy.ready_timeout_seconds)
+        log.error(
+            "engine %s never became ready within %.0fs",
+            row.unit,
+            self.policy.ready_timeout_seconds,
+        )
 
         return False
 
@@ -483,6 +533,17 @@ def subprocess_run(argv: list[str]) -> subprocess.CompletedProcess:
         timeout=30,
         check=False,
     )
+
+
+def unit_active(unit: str) -> bool:
+    """Is that unit running — the gate's only question it asks an engine.
+
+    systemctl is the contract: the gate is the process starter, so the unit's
+    own state is the residency fact, and no engine endpoint is ever probed to
+    find out what it could serve.
+    """
+
+    return subprocess_run(["systemctl", "is-active", unit]).returncode == 0
 
 
 def touch_activity(activity_dir: str, unit: str) -> None:
@@ -591,7 +652,7 @@ def state_body(fleet: Fleet) -> bytes:
                     "onDemand": row.on_demand,
                     "vramMib": row.vram_mib,
                     "live": not row.hosted and fleet.live(row),
-                    "loadable": row.on_demand
+                    "loadable": row.unit is not None
                     and (free is None or free >= row.vram_mib),
                 }
                 for row in fleet.rows
@@ -685,15 +746,11 @@ async def relay_to(
         extra = b""
 
         if redirect_from and redirect_to and redirect_from != redirect_to:
-            extra = f"{GATE_HEADER.decode()}: {redirect_from} -> {redirect_to}\r\n".encode()
+            extra = (
+                f"{GATE_HEADER.decode()}: {redirect_from} -> {redirect_to}\r\n".encode()
+            )
 
-        client_writer.write(
-            status_line
-            + b"\r\n"
-            + extra
-            + resp_headers
-            + b"\r\n\r\n"
-        )
+        client_writer.write(status_line + b"\r\n" + extra + resp_headers + b"\r\n\r\n")
         await client_writer.drain()
 
         length: int | None = None
@@ -983,7 +1040,9 @@ def main(argv: list[str]) -> int:
 
     handler = logging.StreamHandler()
     handler.setFormatter(
-        logging.Formatter("[llm-gate] %(asctime)s %(levelname)s %(message)s", "%Y-%m-%d %H:%M:%S"),
+        logging.Formatter(
+            "[llm-gate] %(asctime)s %(levelname)s %(message)s", "%Y-%m-%d %H:%M:%S"
+        ),
     )
     log.addHandler(handler)
     log.setLevel(logging.INFO)
@@ -1009,6 +1068,7 @@ def main(argv: list[str]) -> int:
     except Exception:
         log.exception("internal error")
         return 1
+
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))

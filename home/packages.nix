@@ -76,6 +76,13 @@ in
 
   home.packages = with pkgs; [
     inputs.sidra.packages.${pkgs.stdenv.hostPlatform.system}.default
+    # nix-alien: the "just run" escape hatch for unpatched foreign-ELF
+    # binaries — nix-alien resolves a binary's NEEDED sonames via nix-locate
+    # (bundled nix-index-with-db) and runs it in an FHSUserEnv; nix-alien-find-libs
+    # prints the lib set; nix-alien-ld is the nix-ld variant (needs
+    # programs.nix-ld.enable, deliberately not enabled here — the durable
+    # per-package fix is patchelf-in-derivation, see refunct.nix).
+    inputs.nix-alien.packages.${pkgs.stdenv.hostPlatform.system}.nix-alien
     # Archipelago entry points (webhost/server/generate/launcher wrappers for
     # ad-hoc CLI use; the web UI + tracker + hosted rooms run as the system service).
     archipelago
@@ -85,6 +92,8 @@ in
     fuzzel
     kdePackages.kate
     kdePackages.yakuake
+    # Filelight — KDE concentric-ring disk-usage visualiser (the GUI twin of ncdu).
+    kdePackages.filelight
     discord
     # Serein: lightweight native Discord client (Rust/egui/wgpu), from the flakeless `serein` input.
     serein
@@ -94,14 +103,14 @@ in
     gitbutler
     # Recurse: AI-native RE IDE (Tauri 2), from the flakeless `recurse` input.
     # Defaults the agent panel to the one LLM door — the availability gate
-    # (llm.local, on the ledger's gate port) — with Qwen3.8-27B NVFP4 (model id
-    # from the catalog): the gate loads that engine on the first request and
-    # keeps whatever is already resident. The dummy API key satisfies the
-    # client's credential check. The in-app picker overrides these defaults
-    # (persisted to ~/.recurse/).
+    # (llm.local, on the ledger's gate port) — with the gate's own default row
+    # (`shared.defaultModel`, so there is no second declaration of which model
+    # that is): the gate loads it on the first request and keeps whatever is
+    # already resident. The dummy API key satisfies the client's credential
+    # check. The in-app picker overrides these defaults (persisted to ~/.recurse/).
     (writeShellScriptBin "recurse" ''
       export RECURSE_LLM_ENDPOINT="${shared.gateUrl}/v1/chat/completions"
-      export RECURSE_LLM_MODEL="${shared.models.qwen38_nvfp4_ninfer.id}"
+      export RECURSE_LLM_MODEL="${shared.defaultModel.id}"
       export RECURSE_LLM_API_KEY="local"
       # GSettings schemas: GTK reads org.gtk.Settings.FileChooser via glib,
       # which discovers schemas under $XDG_DATA_DIRS/*/glib-2.0/schemas. The
@@ -160,7 +169,7 @@ in
       seaborn
       polars
       duckdb
-      jupyter
+      #      jupyter
     ]))
     bolt-launcher
     lutris
@@ -214,6 +223,53 @@ in
     type = "Application";
     categories = [ "AudioVideo" "Audio" "Music" "Education" ];
     settings.Keywords = "music;code;live-coding;sonic pi;synth;compose";
+  };
+
+  # Filelight — KRunner aliases. The app ships its own entry at
+  # share/applications/org.kde.filelight.desktop (upstream misc/org.kde.filelight.desktop),
+  # so this entry is keyed on that same filename: the entry key IS the filename
+  # (home-manager passes it to makeDesktopItem), and home.packages entries land in
+  # ~/.local/share/applications, which wins over the system one — so the shadow
+  # REPLACES it rather than adding a duplicate launcher. Fields mirror the shipped
+  # entry (Exec/Icon/Comment/GenericName/Categories/MimeType/X-DocPath) so the shadow
+  # stays launchable, not just searchable; only Keywords grows — upstream's
+  # disk;drive;space;storage;usage; plus the CLI-tool names a user types
+  # ("du", "ncdu") and the plain-English phrasings.
+  xdg.desktopEntries."org.kde.filelight" = {
+    name = "Filelight";
+    genericName = "Disk Usage Statistics";
+    comment = "Show disk usage and delete unused files";
+    exec = "filelight %u";
+    icon = "filelight";
+    terminal = false;
+    type = "Application";
+    categories = [ "Qt" "KDE" "Utility" ];
+    mimeType = [ "inode/directory" ];
+    settings = {
+      Keywords = "disk;drive;space;storage;usage;filelight;du;ncdu;disk usage;disk usage viewer;space analyzer;directory size;";
+      X-DocPath = "filelight/index.html";
+    };
+  };
+
+  # Bolt Launcher — KRunner aliases. The nixpkgs package ships Bolt.desktop
+  # (makeDesktopItem name="Bolt"); this user entry shadows it (same filename,
+  # user dir wins over share/applications) to add search aliases without
+  # touching the package. Fields mirror the shipped entry so the shadow stays
+  # launchable, not just searchable. StartupWMClass rides in `settings` —
+  # the xdg module has no dedicated option for it.
+  xdg.desktopEntries.Bolt = {
+    name = "Bolt Launcher";
+    genericName = "bolt-launcher";
+    comment = "An alternative launcher for RuneScape";
+    exec = "bolt-launcher";
+    icon = "bolt-launcher";
+    terminal = false;
+    type = "Application";
+    categories = [ "Game" ];
+    settings = {
+      StartupWMClass = "BoltLauncher";
+      Keywords = "runelite;jagex;osrs;runescape;bolt";
+    };
   };
 
 }

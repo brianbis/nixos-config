@@ -13,7 +13,10 @@
 #
 # `nix flake update pm-skills` re-pins to upstream's default branch; the
 # locked rev is the exact source of the store derivation.
-{ pkgs, lib, src, version ? "2.1.0" # marketplace manifest version (.claude-plugin/marketplace.json)
+{ pkgs
+, lib
+, src
+, version ? "2.1.0" # marketplace manifest version (.claude-plugin/marketplace.json)
 }:
 pkgs.stdenvNoCC.mkDerivation {
   pname = "pm-skills";

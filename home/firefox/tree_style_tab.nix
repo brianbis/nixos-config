@@ -11,7 +11,7 @@
 
       chunkedUserStyleRules0 = builtins.readFile (
         pkgs.runCommand "tree-style-tab-css-base64" { } ''
-          base64 -w0 ${./tree_style_tab.css} > $out
+          base64 -w0 ${../../dotfiles/firefox/tree_style_tab.css} > $out
         ''
       );
 

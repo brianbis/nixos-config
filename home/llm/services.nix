@@ -1,5 +1,5 @@
 # Headroom context-compression proxy systemd user services. Always-on so
-# jailed agents' local llama.cpp (and cloud DeepSeek) traffic flows through the
+# jailed agents' local-model (and cloud DeepSeek) traffic flows through the
 # compression layer without any manual step.
 { lib, pkgs, shared, headroomDeepseekWrapper, headroomNvidiaWrapper }:
 
@@ -8,6 +8,7 @@ let
     headroomUpstreamUrl
     headroomPort
     headroomClaudePort
+    headroomClaudeUpstreamUrl
     headroomNvidiaUpstreamUrl
     headroomNvidiaPort
     headroomNinferUpstreamUrl
@@ -16,7 +17,7 @@ in
 {
   systemd.user.services.headroom-proxy = {
     Unit = {
-      Description = "Headroom context-compression proxy (llama.cpp upstream)";
+      Description = "Headroom context-compression proxy (gate upstream)";
       After = [ "network.target" ];
     };
 
@@ -33,11 +34,11 @@ in
     Install.WantedBy = [ "default.target" ];
   };
 
-  # DSH-default-model-facing headroom proxy: routes the default agent model
-  # (the gate's default row — ninfer qwen3.8-27b on its child :8081) through
-  # the compression layer. --lossless
-  # (marker-free compaction): DSH has no headroom_retrieve MCP tool, so default
-  # CCR mode would inject markers it cannot redeem and corrupt its context.
+  # The compression front for the ninfer rows (served id qwen3.8-27b): the gate
+  # relays every one of them through here, so the engine's own :8081 stays private
+  # plumbing. This is the model dsh names as its default.
+  # --lossless (marker-free compaction): DSH has no headroom_retrieve MCP tool, so
+  # default CCR mode would inject markers it cannot redeem and corrupt its context.
   systemd.user.services.headroom-proxy-ninfer = {
     Unit = {
       Description = "Headroom context-compression proxy (NInfer upstream, lossless)";
@@ -96,8 +97,16 @@ in
     Install.WantedBy = [ "default.target" ];
   };
 
-  # llama.cpp serves /v1/messages via llama-server, so the same local upstream
-  # works for both the OpenAI and Anthropic (Claude Code) formats.
+  # The Anthropic-shaped face over the boot-resident Bonsai llama-server:
+  # llama-server serves /v1/messages natively, so this face needs an engine as
+  # its upstream — the gate speaks only the OpenAI wire format.
+  #
+  # --lossless, not CCR: Claude Code registers no headroom MCP server (see
+  # claudeConfig in ./catalog.nix), so it has no headroom_retrieve tool to redeem
+  # a <<ccr:...>> marker with — proactive compression would leave markers the model
+  # cannot expand, corrupting its own context. Same reason the ninfer face at 8791
+  # is lossless. The crush-facing face at 8787 keeps CCR because crush does
+  # register the retrieve tool.
   systemd.user.services.headroom-proxy-claude = {
     Unit = {
       Description = "Headroom context-compression proxy (Claude Code / llama.cpp upstream)";
@@ -106,7 +115,7 @@ in
 
     Service = {
       ExecStart = "${pkgs.headroom}/bin/headroom proxy " +
-        "--anthropic-api-url ${headroomUpstreamUrl} " +
+        "--anthropic-api-url ${headroomClaudeUpstreamUrl} --lossless " +
         "--host 127.0.0.1 --port ${toString headroomClaudePort}";
       Restart = "on-failure";
       RestartSec = "3";

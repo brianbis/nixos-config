@@ -136,8 +136,6 @@ async def probe_health(port: int, timeout: float = 2.0) -> bool:
     return await asyncio.to_thread(_probe)
 
 
-
-
 # ---------------------------------------------------------------------------
 # Shutdown
 # ---------------------------------------------------------------------------
@@ -161,6 +159,8 @@ async def shutdown(
     await asyncio.gather(monitor_task, return_exceptions=True)
 
     log.info("stopped")
+
+
 # ---------------------------------------------------------------------------
 # Lifecycle-only runtime (the gate owns the public front door)
 # ---------------------------------------------------------------------------

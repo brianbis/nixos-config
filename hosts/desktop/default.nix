@@ -22,6 +22,7 @@
     ./dsh-web.nix
     ./dsh-open.nix
     ./searxng.nix
+    ./craftapps.nix
     #./zomboid
     # Tether (Linux + iPhone Continuity bridge): upstream programs.tether
     # module — bluetooth class-of-device service, avahi/mDNS publishing,

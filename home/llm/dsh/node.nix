@@ -43,15 +43,33 @@ pkgs.stdenvNoCC.mkDerivation {
   dontConfigure = true;
   dontBuild = true;
 
+  # rpath first, interpreter second — one patchelf pass that grows BOTH mangles
+  # this binary. The official node has no header padding (its first PT_LOAD is
+  # the R text segment at file offset 0), so patchelf 0.19.2 has to rewrite the
+  # program-header table, and asked to insert the interpreter and the rpath
+  # together it emits an RW header-pad segment that swells to 0x32c328 and
+  # covers the text segment's vaddr range:
+  #   LOAD1 off=0x000000 vaddr=0x3ff000 filesz=0x32c328 RW   <- overlaps LOAD2
+  #   LOAD2 off=0x00136c vaddr=0x40036c filesz=0x342dfc R
+  # The kernel clips the overlapping text mapping, so node dies before main:
+  # `node --version` exits 139 (SIGSEGV, core dumped) — which is how the dsh
+  # installPhase failed on `node scripts/ensure-spawn-helper.mjs`. Two passes
+  # keep the table consistent (one vaddr-file delta across every LOAD, no
+  # overlap) and the binary runs. Verified empirically against the pinned
+  # tarball with this pin's patchelf (0.19.2): one-pass and --output both
+  # segfault, rpath-then-interpreter and --no-sort both run.
   installPhase = ''
     tar -xzf $src --strip-components=1
     # NEEDED: libdl/libm/libpthread/libc/ld-linux (glibc) + libstdc++/libgcc_s
     # (the default gcc's C++ runtime lib — the same one stdenv links against).
     # Both are store paths, so the binary resolves every dependency from
     # /nix/store alone.
-    patchelf --set-interpreter ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 \
-      --set-rpath ${pkgs.glibc}/lib:${pkgs.gcc.cc.lib}/lib \
-      bin/node
+    patchelf --set-rpath ${pkgs.glibc}/lib:${pkgs.gcc.cc.lib}/lib bin/node
+    patchelf --set-interpreter ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 bin/node
+    # A relink that cannot print its own version is useless: fail the build
+    # here, not at every dsh boot (a mangled output segfaults with exit 139
+    # wherever it is used — host and every jail).
+    ./bin/node --version >/dev/null || { echo "FATAL: patchelf produced a node that segfaults at startup"; exit 1; }
     mkdir -p $out
     cp -r bin lib $out/
   '';
