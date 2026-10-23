@@ -130,6 +130,10 @@ let
       vramMib = m.vramMib;
       canReason = m.reason;
       canAttach = m.attachments or false;
+      # Agents send `role:tool` results mid-conversation; rows whose engine
+      # carries tool-calling dialogues declare `tools` so a tool turn can
+      # redirect to a live text model instead of the hosted fallback.
+      canTool = m.tools or false;
       efforts = builtins.attrNames (m.reasoningEfforts or { });
     })
     (lib.sort (a: b: a.id < b.id) allModels);

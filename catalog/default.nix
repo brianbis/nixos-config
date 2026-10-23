@@ -30,7 +30,9 @@
 #                   (a headroom compression front, or null = straight to `port`)
 #   family          redirect class: engines serving the same weights/artifact
 #   context/maxTok  wire facts every tool config renders
-#   reason/attachments capabilities the gate checks before redirecting
+#   reason/attachments/tools  capabilities the gate checks before redirecting
+#                             (tools = the engine carries role:tool dialogue,
+#                             so an agent turn can stay local)
 #   reasoningEfforts/thinkingBudget  per-model thinking controls
 #   cost            per-1M pricing (omitted = free local)
 #   vramMib         free VRAM the engine needs before it can load (gate policy)
@@ -153,12 +155,11 @@ rec {
       label = "Strata Coder (local)";
       hosted = false;
     };
+    # The NVIDIA NIM group (kimi-k3) is gone with the row: NIM retired the
+    # model, and a provider group with no rows would break the tool-config
+    # renderers. The headroomNvidia face stays (independent plumbing).
     deepseek = {
       label = "DeepSeek";
-      hosted = true;
-    };
-    nvidia = {
-      label = "NVIDIA NIM (cloud)";
       hosted = true;
     };
   };
@@ -384,6 +385,8 @@ rec {
       maxTok = 32768;
       reason = true;
       attachments = true;
+      # The previous default: agent sessions sent tool turns to it.
+      tools = true;
       cost = {
         input = 0;
         output = 0;
@@ -408,6 +411,8 @@ rec {
       maxTok = 32768;
       reason = true;
       attachments = true;
+      # The current default model: agent sessions send tool turns to it.
+      tools = true;
       cost = {
         input = 0;
         output = 0;
@@ -435,6 +440,9 @@ rec {
       maxTok = 32768;
       reason = true;
       attachments = true;
+      # Same engine and base model as the 4bpw row, which demonstrably
+      # serves role:tool turns; the quantization does not change that.
+      tools = true;
       cost = {
         input = 0;
         output = 0;
@@ -457,6 +465,9 @@ rec {
       maxTok = 32768;
       reason = true;
       attachments = false;
+      # Demonstrated: it serves live role:tool agent turns; it is the model
+      # this fix re-routes agent turns to when the card cannot take strata.
+      tools = true;
       cost = {
         input = 0;
         output = 0;
@@ -565,6 +576,8 @@ rec {
     # ── Hosted (cloud headroom fronts, key injected host-side) ──────────────
     # The gate's last-resort fallback: when no local engine can serve a request
     # (VRAM, or every local engine idle-and-cold), these are always live.
+    # Hosted tool turns: the DeepSeek API carries role:tool results natively,
+    # so a tool-only need can fall back here when nothing local can serve.
     deepseekPro = {
       provider = "deepseek";
       id = "deepseek-v4-pro";
@@ -577,6 +590,7 @@ rec {
       context = 1048576;
       maxTok = 32768;
       reason = true;
+      tools = true;
       vramMib = 0;
       onDemand = false;
       hosted = true;
@@ -593,33 +607,14 @@ rec {
       context = 1048576;
       maxTok = 32768;
       reason = true;
+      tools = true;
       vramMib = 0;
       onDemand = false;
       hosted = true;
     };
-    kimik3 = {
-      provider = "nvidia";
-      id = "moonshotai/kimi-k3";
-      name = "Kimi K3 (NVIDIA NIM)";
-      engine = "hosted";
-      unit = null;
-      port = ports.headroomNvidia;
-      relay = null;
-      family = "hosted";
-      # Conservative window: dsh compacts before the model's real limit.
-      context = 262144;
-      maxTok = 16384;
-      reason = true;
-      attachments = true;
-      reasoningEfforts = {
-        low = "low";
-        high = "high";
-        max = "max";
-      };
-      vramMib = 0;
-      onDemand = false;
-      hosted = true;
-    };
+    # moonshotai/kimi-k3 was the hosted tool-turn fallback here, but NVIDIA
+    # NIM retired it (410 for `moonshotai/kimi-k3`, EOL 2026-10-15); a dead
+    # last resort is worse than none.
   };
 
   # ─── Gate policy ──────────────────────────────────────────────────────────
@@ -631,7 +626,7 @@ rec {
     # runtime table, dsh's default model, the docs — resolves the same row and
     # cannot drift apart. The IQ1_M coder release: expert-pruned, so it loads
     # while a smaller engine is already live (22000 MiB — same footprint as the
-    # previous default), and it carries reason + attachments, so it is
+    # previous default), and it carries reason + attachments + tools, so it is
     # compatible with what agents send.
     defaultKey = "strata_qwen38_coder";
     # The model a request with no usable `model` (or an unknown one) gets.

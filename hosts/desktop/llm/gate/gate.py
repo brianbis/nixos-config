@@ -103,6 +103,7 @@ class Row:
     vram_mib: int
     can_reason: bool
     can_attach: bool
+    can_tool: bool
     efforts: list[str]
 
 
@@ -212,27 +213,37 @@ async def read_request(stream: Stream) -> tuple[str, str, list[bytes], bytes]:
 
 
 def request_needs(body: bytes) -> dict:
-    """What the request actually needs from a model: an effort control and
-    multimodal parts. Cheap and conservative — a row that cannot satisfy a
-    need is never chosen for a redirect."""
+    """What the request actually needs from a model: an effort control,
+    multimodal parts, and the ability to take an agent conversation back
+    (`role:tool` results). Cheap and conservative — a row that cannot satisfy
+    a need is never chosen for a redirect.
+
+    The two are different capabilities: a text model that carries a
+    tool-calling conversation still needs no multimodal stack, so a mid-
+    conversation agent turn must not be steered to the one image-capable row
+    when the live row already speaks tools."""
 
     needs_attach = (
         b'"type":"image"' in body
         or b'"type": "image"' in body
         or b"image_url" in body
         or b'"type":"audio"' in body
-        or b'"role":"tool"' in body
     )
+
+    needs_tool = b'"role":"tool"' in body or b'"role": "tool"' in body
 
     needs_reason = (
         b'"reasoning_effort"' in body or b'"thinking"' in body or b'"reasoning"' in body
     )
 
-    return {"attach": needs_attach, "reason": needs_reason}
+    return {"attach": needs_attach, "tool": needs_tool, "reason": needs_reason}
 
 
 def compatible(row: Row, needs: dict) -> bool:
     if needs["attach"] and not row.can_attach:
+        return False
+
+    if needs["tool"] and not row.can_tool:
         return False
 
     if needs["reason"] and not row.can_reason:
@@ -579,6 +590,9 @@ def load_table(path: str) -> tuple[list[Row], Policy]:
             vram_mib=r["vramMib"],
             can_reason=r["canReason"],
             can_attach=r["canAttach"],
+            # A table rendered before the split lacks the field: missing means
+            # the guard never opened, so treat it as not declared.
+            can_tool=r.get("canTool", False),
             efforts=r["efforts"],
         )
         for r in doc["rows"]
