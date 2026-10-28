@@ -349,13 +349,13 @@ matter:
    proceeded by itself, so the USB transport and the firmware-discovered entry both work
    and only Ventoy's selection failed (undocumented `default_image` key; see *The reboot
    itself* attempt 3 and `hosts/nixos-vm/README.md` → the `control` keys). Consistent
-   with the jail side: `192.168.5.186` = `No route to host`, `:8006` = no bytes, and the
-   classifier sweep of `192.168.4.0-63` + `192.168.5.1-254` found exactly one listener —
-   `192.168.4.44`, which is **this machine's own wired address**, not the box. The fix is
-   one selection at the JetKVM, then the console lines printed above in *Reaching the
-   live system* (`sudo sh -c 'echo … > /etc/ssh/authorized_keys.d/root'`, then the
-   `ip addr`/`ip route` lines that re-pin `192.168.5.186/22` through gateway
-   `192.168.4.1`) — or the corrected `ventoy.json` so a later boot needs no hands at all.
+    with the jail side: `192.168.5.186` = `No route to host`, `:8006` = no bytes. The
+    classifier at `192.168.4.44` (this machine's own wired address) answers
+    `Remote protocol version` — the classifier works and there is **no listener at the
+    box's pinned address**, which is the LAN-dark proof; a whole-LAN sweep adds nothing
+    (one was started and cut short). The fix is one selection at the JetKVM, then the
+    console lines printed above in *Reaching the live system* — or the corrected `ventoy.json`
+    staged from the 9p bridge.
 2. **Whether `bootctl install --variables=no` really lands `EFI/BOOT/bootx64.efi`**
    in this systemd version — read from the pin, not yet observed on the box.
    If it does not, the fix is an explicit copy to that path, not an NVRAM edit.
