@@ -907,3 +907,55 @@ in the delta below.
 and `alsa-utils alsa-ucm-conf libva-utils v4l-utils efibootmgr` in `environment.systemPackages`,
 each with the live readout that motivated it in the comment. New pin to be recorded below
 after the jail build and the box switch.
+
+### Generation 3 pin and the cold-boot proof
+
+```
+jail  nix build --impure --no-link --print-out-paths "/etc/nixos#nixosConfigurations.yzerd.config.system.build.toplevel"
+      -> /nix/store/5qpm4i44bgak2wkijmbfv16ah5lwyp2w-nixos-system-yzerd-26.11.20261016.f20cd90   (BUILD-RC: 0)
+box   nixos-rebuild switch --flake /etc/nixos#yzerd
+      -> Done. The new configuration is /nix/store/5qpm4i44bgak2wkijmbfv16ah5lwyp2w-…           (SWITCH-RC=0)
+```
+
+Same drv (`acgss6zf3d0qm7cfn6mjjsl3rdvjzwdw`) computed on both machines from the staged
+quartet, same outPath built on both — the reproducibility gate holds through the delta.
+The ESP now carries three loader entries (`version Generation 1/2/3`) and `loader.conf`
+`default nixos-219716746ae243be13f5f5e469657bd5a708b7aa2fdbde9590ab0c4c1dbf892c.conf`
+names the Generation 3 one, so `sudo systemctl reboot --force` lands on it without any
+NVRAM edit; `efibootmgr` (newly installed on the box) says `BootCurrent: 0004`,
+`BootOrder: 0004,0005,0000,0003` — Boot0004 is the `\EFI\BOOT\BOOTX64.EFI` door on nvme0n1p2
+that survived the wipe.
+
+Cold-boot readout, Generation 3 (box polled UP at t=50s, nothing loaded by hand):
+
+```
+/run/booted-system == /run/current-system == /nix/store/5qpm4i44…    the jail pin, booted cold
+/dev/nvidia*         nvidia0 nvidiactl nvidia-modeset nvidia-uvm nvidia-uvm-tools
+                     nvidia-caps/{nvidia-cap1,nvidia-cap2}
+/dev/dri             card1  renderD128  by-path
+lsmod | grep nvidia  8 matches (nvidia, nvidia_modeset, nvidia_uvm, nvidia_drm + helpers)
+nvidia-smi -L        GPU 0: NVIDIA GeForce RTX 4090 (UUID: GPU-cf5efaf1-f844-7553-bacf-18b94c5f53fb)
+firmware dir         915 files; regulatory.db.zst + regulatory.db.p7s.zst present
+rfkill               0 bluetooth hci0 unblocked unblocked
+                     1 wlan      phy0 unblocked unblocked
+/sys/class/net       enp4s0 enp5s0 lo wlp6s0        (ip a: 1 wlp link)
+systemctl is-active bluetooth                       active
+arecord -L           default:CARD=Generic  HD-Audio Generic, ALC1220 Analog
+vainfo               VA-API version 1.24 (libva 2.24.0)
+                     Driver version: VA-API NVDEC driver [direct backend]
+v4l2-ctl --list-devices                              (empty — no capture device on the box)
+ls /sys/class/media                                  No such file or directory (no media class)
+journalctl nouveau                                   0 lines — the blacklist in nixpkgs holds
+id b                 … wheel … video … audio
+```
+
+Two facts the tooling corrected in passing: the pin's v4l-utils (1.32.0) has no `v4l2_info`
+binary — the readout command is `v4l2-ctl --list-devices`; and `nvidia-smi -q -d SUMMARY`
+is rejected by 615.78.08's flag parser (`Failed to parse --display flags`) while plain
+`nvidia-smi` and `nvidia-smi -L` work, so the summary table is read without `-d`.
+
+What is NOT claimed working, and why: the box has no webcam (nothing in `/dev/v4l`, no
+media class), and WiFi is present and unblocked but deliberately unmanaged —
+`networking.useDHCP = false` and the only networkd unit is `10-yz-enp4s0` for the wired
+cable, so `wlp6s0` answers `state DOWN` because no configuration asks it for a route.
+That is the same choice the wired identity was declared with, not a driver failure.

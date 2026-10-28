@@ -10,7 +10,11 @@
 
 IP=${1:-192.168.5.186}
 KEY=${KEY:-/home/llm/.ssh/ha_key}
-GEN=4wcrl93il7vvqij3wihva6p83l3gk5n2-nixos-system-yzerd-26.11.20261016.f20cd90
+# ANY driver-config change invalidates this constant — bump it after each rebuild.
+# (2026-10-28: 4wcrl93… was Generation 1, the bare native box; bs2k4hs… is Generation 2,
+# the NVIDIA/firmware delta; 5qpm4i4… is Generation 3, that delta plus bluetooth, regdb
+# and the inspection tooling — the pin currently in force.)
+GEN=5qpm4i44bgak2wkijmbfv16ah5lwyp2w-nixos-system-yzerd-26.11.20261016.f20cd90
 SSH="ssh -o BatchMode=yes -o ConnectTimeout=8 -i $KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
 
 say() { echo "=== $1 ==="; }
