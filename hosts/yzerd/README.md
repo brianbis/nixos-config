@@ -232,7 +232,9 @@ take over: `ssh -o BatchMode=yes root@<found-address> 'uname -a; ss -lntp'`.
 Measured, not assumed: `masscan` will not run from the jail (`FAIL: permission
 denied … need to sudo` — a privileged probe it needs and the jail will not give),
 so the read that works is a plain `nc` banner sweep, and it found **no sshd at all**
-over `192.168.5.1-254` or `192.168.4.1-60` after the `BootNext: 0007` reboot.
+over the whole wired LAN — every address in `192.168.4.0/22` (the jail's own network,
+`192.168.4.0` through `.63`) and every address in `192.168.5.0-255` (PVE's old static
+network).
 `192.168.4.1` itself answers `Connection refused` on `:22` (the LAN is there, no
 socket) while `192.168.5.186` answers `No route to host` (that network no longer
 exists) — PVE is definitively not what booted.
@@ -288,12 +290,12 @@ matter:
 
 1. **Reachability of the live stage — measured, not solved.** After the `BootNext: 0007`
    reboot, `192.168.5.186` answers nothing (`No route to host` from the jail, `:8006`
-   returns `000`), and an `nc`-banner sweep of **`192.168.5.1-254` and `192.168.4.1-60`
-   found no sshd at all**. So either the live system booted with no network (NetworkManager
-   on the stock image does not reproduce PVE's static wiring, and the wired router here
-   hands out `192.168.4.x` only after it is configured), or the stick did not boot and
-   the box is sitting somewhere unreachable. The monitor is the only ground truth:
-   `sudo ip -brief a`, `uname -a`, then the authorized-keys line and the
+   returns `000`), and an `nc`-banner sweep of **the whole wired LAN — `192.168.4.0/22`
+   and `192.168.5.0-255` — found no sshd at all**. So either the live system booted with
+   no network (NetworkManager on the stock image does not reproduce PVE's static wiring, and
+   the wired router here hands out `192.168.4.x` only after it is configured), or the stick
+   did not boot and the box is sitting somewhere unreachable. The monitor is the only
+   ground truth: `sudo ip -brief a`, `uname -a`, then the authorized-keys line and the
    `ip addr/route` lines that re-pin `192.168.5.186/22` via gateway `192.168.4.1`
    (both are printed above in *Reaching the live system*).
 2. **Whether `bootctl install --variables=no` really lands `EFI/BOOT/bootx64.efi`**
