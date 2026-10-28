@@ -336,6 +336,24 @@ nothing that booted) and `http://192.168.5.186:8006/` returns no bytes at all, w
 Unverified: whether an empty live-ISO password is accepted by sshd's PAM path —
 do not plan around it, plan around the console line above.
 
+Only two lines belong at the monitor, not four. The live image logs itself in on
+tty1 as `nixos` with passwordless `sudo`, and sshd only has to be started and given our
+key; the wiring then belongs to the jail, because a listener answers *somewhere* on the
+shared LAN the moment sshd runs, and once the jail can reach it the static address is set
+from the jail over ssh — the box's DHCP address is not the pinned one, and pinning it is
+only needed before `nixos-install`, not before logging into it:
+
+```sh
+sudo systemctl start sshd
+sudo sh -c '"'"'echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIDKuUwgF6tCaTogYB+/iP5HH/G9v3/fuNfFh1lpoQqm dsh-agent" > /etc/ssh/authorized_keys.d/root'"'"'
+```
+
+The `ip addr add`/`ip route add` lines above are what the jail then runs over that
+connection (and what the installed system reproduces declaratively through the
+`10-yz-enp4s0` networkd unit); typing them at the monitor is a shortcut, not a
+requirement. Whether the live image really autologs in on tty1 is read from the image's
+own `getty@tty1` override at the console, not assumed here.
+
 ### Making the install need no network at all
 
 `hosts/yzerd/flake.lock` carries exactly two nodes — `root` and `nixpkgs` — so the
