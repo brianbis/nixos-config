@@ -36,6 +36,15 @@
 # this box, so no display manager and no X configuration is implied here.
 
 {
+  # The NVIDIA userland is unfreeRedistributable in this pin
+  # (pkgs/os-specific/linux/nvidia-x11/generic.nix), and this nixpkgs revision refuses it
+  # at evaluation — "Refusing to evaluate package 'nvidia-x11-615.78.08' … because it has an
+  # unfree license". nixpkgs.config is the knob that reaches the package set: nixos/modules/misc/nixpkgs.nix
+  # rebuilds it as `import ../../.. { inherit (cfg) config overlays; … }`. hosts/desktop/…
+  # does the same thing from the root flake; declaring it here keeps the allowance next to
+  # the one unfree package it buys, instead of switching the whole eval.
+  nixpkgs.config.allowUnfree = true;
+
   hardware.nvidia = {
     # This is the enable switch in this pin; see the comment above.
     modesetting.enable = false;
