@@ -84,6 +84,9 @@ fi
 echo "NET-CHECK: $(curl -sI -m 10 https://github.com/ | head -1)"
 
 say "3. the door: tear down pve's device-mapper first, then wipe p3 and lay the declared layout"
+# A previous run may have left /mnt2 mounted on p3 (a failed install leaves it up),
+# and mkfs refuses on a mounted device — take it down before anything else.
+umount /mnt2 2>/dev/null || true
 # mkfs.ext4 refuses with "/dev/nvme0n1p3 is apparently in use by the system"
 # while pve-root/pve-swap are ACTIVE device-mapper devices on that partition
 # (nothing mounts it, lsof/fuser are empty — the busy check is dm_dev_in_use).
@@ -113,8 +116,13 @@ df -h /mnt2 | tail -1
 echo "MOUNT-OK"
 
 say "4. install from the stick flake (the pin is the whole point)"
+# nixos-install's own source (/nix/store/hji0isqr…-nixos-install/bin/nixos-install L212)
+# says the flake attribute is the MACHINE NAME, not the attribute path:
+#     flakeAttr="nixosConfigurations.\"$flakeAttr\""
+# so passing #nixosConfigurations.yzerd asks for the key "nixosConfigurations.yzerd"
+# inside nixosConfigurations — the refusal quoted exactly that. Pass #yzerd.
 install_rc=0
-nixos-install --root /mnt2 --flake /mnt/stick/repo-yzerd#nixosConfigurations.yzerd --no-root-password || install_rc=$?
+nixos-install --root /mnt2 --flake /mnt/stick/repo-yzerd#yzerd --no-root-password || install_rc=$?
 echo "INSTALL-RC: $install_rc"
 if [ "$install_rc" != 0 ]; then
   say "4b. install failed — what is on the target now (p3 is already a fresh ext4)"

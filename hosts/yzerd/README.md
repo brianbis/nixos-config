@@ -673,3 +673,17 @@ PVE named the box) are **the same network**; the installed system pins `enp4s0` 
 with `gateway = 192.168.4.1`, so after the install the wired identity moves back to `.5.186` and
 `.4.30` stops answering. The acceptance test should watch **both**, and `ssh proxmox-186` is the
 read that matters afterwards.
+
+### the install itself: nixos-install wants the machine name, not the attribute path
+
+`mkfs` and the mounts now pass cleanly, so the door reached the install and the refusal there
+is about the selector:
+
+| driver md5 | job | how far | exact output | fix |
+|---|---|---|---|---|
+| `efab220491c83883813314c09d56cc21` | `bash-ba56641156d34c9a` | `MKFS-RC: 0`, `MOUNT-OK`, then the install died at the selector | `copying channel...` → `building the flake in path:/mnt/stick/repo-yzerd?lastModified=…` → `error: flake '"'"'path:/mnt/stick/repo-yzerd?…'"'"' does not provide attribute '"'"'packages.x86_64-linux.nixosConfigurations."nixosConfigurations.yzerd".config.system.build.toplevel'"'"', …` → `INSTALL-RC: 1`, `REMOTE-RC=3` — the target was left with `boot/`, `lost+found/`, `nix/`, `root/` and 478 M used | `nixos-install`'s own source (`/nix/store/hji0isqrwj5qasa891hqq96bapqcmw3q-nixos-install/bin/nixos-install`) L212: `flakeAttr="nixosConfigurations.\"$flakeAttr\""` and L284 `nix build "$flake#$flakeAttr.config.system.build.toplevel"`. Its man L209: *"to use the output nixosConfigurations.foo … append `#foo`"*. So `#nixosConfigurations.yzerd` asks for a key literally named `nixosConfigurations.yzerd` **inside** `nixosConfigurations`. Pass `#yzerd` |
+| `5cc6e0cb9d107a128ec462db6dc21c64` | `bash-9172e436509e42a8` | running: `mkfs` again (lazy, ~a minute) then the real build — nixpkgs fetched from GitHub per the rev pin, then the full toplevel | — |
+
+Two facts worth keeping from the successful steps: `mkfs.ext4 -L nixos-native -o Linux` reports
+`243928241 4k blocks and 60989440 inodes` and writes its tables lazily, so each re-run is seconds,
+and `mount -t ext4` gives `/mnt2 … 915G 44K 869G 1%` before the install starts.
