@@ -513,3 +513,26 @@ once the box has a signal is still the two monitor lines from *Reaching the
 live system* (`systemctl start sshd` and the authorized-key write), with the
 `ip addr add` / `ip route add` pair done from the jail over the resulting
 connection.
+
+## Screen-free box state, read on 2026-10-28 from the KVM's own HDMI state machine
+
+There is no monitor at the box, so the screen is not an oracle. The JetKVM's
+tc35874x log and the LAN are. These reads are the whole truth for this boot:
+
+| read | answer | what it proves |
+|---|---|---|
+| `getVideoState` (firmware 0.5.9) | `{"ready":false,"streaming":0,"error":"no_signal","width":0,"height":0,"fps":0}` | the box is sending **no display signal at all** (it read `ready:true 1920x1080@60` in the earlier boot when PVE was up) |
+| `getVideoLogStatus` | `Cable detected (+5V power): yes` / `TMDS signal detected: no` / `Stable sync signal: no` / `No video detected` / `horizontal: fp = 0, -sync = 0, bp = 0` | cable is connected and powered, **nothing on the wire** — the box is off or wedged before any output |
+| `getVideoLogStatus` timestamps | `[ 702.27 ]` s | the **KVM itself restarted** ~12 min ago (earlier reads were at `[ 66499.1 ]` s), so the box went through a real power cycle |
+| `nc -z -w3 192.168.5.186 22` from `pve1` | `SSH-NO` (`ip route get 192.168.5.186` resolves on `vmbr0`, so the probe is valid) | no sshd at the box |
+| `ssh` from the jail to `192.168.5.186` | `Connection timed out` (`ip route get` resolves on `enp5s0`) | route exists from the desk, **no listener** — `No route to host` on other `.5.x` was the desk's own net, not the box |
+| KVM login | first click never logged in (`isWebRTCConnected: false` on attempt 0), attempt 1 connected | any driver needs the retry loop, a single attempt is not enough |
+| `getUsbDevices` | `keyboard: true`, `serial_console: false` | HID typing is available; there is no serial-terminal mode |
+
+The console install path is two typed lines once the live ISO is up — the driver
+mounts the stick itself (`go-native.sh:39-44`), so nothing has to be copied first:
+
+```sh
+mkdir -p /mnt/stick; mount /dev/sda1 /mnt/stick
+sh /mnt/stick/repo-yzerd/go-native.sh WIPE
+```
