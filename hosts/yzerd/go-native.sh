@@ -100,10 +100,15 @@ mkfs_rc=0
 mkfs.ext4 -L nixos-native -o Linux /dev/nvme0n1p3 || mkfs_rc=$?
 echo "MKFS-RC: $mkfs_rc"
 [ "$mkfs_rc" = 0 ] || exit 6
+# Bare `mount /dev/nvme0n1p3 /mnt2` fails here with "wrong fs type, bad superblock"
+# while `mount -t ext4 …` succeeds on the very same device: dmesg shows the kernel's
+# auto-probe walking the stale type it still carries for that partition
+# ("exFAT-fs (nvme0n1p3): invalid boot record signature / failed to recognize exfat
+# type") and giving up instead of trying ext4. Name the type; do not probe.
 mkdir -p /mnt2
-mount /dev/nvme0n1p3 /mnt2 || exit 5
+mount -t ext4 /dev/nvme0n1p3 /mnt2 || exit 5
 mkdir -p /mnt2/boot/efi
-mount /dev/nvme0n1p2 /mnt2/boot/efi || exit 4
+mount -t vfat /dev/nvme0n1p2 /mnt2/boot/efi || exit 4
 df -h /mnt2 | tail -1
 echo "MOUNT-OK"
 

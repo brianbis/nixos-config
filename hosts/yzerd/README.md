@@ -631,3 +631,23 @@ fixed-output path `glw7ngr0dwbp3al07rdlqkrbas7w3a02-source` either way.
 |---|---|---|---|
 | `e51e4b8d37b6e897d266038e26a1e36a` | `bash-dbba905cc8744fb6` | `Volume group "pve" not found` → `VGREMOVE-NONZERO` (expected: already torn down) → `mke2fs 1.47.4` → `Invalid filesystem option set: Linux` → `MKFS-RC: 1`, `REMOTE-RC=6` | capital `-O` is mke2fs's **feature** list; the creator string is lowercase `-o`. Now `mkfs.ext4 -L nixos-native -o Linux` |
 | `796cee2a8b8e16c67274036017adb0e8` | `bash-2ea9433fc7c54ca9` | running: `mkfs` on 930 G then `nixos-install` | — |
+
+### the fresh ext4 mounts only by named type
+
+`mkfs.ext4 -L nixos-native -o Linux` succeeded: `Filesystem UUID: aa809936-c797-471b-9bde-01c89817657f`,
+`e2fsck -n` → `nixos-native: clean, 12/60989440 files, 4110581/243928241 blocks`, `lsblk` → `ext4 930.5G`,
+`/dev/disk/by-label/nixos-native -> ../../nvme0n1p3` already exists. Yet `mount /dev/nvme0n1p3 /mnt2`
+said `wrong fs type, bad superblock on /dev/nvme0n1p3 …`, and `mount -t ext4 /dev/nvme0n1p3 /mnt2`
+on the same device returned `MOUNT-TYPE-RC=0` with `/mnt2 … 915G 36K 869G 1%` free. The kernel log
+says why: the automagic probe walked the stale type for that partition and quit —
+
+```
+exFAT-fs (nvme0n1p3): invalid boot record signature
+exFAT-fs (nvme0n1p3): failed to read boot sector
+exFAT-fs (nvme0n1p3): failed to recognize exfat type
+EXT4-fs (nvme0n1p3): mounted filesystem aa809936-… r/w
+```
+
+The door now names the type on both mounts (`-t ext4`, `-t vfat`). The run that lays the layout is
+`sh /root/go-native.sh WIPE FORCE-EXT4` — p3 is ext4 already, so the guard's documented second
+argument is what resumes it (one more `mkfs`, ~a minute with lazy inode tables, same LABEL).
