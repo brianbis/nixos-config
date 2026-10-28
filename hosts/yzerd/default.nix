@@ -116,6 +116,12 @@
 
   time.timeZone = "America/Phoenix";
 
+  # Strata (the coder server, one file over at ./llm/strata): enabled so the
+  # units and the weights staging EXIST, but nothing loads at boot — the serve
+  # unit has no wantedBy and strata-prep.target is manual, so `systemctl start
+  # strata-coder-serve` is the only thing that ever puts ~23 GB on the card.
+  services.strata.enable = true;
+
   ### Deliberately NOT declared yet, and why:
   #  * the GPU driver — it IS declared now, one file over in ./nvidia.nix (the card
   #    answered AD102 in the boot journal and nothing owned it). What stays open is
