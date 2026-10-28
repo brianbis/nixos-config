@@ -687,3 +687,10 @@ is about the selector:
 Two facts worth keeping from the successful steps: `mkfs.ext4 -L nixos-native -o Linux` reports
 `243928241 4k blocks and 60989440 inodes` and writes its tables lazily, so each re-run is seconds,
 and `mount -t ext4` gives `/mnt2 … 915G 44K 869G 1%` before the install starts.
+
+### the wipe refused because the previous run left the target mounted
+
+| driver md5 | job | exact output | fix |
+|---|---|---|---|
+| `87551cd942ba877b4c464e024b0760a8` | `bash-9172e436509e42a8` | `wipefs: error: /dev/nvme0n1p3: probing initialization failed: Device or resource busy` → `WIPEFS-NONZERO` → `mke2fs … /dev/nvme0n1p3 is mounted; will not make a filesystem here!` → `MKFS-RC: 1`, `REMOTE-RC=6` | attempt 5 mounted **both** `/mnt2` (p3) and `/mnt2/boot/efi` (p2) and then exited on the install error, leaving them up. A bare `umount /mnt2` is itself refused while something is mounted under it (`target is busy`), and its message was hidden by `2>/dev/null`, so the mount silently stayed. Now `umount -R /mnt2` plus a `findmnt` guard that refuses to wipe a still-mounted device (`exit 7`) and two `MOUNTS-*:` markers that make the state visible in the log |
+| `8093cb3ab6d4ea2b2ada73d897f9b2ad` | `bash-7d4a107588434398` | running — reached the real build; the live oracle shows `nix-env … -p /mnt2/nix/var/nix/profiles/per-user/root/channels --set /nix/store/zkkyw00m…-nixos-26.05.12707.718f670e8453` (the ISO's channel copy) and `/mnt2/nix/store` at 246 M | — |

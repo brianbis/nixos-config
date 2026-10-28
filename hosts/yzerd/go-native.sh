@@ -85,8 +85,12 @@ echo "NET-CHECK: $(curl -sI -m 10 https://github.com/ | head -1)"
 
 say "3. the door: tear down pve's device-mapper first, then wipe p3 and lay the declared layout"
 # A previous run may have left /mnt2 mounted on p3 (a failed install leaves it up),
-# and mkfs refuses on a mounted device — take it down before anything else.
-umount /mnt2 2>/dev/null || true
+# and mkfs refuses on a mounted device — take it down before anything else. Plain
+# `umount /mnt2` is refused while /mnt2/boot/efi is mounted inside it ("target is
+# busy"), so recurse, then say what is left.
+echo "MOUNTS-BEFORE: $(findmnt -n -o TARGET,MAINTYPE /dev/nvme0n1p3 2>/dev/null | tr '\n' ' ')"
+umount -R /mnt2 2>/dev/null || umount /mnt2 2>/dev/null || true
+echo "MOUNTS-AFTER-UMOUNT: $(findmnt -n -o TARGET,MAINTYPE /dev/nvme0n1p3 2>/dev/null | tr '\n' ' ')"
 # mkfs.ext4 refuses with "/dev/nvme0n1p3 is apparently in use by the system"
 # while pve-root/pve-swap are ACTIVE device-mapper devices on that partition
 # (nothing mounts it, lsof/fuser are empty — the busy check is dm_dev_in_use).
@@ -94,6 +98,11 @@ umount /mnt2 2>/dev/null || true
 # Ventoy device-mapper, so ventoy/sda1 must stay live.
 vgremove -f pve || echo "VGREMOVE-NONZERO: read the dm map below"
 echo "DM-AFTER: $(dmsetup ls 2>/dev/null | tr '\n' ' ')"
+if findmnt -n -o TARGET /dev/nvme0n1p3 >/dev/null 2>&1; then
+  say "p3 is still mounted after the recursive umount — refusing to wipe a live mount"
+  findmnt -o TARGET,MAINTYPE /dev/nvme0n1p3 | head -6
+  exit 7
+fi
 wipefs -a /dev/nvme0n1p3 || echo "WIPEFS-NONZERO"
 # -f is NOT an mke2fs option (it belongs to the busybox mkfs wrapper), so drop it:
 # the DM devices are gone by now and the busy check passes on its own.
