@@ -694,3 +694,38 @@ and `mount -t ext4` gives `/mnt2 … 915G 44K 869G 1%` before the install starts
 |---|---|---|---|
 | `87551cd942ba877b4c464e024b0760a8` | `bash-9172e436509e42a8` | `wipefs: error: /dev/nvme0n1p3: probing initialization failed: Device or resource busy` → `WIPEFS-NONZERO` → `mke2fs … /dev/nvme0n1p3 is mounted; will not make a filesystem here!` → `MKFS-RC: 1`, `REMOTE-RC=6` | attempt 5 mounted **both** `/mnt2` (p3) and `/mnt2/boot/efi` (p2) and then exited on the install error, leaving them up. A bare `umount /mnt2` is itself refused while something is mounted under it (`target is busy`), and its message was hidden by `2>/dev/null`, so the mount silently stayed. Now `umount -R /mnt2` plus a `findmnt` guard that refuses to wipe a still-mounted device (`exit 7`) and two `MOUNTS-*:` markers that make the state visible in the log |
 | `8093cb3ab6d4ea2b2ada73d897f9b2ad` | `bash-7d4a107588434398` | running — reached the real build; the live oracle shows `nix-env … -p /mnt2/nix/var/nix/profiles/per-user/root/channels --set /nix/store/zkkyw00m…-nixos-26.05.12707.718f670e8453` (the ISO's channel copy) and `/mnt2/nix/store` at 246 M | — |
+
+### the install landed, and it landed exactly on the pin
+
+Door attempt 7 (`bash-7d4a107588434398`, log `/home/llm/inst15.log`, 1456 lines, `INSTALL-RC: 0`)
+finished the install. The driver's own pin check then lied — `PIN-MISMATCH: expected generation dir
+absent` — because it looked under `/mnt2/boot`, which on this layout holds only `efi`. The real read
+is the target's own store and the systemd-boot entry:
+
+```
+$ ssh root@192.168.4.30 'ls -d /mnt2/nix/store/*nixos-system*'
+/mnt2/nix/store/4wcrl93il7vvqij3wihva6p83l3gk5n2-nixos-system-yzerd-26.11.20261016.f20cd90
+/mnt2/nix/store/srgrfiddhf1lb60d4vld78jy411s4v7n-nixos-system-yzerd-26.11.20261016.f20cd90.drv
+```
+
+Both names are the pin recorded from the jail (`srgrfiddhf…drv` → `4wcrl93i…`), so the reproduction
+gate is satisfied: the box realized the same derivation the jail evaluated. The loader entry agrees
+with the rendered `boot.json` proven earlier — `title NixOS`, `version Generation 1 NixOS Zokor
+26.11.20261016.f20cd90 (Linux 6.18.56), built on 2026-10-28`,
+`linux /EFI/nixos/nh11qhh…-linux-6.18.56-bzImage.efi`,
+`initrd /EFI/nixos/ymxh430…-initrd-linux-6.18.56-initrd.efi`,
+`options init=/nix/store/4wcrl93il7…-nixos-system-yzerd-26.11.20261016.f20cd90/init root=fstab loglevel=4 lsm=landlock,yama,bpf`,
+`sort-key nixos`, and `loader/loader.conf` defaults it (`default nixos-419168a3….conf`, `timeout 5`).
+
+Open question 2 is answered by these two files: `boot.loader.efi.canTouchEfiVariables = false` stops
+NVRAM edits, but `bootctl` still wrote the fallback copy — `md5sum` says
+
+```
+b5b1066b00743599ed56e72a91a56901  /mnt2/boot/efi/EFI/BOOT/BOOTX64.EFI
+b5b1066b00743599ed56e72a91a56901  /mnt2/boot/efi/EFI/systemd/systemd-bootx64.efi
+```
+
+so the ESP's legacy path `EFI/BOOT/BOOTX64.EFI` **is** systemd-boot, and the pre-existing NVRAM entry
+`Boot0004* UEFI OS  HD(2,GPT,ae4fb41e-…,0x800,0x200000)/\EFI\BOOT\BOOTX64.EFI` points at exactly that.
+No new entry is needed — only ordering, and this firmware's handling of `BootOrder`/`BootNext` is still
+unproven (an earlier `efibootmgr -n 0007` never took effect).
