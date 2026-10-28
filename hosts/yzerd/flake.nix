@@ -63,7 +63,7 @@
       # the ggml CPU backend the engine links (i-quant expert kernels). Hash is
       # of the unpacked tree (fetchzip recursiveHash), per this repo's
       # fetchFromGitHub convention.
-      strataLlamaCpp = nixpkgs.lib.fetchFromGitHub {
+      strataLlamaCpp = cudaPkgs.fetchFromGitHub {
         owner = "ggml-org";
         repo = "llama.cpp";
         rev = "3cf03257f219afbe7334045ff7c6a06ac68c627d";
@@ -134,8 +134,12 @@
       # Narrow checks without a system rebuild (nix build --impure --no-link
       # --print-out-paths .#packages.x86_64-linux.<name>): the engine build is
       # the slow, hardware-critical step — its CUDA arch has to match the card.
-      packages.${system}."strata-engine-sm89" = strataEnginePkg;
-      packages.${system}."strata-vision-app-sm89" = strataVisionAppPkg;
-      packages.${system}."strata-serve-env" = strataServeEnv;
+      # One dynamic-attr set: repeated `packages.${system}.x = ...;` lines are
+      # separate definitions of the same dynamic attribute and conflict.
+      packages.${system} = {
+        "strata-engine-sm89" = strataEnginePkg;
+        "strata-vision-app-sm89" = strataVisionAppPkg;
+        "strata-serve-env" = strataServeEnv;
+      };
     };
 }
