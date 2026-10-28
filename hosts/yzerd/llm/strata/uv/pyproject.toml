@@ -1,0 +1,26 @@
+# Strata server runtime deps. Mirrors setup.py's dep list (0.1.40's pip step
+# reads requirements.txt), so the uv2nix venv satisfies that check with no
+# network access at runtime. The lock (uv.lock) is the pin.
+#
+# colorama is win32-only in upstream but setup.py's check is a bare
+# importability test with no marker evaluation and this venv is pipless, so
+# the package must exist in the venv on Linux too or setup.py fails.
+
+[project]
+name = "strata-serve"
+version = "0.1.0"
+description = "Strata server runtime (setup.py + serve/) dependencies"
+requires-python = ">=3.12"
+dependencies = [
+  "cmake",
+  "jinja2",
+  "numpy",
+  "ninja",
+  "pillow",
+  "psutil",
+  "pyyaml",
+  "regex",
+  "requests",
+  "tqdm",
+  "colorama",
+]
