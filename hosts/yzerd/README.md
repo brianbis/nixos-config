@@ -90,7 +90,7 @@ mount /dev/nvme0n1p3 /mnt2
 mkdir -p /mnt2/boot/efi
 mount /dev/nvme0n1p2 /mnt2/boot/efi
 
-nixos-install --root /mnt2 --flake /mnt/stick/repo-yzerd#yzerd --no-root-password
+nixos-install --root /mnt2 --flake /mnt/stick/repo-yzerd#nixosConfigurations.yzerd --no-root-password
 ```
 
 `fileSystems` names only `/` and `/boot/efi`, so nothing else needs creating. The
@@ -237,12 +237,14 @@ box to `192.168.5.186` — the address it answers can move. The new config's sta
 unit only exists *after* the install. So the live stage is found, not assumed:
 
 ```sh
-# from the jail: price every candidate address for an open ssh socket. The ssh
-# banner is the only read that works here (see the masscan/nmap caveat below).
-probe() { b=$(timeout 3 nc -s1 -w1 "$1" 22 2>/dev/null | head -c 40)
-          case "$b" in SSH-*) printf '%s HELLO: %s\n' "$1" "$b";; esac; }
-for i in $(seq 1 254); do probe "192.168.5.$i"; done   # PVE's old static subnet
-for i in $(seq 0 63);  do probe "192.168.4.$i"; done   # the jail's own network
+# from the jail: classify every candidate address (listener / no-socket / no-network).
+# A banner-only probe is not enough (see the caveat below) — ssh -v reaches the
+# protocol stage and stops before auth.
+probe() { timeout 8 ssh -v -o BatchMode=yes -o ConnectTimeout=3 \
+            -o PreferredAuthentications=none "$1" exit 2>&1 \
+          | grep -oE 'Remote protocol version|Connection refused|No route to host|Connection timed out' | head -1; }
+for i in $(seq 1 254); do r=$(probe "192.168.5.$i"); [ -n "$r" ] && printf '192.168.5.%s %s\n' "$i" "$r"; done
+for i in $(seq 0 63);  do r=$(probe "192.168.4.$i");  [ -n "$r" ] && printf '192.168.4.%s %s\n' "$i" "$r"; done
 echo "SWEEP-EXIT: $?"
 ```
 
@@ -255,18 +257,43 @@ sudo sh -c 'echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIDKuUwgF6tCaTogYB+/iP5HH/
 ```
 
 (`%h/.ssh/authorized_keys.d/%u` is in the ISO's own `AuthorizedKeysFile`, same
-module, so the file needs no mode play and no home directory.) Then the jail can
-take over: `ssh -o BatchMode=yes root@<found-address> 'uname -a; ss -lntp'`.
+module, so the file needs no mode play and no home directory.) Then the box needs an
+address before the jail can reach it — the stock live image does not reproduce PVE's
+static wiring, so the wiring is typed here too (same interface name PVE used,
+`enp4s0`, and the same gateway):
+
+```sh
+sudo ip -brief a; ip link show enp4s0
+sudo ip addr add 192.168.5.186 dev enp4s0
+sudo ip route add 192.168.5.186 via 192.168.4.1 dev enp4s0
+```
+
+A single address is enough for one ssh connection. The `/22` form in the installed
+config is the documented networkd spelling — [systemd.network(5)](https://man.archlinux.org/man/systemd.network.5)
+defines `Address=` as "a static IPv4 or IPv6 address and its prefix length, separated by
+a `/` character", i.e. a *network*, and [NETWORK] `Gateway=` as "a short-hand for a
+[Route] section only containing a `Gateway=` key" — so `address = [ "192.168.5.186/22" ]`
++ `gateway = [ "192.168.4.1" ]` is the networkd equivalent of PVE's ifcfg
+`address 192.168.5.186/22` + `gateway 192.168.4.1`, not a guess.
+Then the jail can take over: `ssh -o BatchMode=yes root@192.168.5.186 'uname -a; ss -lntp'`.
 
 Measured, not assumed: `masscan` will not run from the jail (`FAIL: permission
-denied … need to sudo` — a privileged probe it needs and the jail will not give),
-so the read that works is a plain `nc` banner sweep, and it found **no sshd at all**
-over the whole wired LAN — every address in `192.168.4.0/22` (the jail's own network,
-`192.168.4.0` through `.63`) and every address in `192.168.5.0-255` (PVE's old static
-network).
-`192.168.4.1` itself answers `Connection refused` on `:22` (the LAN is there, no
-socket) while `192.168.5.186` answers `No route to host` (that network no longer
-exists) — PVE is definitively not what booted.
+denied … need to sudo` — a privileged probe it needs and the jail will not give), and
+unprivileged `nmap` prints `PORT 22/tcp filtered ssh` for **every** address, so neither
+is evidence. The `nc` banner probe is weaker than it looks: sshd emits its banner only
+after the client sends a line, so a bare `nc` says nothing about a *present* listener —
+measured at `192.168.4.44` (this machine's own wired address), the raw socket that
+sends `SSH-2.0-Probe` gets `SSH-2.0-OpenSSH_10.6` back while the `nc` sweep stayed
+silent there. So a probe must classify, not listen for a banner — that is the `probe()`
+used by the sweep block above (`ssh -v` with
+`-o PreferredAuthentications=none`, which reaches the protocol stage and stops before
+auth).
+
+`Remote protocol version` = a listener; `Connection refused` = LAN present, no socket;
+`No route to host` = that address has no network. What is decisive **without** any sweep:
+`192.168.5.186` answers `No route to host` (PVE's static address is configured by
+nothing that booted) and `http://192.168.5.186:8006/` returns no bytes at all, while
+`192.168.4.1` answers `Connection refused` — the LAN edge is there, PVE is not.
 
 Unverified: whether an empty live-ISO password is accepted by sshd's PAM path —
 do not plan around it, plan around the console line above.
@@ -317,16 +344,18 @@ pending: the 9p bridge is unreachable while the box is booted off PVE.
 Nothing has been *installed* from this config yet. Open, in the order they
 matter:
 
-1. **Reachability of the live stage — measured, not solved.** After the `BootNext: 0007`
-   reboot, `192.168.5.186` answers nothing (`No route to host` from the jail, `:8006`
-   returns `000`), and an `nc`-banner sweep of **the whole wired LAN — `192.168.4.0/22`
-   and `192.168.5.0-255` — found no sshd at all**. So either the live system booted with
-   no network (NetworkManager on the stock image does not reproduce PVE's static wiring, and
-   the wired router here hands out `192.168.4.x` only after it is configured), or the stick
-   did not boot and the box is sitting somewhere unreachable. The monitor is the only
-   ground truth: `sudo ip -brief a`, `uname -a`, then the authorized-keys line and the
-   `ip addr/route` lines that re-pin `192.168.5.186/22` via gateway `192.168.4.1`
-   (both are printed above in *Reaching the live system*).
+1. **Resolved: the stick booted, the ISO did not launch.** After the `BootNext: 0007`
+   reboot the monitor showed a **Ventoy menu** — the user confirmed it — and nothing
+   proceeded by itself, so the USB transport and the firmware-discovered entry both work
+   and only Ventoy's selection failed (undocumented `default_image` key; see *The reboot
+   itself* attempt 3 and `hosts/nixos-vm/README.md` → the `control` keys). Consistent
+   with the jail side: `192.168.5.186` = `No route to host`, `:8006` = no bytes, and the
+   classifier sweep of `192.168.4.0-63` + `192.168.5.1-254` found exactly one listener —
+   `192.168.4.44`, which is **this machine's own wired address**, not the box. The fix is
+   one selection at the JetKVM, then the console lines printed above in *Reaching the
+   live system* (`sudo sh -c 'echo … > /etc/ssh/authorized_keys.d/root'`, then the
+   `ip addr`/`ip route` lines that re-pin `192.168.5.186/22` through gateway
+   `192.168.4.1`) — or the corrected `ventoy.json` so a later boot needs no hands at all.
 2. **Whether `bootctl install --variables=no` really lands `EFI/BOOT/bootx64.efi`**
    in this systemd version — read from the pin, not yet observed on the box.
    If it does not, the fix is an explicit copy to that path, not an NVRAM edit.
@@ -345,7 +374,7 @@ matter:
    `srgrfiddhf1lb60d4vld78jy411s4v7n-nixos-system-yzerd-26.11.20261016.f20cd90.drv`, so
    README text sits outside the build's input closure — the docs lag, the config does not.
     Two artifacts are **not on the stick at all** yet and both are needed before the
-    install: `go-native.sh` (jail/repo md5 `20f065a4ed9c2084eee6b0909d25a2d5`, 4657 B,
+    install: `go-native.sh` (jail/repo md5 `78eefedaa1510983cb5b37e5b6ffd129`, 4677 B,
     to be copied into `/mnt/vtoy/repo-yzerd/`) and `offline/nixpkgs-f20cd90.nar.xz`
     (34703312 B, md5 `5e86e8f13b8be035a1642d33c3875c00`, from
     `/home/llm/offline-seed/`, to be copied into `/mnt/vtoy/offline/`). The stick has

@@ -68,7 +68,7 @@ echo "MOUNT-OK"
 
 say "4. install from the stick flake (the pin is the whole point)"
 install_rc=0
-nixos-install --root /mnt2 --flake /mnt/stick/repo-yzerd#yzerd --no-root-password || install_rc=$?
+nixos-install --root /mnt2 --flake /mnt/stick/repo-yzerd#nixosConfigurations.yzerd --no-root-password || install_rc=$?
 echo "INSTALL-RC: $install_rc"
 if [ "$install_rc" != 0 ]; then
   say "4b. install failed — what is on the target now (p3 is already a fresh ext4)"
