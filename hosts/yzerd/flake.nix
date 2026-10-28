@@ -18,7 +18,7 @@
       # Bound literally (not config.system) so the flake evaluates standalone via
       # `nixos-rebuild --flake /mnt2/repo-yzerd#yzerd` on the live system.
       system = "x86_64-linux";
-      modules = [ ./default.nix ];
+      modules = [ ./default.nix ./nvidia.nix ];
     };
   };
 }

@@ -96,7 +96,11 @@
     # `home`, not `homeDirectory`: this pin's users module renamed the option, and
     # nix rejects the made-up name at evaluation (caught, not assumed).
     home = "/home/b";
-    extraGroups = [ "wheel" ];
+    # video owns /dev/nvidia* (this repo's own note in hosts/desktop/host.nix: a CUDA
+    # consumer needs it to open the GPU device nodes); audio owns /dev/snd, whose nodes
+    # the booted box created root:audio (pcmC0D3p etc.) while b belonged to neither
+    # group. Both are driver-access facts, not policy taste.
+    extraGroups = [ "wheel" "video" "audio" ];
     password = "yzerd-native";
     # Both keys the agent side can present: ha_key (IdentitiesOnly for the
     # proxmox-186 host block) and id_ed25519. Authorizing both means a new Host
@@ -113,9 +117,10 @@
   time.timeZone = "America/Phoenix";
 
   ### Deliberately NOT declared yet, and why:
-  #  * the GPU. The 4090 is native here now, but the nvidia proprietary module is
-  #    not in this config, and a half-configured card is worse an absent one. The
-  #    decision is recorded in README.md as open, not asserted.
+  #  * the GPU driver — it IS declared now, one file over in ./nvidia.nix (the card
+  #    answered AD102 in the boot journal and nothing owned it). What stays open is
+  #    the card's residency policy: no llm-gate on this box yet, so powerManagement
+  #    is off there rather than inherited from hosts/desktop/nvidia.nix.
   #  * the guest VM (the NixOS-under-NixOS setup that replaces vmid 100). QEMU argv
   #    and the disk image are runtime state; the unit that owns it belongs in a
   #    later revision, once the box boots natively and the pin is known.

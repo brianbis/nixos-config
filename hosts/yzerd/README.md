@@ -803,3 +803,50 @@ generation — `Generation 1`, per the entry's `version` line.
 * the pin check looked in `/boot`, which on this ESP-backed layout holds only `efi` — it now reads
   `/nix/store/<gen>` and prints the loader entry next to it;
 * `curl -w %{http_code} || echo 000` printed `000000`; the fallback is now a `[ -z ]` guard.
+
+## Driver audit on the booted native box
+
+The ask was "make sure all drivers, nvidia etc is working". Nothing on this box could enumerate its
+own hardware — pciutils/usbutils are not in the minimal config's closure — so the audit ran through
+/sys and the journal. Measured, before any config change:
+
+```
+$ lsmod | grep -iE 'nouveau|snd|iwl|bt|igb'      # nouveau 3842048 0; snd_hda_*; iwlwifi; bt*; igb
+$ ls -l /sys/class/drm
+  card0 -> ../../devices/pci0000:00/0000:00:03.1/0000:0a:00.0/simple-framebuffer.0/drm/card0
+$ ls -l /dev/dri                                  # only card0 (group video) + by-path symlink
+$ ls /dev/nvidia*                                 # nothing
+$ ls -d /nix/store/*linux-firmware*               # nothing; no /lib/firmware nvidia/gsp files
+$ command -v lspci lsusb nvidia-smi               # none installed
+$ journalctl -b --no-pager | grep -iE 'nouveau|nvidia'
+  nouveau 0000:0a:00.0: NVIDIA AD102 (192000a1)
+  nouveau 0000:0a:00.0: gsp: Failed to load required firmware for device.
+  nouveau 0000:0a:00.0: gsp ctor failed: -2
+  nouveau 0000:0a:00.0: probe with driver nouveau failed with error -2
+```
+
+Read: the card is an AD102 (RTX 40-series) at PCI 0000:0a:00.0. The in-tree nouveau driver found it,
+tried to bring up its GSP stack, found no firmware anywhere on the system, and gave the device to
+nothing — the only DRM node left was the EFI console's simple-framebuffer. Audio is the opposite
+case: snd_hda_intel loaded and /dev/snd exists (controlC0, hwC0D0, pcmC0D3p…, root:audio) but b is in
+neither audio nor video, so the nodes exist and the user cannot use them. WiFi loads iwlwifi+cfg80211
+yet /sys/class/net has only enp4s0/enp5s0/lo — the card is present and disabled, reported not fixed.
+
+### what the config now declares
+
+* `hosts/yzerd/nvidia.nix` (new, added to the flake's module list): NVIDIA open kernel modules —
+  the branch this pin's own assertion in `nixos/modules/hardware/video/nvidia.nix` asks for on
+  Turing or later — with the two package pins `hosts/desktop/nvidia.nix` proved this nixpkgs rev
+  needs (patchelf 0.15.2 shadow, upstream modeset nested-revoke patch), `hardware.graphics` for
+  GL/Vulkan, `hardware.enableRedistributableFirmware` for linux-firmware (nouveau's GSP blobs plus
+  the directory the wifi card and card reader want), and pciutils/usbutils so the box can name its
+  own devices. `powerManagement.enable = false` here, unlike desktop: nothing on this box owns the
+  card's residency policy yet, so a driver that sleeps it would hand back VRAM nothing reclaims.
+  `hardware.nvidia.enabled` in this pin is driven by `services.xserver.videoDrivers = [ "nvidia" ]`
+  — xserver itself stays off.
+* `default.nix`: b's `extraGroups` gained `video` (owns /dev/nvidia*) and `audio` (owns /dev/snd).
+
+Then: jail `nix build` of the toplevel (new pin), closure copied to the box, `nixos-rebuild switch`
+**on the box**, reboot into the new generation, and verify-native.sh re-pinned. The GPU modules load
+at switch time, so `nvidia-smi` answers before the reboot; the reboot is what makes the new
+generation the booted one.
