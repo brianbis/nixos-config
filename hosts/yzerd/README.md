@@ -95,9 +95,32 @@ nixos-install --root /mnt2 --flake /mnt/stick/repo-yzerd#yzerd --no-root-passwor
 
 `fileSystems` names only `/` and `/boot/efi`, so nothing else needs creating. The
 install needs network to fetch the pinned nixpkgs source (the stick's ISO store
-does not contain `f20cd90e…`); that is what the `Address=`/`Gateway=` unit is for,
-but during the *live* stage the stock ISO uses NetworkManager instead — see
+does not contain `f20cd90e…`) — unless the offline seed described in
+*Making the install need no network at all* is staged and restored first. During the
+*live* stage the stock ISO uses NetworkManager instead of networkd — see
 *Reaching the live system*.
+
+### The one-shot driver (what actually runs)
+
+`hosts/yzerd/go-native.sh` is the committed, linted (`bash -n`, `sh -n`, shellcheck
+clean modulo `SC2012` style infos) version of the snippet above, with guards and
+evidence around it: it refuses to touch `p3` unless the literal `WIPE` is passed,
+refuses a second wipe of an already-ext4 `p3` unless `FORCE-EXT4` is added, restores
+the offline seed when present (that `nix-store --restore` is still plan-only — it has
+never run), and prints an RC marker after every step plus the three reads that close
+the open questions: whether the realized generation equals the recorded pin's out
+path, whether `EFI/BOOT/bootx64.efi` appeared on the ESP, and whether `authorized_keys.d/b`
+and the `10-yz-enp4s0.network` unit exist in the fresh tree. It runs on the live box:
+
+```sh
+ssh -o BatchMode=yes -l root 192.168.5.186 'cat > /root/go-native.sh' < go-native.sh
+ssh -o BatchMode=yes -l root 192.168.5.186 'sh /root/go-native.sh WIPE' 2>&1 |
+  tee /mnt/stick/native-install.log
+```
+
+Adding that file to `hosts/yzerd/` did **not** churn the pin (`srgrfidd…` re-evaluated
+identical after it was committed) — the same proof as the README's: only the files
+nix actually reads feed the build.
 
 Re-run the `nix eval` pin on the jail machine against `hosts/yzerd` before
 committing any edit here:
@@ -158,6 +181,7 @@ will **not** accept with a key-only root; use `-l b` or add a Host entry.
 |---|---|---|
 | 2026-10-28 | toplevel `.drv` for `.#nixosConfigurations.yzerd`, evaluated on the jail machine **before** the install | `srgrfiddhf1lb60d4vld78jy411s4v7n-nixos-system-yzerd-26.11.20261016.f20cd90.drv` |
 | 2026-10-28 | same eval re-run after this README grew (the reboot-attempt log below) — docs only, no config change | `srgrfiddhf1lb60d4vld78jy411s4v7n-nixos-system-yzerd-26.11.20261016.f20cd90.drv` — unchanged, as it must be |
+| 2026-10-28 | same eval re-run after `hosts/yzerd/go-native.sh` was **added and committed** (a new file inside the `path:hosts/yzerd` input tree) | `srgrfiddhf1lb60d4vld78jy411s4v7n-nixos-system-yzerd-26.11.20261016.f20cd90.drv` — unchanged: the input tree's hash moves, the build closure does not, because nix only reads `default.nix` |
 | — | the same toplevel as built on the box itself | **not yet recorded** — the first successful native install records it, and the two must agree |
 
 Evaluated with `nix eval --raw ".#nixosConfigurations.yzerd.config.system.build.toplevel.drvPath"`
@@ -315,4 +339,10 @@ matter:
    re-evaluation with the edited README in place reproduced
    `srgrfiddhf1lb60d4vld78jy411s4v7n-nixos-system-yzerd-26.11.20261016.f20cd90.drv`, so
    README text sits outside the build's input closure — the docs lag, the config does not.
+    Two artifacts are **not on the stick at all** yet and both are needed before the
+    install: `go-native.sh` (jail/repo md5 `20f065a4ed9c2084eee6b0909d25a2d5`, 4657 B,
+    to be copied into `/mnt/vtoy/repo-yzerd/`) and `offline/nixpkgs-f20cd90.nar.xz`
+    (34703312 B, md5 `5e86e8f13b8be035a1642d33c3875c00`, from
+    `/home/llm/offline-seed/`, to be copied into `/mnt/vtoy/offline/`). The stick has
+    25 G free, so space is not the constraint — the missing transport is.
 
