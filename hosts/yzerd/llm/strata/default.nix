@@ -262,10 +262,13 @@ in
         # LD_LIBRARY_PATH is the host driver's userspace (libcuda.so.1) — the
         # engine links nixpkgs' CUDA libs by rpath, the device side is this box's
         # 615.78.08 open-module driver.
-        environment = [
-          "CUDA_VISIBLE_DEVICES=0"
-          "LD_LIBRARY_PATH=/run/opengl-driver/lib"
-        ];
+        # NixOS-level `environment` is an attrset (it renders real Environment=
+        # lines); a list here is a type error — the desktop carries the same pair
+        # as serviceConfig.Environment strings.
+        environment = {
+          CUDA_VISIBLE_DEVICES = "0";
+          LD_LIBRARY_PATH = "/run/opengl-driver/lib";
+        };
 
         serviceConfig = {
           Type = "simple";
