@@ -19,8 +19,50 @@ headroomSrc: knifeSrc: graphifySrc: graphloreSrc: echartsSrc: bendSrc: difftasti
         pyfinal.callPackage ./ast-grep-cli.nix {
           ast-grep = prev.ast-grep;
         };
+
+      # filelock 4.2.4 (PyPI wheel): this nixpkgs pin ships only 3.32.4, but
+      # headroom 0.41.0 declares `filelock>=4.2.1` (an upstream CVE floor — see
+      # the comment in its pyproject). Every package built on this python set
+      # resolves filelock through this override, so the filelock consumers in
+      # headroom's closure (torch, huggingface-hub, ...) re-derive against
+      # 4.2.4 instead of 3.32.4 in one sweep. 4.x is a back-compatible
+      # superset for the names they import (FileLock/BaseFileLock/SoftFileLock/
+      # Timeout); without this, headroom fails pythonRuntimeDepsCheckHook with
+      # "filelock>=4.2.1 not satisfied by version 3.32.4". Pure py3-none-any
+      # wheel, so no abi3/manylinux concerns.
+      filelock = pyfinal.buildPythonPackage {
+        pname = "filelock";
+        version = "4.2.4";
+        format = "wheel";
+        src = prev.fetchurl {
+          url = "https://files.pythonhosted.org/packages/e0/1b/5e74289a1878e666bb4b65fe5805a04cafcac2aa5f519ef1ead67ef91c56/filelock-4.2.4-py3-none-any.whl";
+          hash = "sha256-MBJBQ4xXk275P0JDqU8lWQIiaL/PmzdamnLrD424NY4=";
+        };
+        doCheck = false;
+      };
+
+      # virtualenv 21.6.1 declares `filelock>=3.24.2,<4` in its wheel metadata —
+      # an upper bound that predates the 4.2.4 this set carries (which headroom's
+      # >=4.2.1 CVE floor forces). One venv cannot satisfy both, and virtualenv
+      # only uses `from filelock import FileLock, Timeout`
+      # (src/virtualenv/util/lock.py:13; both exist in 4.2.4 with the same
+      # overridable surface its _CountedFileLock subclass relies on), so the <4
+      # cap is upstream lag, not a safety floor. Skip its metadata check only —
+      # house idiom: flake.nix's semgrepRuntimeDeps does the same.
+      virtualenv = pyprev.virtualenv.overrideAttrs (final: prev: {
+        dontCheckRuntimeDeps = true;
+        # Its own unit suite (pytest + time-machine) creates real venvs per
+        # test and is slow under the pinned test-mix; the wheel unpacks clean
+        # and pythonImportsCheck covers the import. Skip the suite too.
+        doCheck = false;
+      });
     };
   };
+
+  # hypothesis's doCheck work-around lives in flake.nix's `hypothesisTeardownRace`
+  # extension overlay, NOT here: an interpreter-level
+  # `override { packageOverrides }` would replace the packageOverrides function
+  # and downstream consumers would rebuild the unpatched hypothesis.
 
   headroom =
     final.python3.pkgs.callPackage ./headroom.nix {

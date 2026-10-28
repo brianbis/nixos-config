@@ -3,8 +3,11 @@
 {
   imports = [ inputs.nix-craftapps.nixosModules.default ];
 
-  # The ArtCraft Crafting Apps (storytold): all twelve, from upstream's
-  # prebuilt release tarballs. Each app lands as two commands — the GUI
+  # The ArtCraft Crafting Apps (storytold): all thirteen (figcraft arrived
+  # upstream 2026-10-24), from upstream's prebuilt release tarballs. Each app
+  # lands as two commands — the GUI (`photocraft`) plus a headless companion
+  # (`photocraft-cli`) — and apps.json now also carries cli-only and
+  # darwin sources, which enableAll picks up; nothing here lists apps by hand.
   # (`photocraft`) and a headless companion (`photocraft-cli`) — plus its
   # Plasma launcher entry and icons.
   #

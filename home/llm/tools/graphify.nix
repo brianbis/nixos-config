@@ -31,7 +31,11 @@ let
 in
 py.buildPythonApplication (finalAttrs: {
   pname = "graphifyy";
-  version = "0.9.63";
+  # Tracks the pinned source's own [project] version — 0.9.95 at graphify@92741d16
+  # (flake.lock). A stale value here is invisible to `nix flake check`/`nix eval`:
+  # it only shows up once the wheel is built, so re-pin it with the input, never
+  # let a sweep move one without moving the other.
+  version = "0.9.95";
   pyproject = true;
 
   # Source from the flakeless `graphify` input (see flake.nix).
@@ -45,6 +49,13 @@ py.buildPythonApplication (finalAttrs: {
     networkx
     numpy
     rapidfuzz
+    # 0.9.95 declares pyyaml>=6.0 (structural YAML extraction #2214, plus
+    # manifest/markdown config parsing); without it pythonRuntimeDepsCheckHook
+    # aborts the wheel build with "pyyaml not installed". tomli is also declared,
+    # but under `; python_version < '3.11'` — this pin is python3.14, so it is
+    # not needed. tree-sitter floors at >=0.25 here (ABI 15 grammars); this
+    # nixpkgs pin ships 0.25.2, which satisfies it.
+    pyyaml
     tree-sitter
     # [mcp] extra (the `graphify-mcp` stdio server)
     mcp

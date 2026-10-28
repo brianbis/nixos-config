@@ -46,18 +46,23 @@ auto-stage:
         sudo git add .; \
     fi
 
-# NixOS build & rebuild
-switch:
+# NixOS build & rebuild. This repo now describes TWO machines
+# (nixosConfigurations = [ "nixos" "nixos-vm" ]), so a bare `--flake .` is no
+# longer unambiguous and would resolve to the desktop only by luck of
+# attribute order. Every rebuild target therefore names the machine, defaulted
+# to the desktop's attribute (`nixos`) so `just switch` keeps meaning the
+# desktop; the Proxmox guest is `just switch nixos-vm`.
+switch host="nixos":
     just auto-stage
-    sudo nixos-rebuild switch --flake . {{build-flags}}
+    sudo nixos-rebuild switch --flake ".#{{host}}" {{build-flags}}
     @sudo nix build --no-link .#agents-md --print-out-paths | xargs -I{} sudo cp {} AGENTS.md
 
-build:
+build host="nixos":
     just auto-stage
-    sudo nixos-rebuild build --flake . {{build-flags}}
+    sudo nixos-rebuild build --flake ".#{{host}}" {{build-flags}}
 
-check:
-    nixos-rebuild dry-build --flake .
+check host="nixos":
+    nixos-rebuild dry-build --flake ".#{{host}}"
 
 diff:
     nix store diff-closures /nix/var/nix/profiles/system ./result
@@ -65,6 +70,11 @@ diff:
 update:
     # Runs as llm: the flake repo is owned by the llm agent user (see
     # hosts/desktop/host.nix), so flake.lock must be written by llm.
+    #
+    # This only moves the ROOT lock. The guest's own hosts/nixos-vm/flake.lock
+    # pins nixpkgs by exact revision, so it cannot drift; what does change here
+    # is the path: input's contentHash as the guest's config tree is edited.
+    # To re-resolve the guest's own inputs: nix flake update --flake hosts/nixos-vm
     sudo -u llm nix flake update
 
 save message="NixOS configuration update":
@@ -86,8 +96,8 @@ gc:
 generations:
     sudo nix-env --list-generations --profile /nix/var/nix/profiles/system
 
-rollback:
-    sudo nixos-rebuild switch --rollback --flake . {{build-flags}}
+rollback host="nixos":
+    sudo nixos-rebuild switch --rollback --flake ".#{{host}}" {{build-flags}}
 
 # vLLM docker containers (the K2-Horizon + LensVL checkpoints). The Qwen3.8
 # DFlash2 engine is now a NATIVE process (see vllm-dflash2-* below), not a

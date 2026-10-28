@@ -51,10 +51,13 @@
 
     # ArtCraft Crafting Apps (storytold): twelve pure-Rust creative apps, packaged
     # from upstream's prebuilt Linux release tarballs (fetchurl + autoPatchelf).
-    # Pinned to the update/craft-apps branch — the newest release set (its only
-    # delta over main is apps.json); `nix flake update nix-craftapps` re-pins it.
+    # Upstream keeps exactly one branch now: its update.yml workflow commits the
+    # newest release set straight to main, so this tracks the default branch and
+    # `nix flake update nix-craftapps` re-pins it. (The third path component of a
+    # github: URL is a ref — pinning a PR branch there dies on the next update
+    # once upstream squash-merges and deletes it: GitHub answers 422, no such SHA.)
     nix-craftapps = {
-      url = "github:olafkfreund/nix-craftapps/update/craft-apps";
+      url = "github:olafkfreund/nix-craftapps";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -149,7 +152,12 @@
     };
     # strata: inference engine dedicated to Qwen3.8-Flash-Next GSQ-RCO GGUFs (512-expert MoE).
     strata = {
-      url = "github:Niko1221/Strata";
+      # Tag-pinned on the last 0.1.x release: the 0.2.x line broke the running
+      # stack (937a93c reverted 9de04cd -> 477ac13), and a ref-less url lets any
+      # bare `nix flake update` jump this back to refs/heads/main (8183c6b),
+      # silently undoing that decision at every sweep. A *tag* ref is stable
+      # under update (unlike a PR branch, which 422s once upstream deletes it).
+      url = "github:Niko1221/Strata/v0.1.45";
       flake = false;
     };
     ninfer-gzenz = {
@@ -233,6 +241,20 @@
       url = "github:deepseek-ai/deepseek-harness/dsh-v0.2.1-rc.2";
       flake = false;
     };
+
+    # The second machine: the NixOS guest on the Proxmox VE box (vmid 100). Its
+    # config lives in hosts/nixos-vm as a self-contained sub-flake and is shipped
+    # to that machine verbatim as its own /etc/nixos, so the repo and the guest
+    # build from one source of truth. Deliberately NOT `follows = "nixpkgs"`: the
+    # sub-flake pins nixpkgs by exact revision (its own flake.lock), so `nix flake
+    # update nixpkgs` here can never silently drift the VM's package set.
+    nixos-vm.url = "path:hosts/nixos-vm";
+
+    # The physical box itself, once Option A retires Proxmox VE (see
+    # hosts/yzerd/README.md). Same self-contained shape as nixos-vm: pinned
+    # nixpkgs by exact revision, so it can be installed from a copy on the Ventoy
+    # stick without the root flake's networked inputs.
+    yz-native.url = "path:hosts/yzerd";
   };
 
   outputs =
@@ -469,6 +491,89 @@
         });
       };
 
+      pycurlPauseRecvTimeoutRace = final: prev: {
+        pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+          (pyFinal: pyPrev: {
+            pycurl = pyPrev.pycurl.overridePythonAttrs (old: {
+              # pycurl 7.46.0's suite (python3.14): 1 failed, 655 passed, 17 skipped,
+              # 11 deselected in 146.98s. The failure is
+              # tests/pause_test.py::test_multi_recv_mask[recv] —
+              # AssertionError: Transfer timed out. The test drives a curl_easy_pause
+              # transfer through the RECV-mask parametrisation and asserts it completes
+              # inside a fixed wall-clock deadline; the deadline is starved by the
+              # oversubscribed build (--max-jobs 16 --cores 1), not a packaging defect —
+              # a plain re-run of the failed drv at default -j passed to completion.
+              # nixpkgs already ships `flaky` in nativeCheckInputs for rerun-marked
+              # tests, but this node id is not among them. Deselect the bracketed node
+              # id exactly, not the name (an entry with :: becomes --deselect=<id>
+              # verbatim in pytest-check-hook.sh), so the pause suite's siblings still
+              # run.
+              disabledTestPaths = (old.disabledTestPaths or [ ]) ++ [
+                "tests/pause_test.py::test_multi_recv_mask[recv]"
+              ];
+            });
+          })
+        ];
+      };
+
+      pybind11SubinterpreterSpawnRace = final: prev: {
+        pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+          (pyFinal: pyPrev: {
+            pybind11 = pyPrev.pybind11.overridePythonAttrs (old: {
+              # pybind11 3.1.0's suite (python3.14): 1 failed, 1342 passed in 41.54s;
+              # the failure is tests/test_multiple_interpreters.py::test_import_in_
+              # subinterpreter_concurrently — RuntimeError raised from tests/env.py:65,
+              # the helper that runs `sys.executable -c code` subprocesses (already
+              # wrapped upstream in a `for _ in range(rerun)` loop "run flakily
+              # failing test multiple times") and re-raises on CalledProcessError:
+              # the concurrent-interpreters child spawns can't get through under a
+              # --max-jobs 16-saturated build. A re-run of the exact failed drv on a
+              # quiet machine passed (1343 green) — starvation, not a packaging
+              # defect. The check here is CMake/ninja-driven (checkPhase =
+              # ninjaCheckPhase), NOT pytestCheckHook, so there is no disabledTests
+              # channel: ride PYTEST_ADDOPTS out of preCheck (setup.sh runs the
+              # preCheck hook before checkPhase in the same shell; ninja's pytest
+              # custom target inherits the env) and deselect the node id exactly —
+              # anchored to the nodeid as pytest 9 stores it, i.e. rootdir-relative
+              # (tests/pytest.ini makes rootdir /build/source/tests → the bare
+              # filename; the ../../tests/ form is cwd-relative DISPLAY only and
+              # matches nothing — verified against pytest-9.1.1 in a replica).
+              preCheck = toString (old.preCheck or "") + ''
+                export PYTEST_ADDOPTS="--deselect=test_multiple_interpreters.py::test_import_in_subinterpreter_concurrently"
+              '';
+            });
+          })
+        ];
+      };
+
+      # python3.14-python-ulid 3.1.0 (pytestCheckHook-driven; rootdir /build/source,
+      # configfile pyproject.toml): 1 failed, 68 passed in 1.83s —
+      # tests/test_ulid.py::test_same_millisecond_overflow, "Failed: DID NOT RAISE
+      # ValueError". The test hand-sets ULID.provider.prev_randomness =
+      # constants.MAX_RANDOMNESS and expects the next ULID() to raise
+      # "Randomness within same millisecond exhausted" — but that guard only runs
+      # while the clock is STILL in the provider's previous millisecond, and
+      # @freeze_time() pins the real `now` at each decorated test's start. The
+      # preceding test_same_millisecond_monotonic_sorting sweep (1000 consecutive
+      # ULID() draws) plus scheduler jitter under a --max-jobs 16 build crosses a
+      # millisecond boundary between the two moments: prev_timestamp advances,
+      # the overflow branch is skipped, no raise. Upstream timing race — a re-run
+      # on a quiet machine was 69/69 green — not a packaging defect. This suite IS
+      # pytestCheckHook-driven (unlike pybind11), so disabledTestPaths is the
+      # channel: it appends --deselect=<nodeid> exactly as collected, i.e.
+      # rootdir-relative tests/test_ulid.py::test_same_millisecond_overflow.
+      pythonUlidSameMillisecondRace = final: prev: {
+        pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+          (pyFinal: pyPrev: {
+            python-ulid = pyPrev.python-ulid.overridePythonAttrs (old: {
+              disabledTestPaths = (old.disabledTestPaths or []) ++ [
+                "tests/test_ulid.py::test_same_millisecond_overflow"
+              ];
+            });
+          })
+        ];
+      };
+
       urwidPython314TestWorkaround = final: prev: {
         python314 = prev.python314.override {
           packageOverrides = pyFinal: pyPrev: {
@@ -479,11 +584,45 @@
         };
       };
 
+      # hypothesis 6.168.1's self-tests fail on EVERY interpreter at this pin
+      # (pytest 9.1.1 + pytest-xdist 3.8.0 + pluggy 1.6.0): 71-76 tests/cover
+      # cases fail in ~21 min, all tripping hypothesis's own tests/conftest.py
+      # PRNG guard — "both used the `random` module, and finished with the same
+      # global random.getstate(); this is probably a nasty bug!" — raised from
+      # the conftest hookwrapper as pluggy.PluggyTeardownRaisedWarning, which
+      # pluggy promotes to teardown failures. The guard's premise (each
+      # random-using test advances the global PRNG state vs its predecessor)
+      # does not hold under this pin's runner/scheduler mix: a test-suite bug
+      # in the pinned combination, not a packaging defect. The wheel itself
+      # (maturin) builds clean and pythonImportsCheck still verifies the
+      # import; we skip only the check phase.
+      #
+      # Deliberately pythonPackagesExtensions, NOT an interpreter-level
+      # `prev.pythonXY.override { packageOverrides }`: interpreter overrides
+      # REPLACE the packageOverrides function (verified empirically on this
+      # pin — a second .override with its own function drops the first
+      # one's entries), so any downstream consumer (minuspod's minuspodPython,
+      # the jail python envs' withPackages chains, the whisper stack) would
+      # silently rebuild the UNpatched hypothesis. Extensions compose with
+      # every override chain within the nixpkgs instance. It must therefore be
+      # applied to EVERY nixpkgs import instance that builds python closures:
+      # the main `pkgs` below, minuspod's pkgsU, the system `nixpkgs.overlays`,
+      # and the whisper-service inner flake's mkPkgs.
+      hypothesisTeardownRace = final: prev: {
+        pythonPackagesExtensions = prev.pythonPackagesExtensions ++ [
+          (pyFinal: pyPrev: {
+            hypothesis = pyPrev.hypothesis.overridePythonAttrs (_: {
+              doCheck = false;
+            });
+          })
+        ];
+      };
+
       # Base package set for the NixOS configuration.
       pkgs = import nixpkgs {
         inherit system;
 
-        overlays = [ headroomOverlay ccclPatchWorkaround ltraceSkipCheck aiderLiteLLMExceptions semgrepRuntimeDeps anyioPytestNoise pytestPostgresqlStartupRace psycopgCancelRace jupyterServerFdLeakRace openaiMtlsExampleTimeout scikitLearnCallbackLokyRace nodeSharedIsolatePumpRace ];
+        overlays = [ headroomOverlay ccclPatchWorkaround ltraceSkipCheck aiderLiteLLMExceptions semgrepRuntimeDeps anyioPytestNoise pytestPostgresqlStartupRace psycopgCancelRace jupyterServerFdLeakRace openaiMtlsExampleTimeout scikitLearnCallbackLokyRace nodeSharedIsolatePumpRace pycurlPauseRecvTimeoutRace pybind11SubinterpreterSpawnRace pythonUlidSameMillisecondRace hypothesisTeardownRace ];
       };
 
       dshPkg = import ./home/llm/dsh {
@@ -798,10 +937,10 @@
                 inherit system;
                 config.allowUnfree = true;
                 # the same pytest fixes the system pkgs carry (anyio, pytest-postgresql,
-                # psycopg's cancel race): this import is a fresh fixed point, so without
-                # them its python3.13 env would build the unpatched packages and fail
-                # the same checkPhase.
-                overlays = [ anyioPytestNoise pytestPostgresqlStartupRace psycopgCancelRace ];
+                # psycopg's cancel race, hypothesis's teardown race): this import is a
+                # fresh fixed point, so without them its python3.13 env would build the
+                # unpatched packages and fail the same checkPhase.
+                overlays = [ anyioPytestNoise pytestPostgresqlStartupRace psycopgCancelRace hypothesisTeardownRace ];
               };
               m = import ./home/minuspod.nix {
                 pkgs = pkgsU;
@@ -826,6 +965,20 @@
             touch "$out"
           '';
         };
+
+      # The second machine, re-exported from its own sub-flake: the flake
+      # attribute, the directory name, and the guest's `networking.hostName` are
+      # all `nixos-vm` (the one dir/attr mismatch in this repo stays the desktop's
+      # — hosts/desktop builds as the `nixos` attribute). Rebuilt as
+      # `just <target> nixos-vm` here, or `nixos-rebuild --flake /etc/nixos#nixos-vm`
+      # on the guest itself.
+      nixosConfigurations.nixos-vm = inputs.nixos-vm.nixosConfigurations.nixos-vm;
+
+      # The physical box (Option A): flake attribute and `networking.hostName` are
+      # both `yzerd` — the name the Proxmox node had, so the machine keeps one
+      # identity across the mode change. Installed from hosts/yzerd, whose own
+      # sub-flake is the tree that gets shipped to the Ventoy stick.
+      nixosConfigurations.yzerd = inputs.yz-native.nixosConfigurations.yzerd;
 
       nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
         inherit system;
@@ -897,6 +1050,36 @@
               # into the system closure, so its cctest skip belongs here too — the
               # base-pkgs overlay alone leaves that drv unpatched.
               nodeSharedIsolatePumpRace
+
+              # The jail python envs (python3/3.12/3.13) pull hypothesis 6.168.1 in as a
+              # check-input chain, whose self-tests fail at this pin — the same drv failed
+              # round 2 here (the base-pkgs overlay alone leaves this instance unpatched).
+              hypothesisTeardownRace
+
+              # pycurl 7.46.0 (python3.14) is in the system closure twice over — the jail's
+              # wfuzz propagates it, and the dbus/python stack carries system-config-printer
+              # — and its RECV-mask pause test misses its wall-clock deadline under
+              # --max-jobs 16 (1 failed of 655). Same deselect as the base pkgs: this set
+              # builds the drv that failed the switch, so the base-pkgs overlay alone
+              # leaves it unpatched here.
+              pycurlPauseRecvTimeoutRace
+
+              # python3.14-pybind11 3.1.0 sits under nix's own closure (nix 2.34.9 pulls
+              # its python bindings), and nixos-rebuild-ng drags that into the switch
+              # build: its subinterpreter-concurrency test failed in the same oversubscribed
+              # switch (1 failed of 1343) while a quiet re-run passed. Same fix as the base
+              # pkgs — the system set builds the drv that failed.
+              pybind11SubinterpreterSpawnRace
+
+              # python3.14-python-ulid 3.1.0 sits in the jail-tool/service closure:
+              # its failed check cascaded through pydantic-extra-types, fastapi,
+              # curl-cffi, sse-starlette, both mcp wheels, searxng, yt-dlp, graphlore
+              # and home-manager-path. Its same-millisecond-overflow test failed in
+              # the oversubscribed switch (1 failed of 69 — DID NOT RAISE once the
+              # freeze_time pin straddles a millisecond boundary under load) while
+              # a quiet re-run passed. Same deselect as the base pkgs — this set
+              # builds the drv that failed.
+              pythonUlidSameMillisecondRace
 
               (final: prev: {
                 hushmic = hushmic;

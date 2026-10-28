@@ -14,7 +14,10 @@
 
 python.pkgs.buildPythonApplication (finalAttrs: {
   pname = "headroom-ai";
-  version = "0.34.0";
+  # Tracks the pinned source's own [project] version — 0.41.0 at headroom@1be699f6
+  # (flake.lock). A stale value here is invisible until the wheel actually
+  # builds; re-pin it with the input, as in home/llm/tools/graphify.nix.
+  version = "0.41.0";
   pyproject = true;
 
   # Source from the flakeless `headroom` input (see flake.nix);
@@ -46,6 +49,11 @@ python.pkgs.buildPythonApplication (finalAttrs: {
     opentelemetry-api
     pyyaml
     tomlkit
+    # 0.41.0 floors filelock>=4.2.1 (upstream CVE fix); this nixpkgs pin only
+    # has 3.32.4, so the python3 override in overlay.nix shadows filelock with
+    # the 4.2.4 PyPI wheel for everything built on this set (including this
+    # closure's torch/huggingface-hub copies).
+    filelock
 
     # [proxy]
     fastapi
