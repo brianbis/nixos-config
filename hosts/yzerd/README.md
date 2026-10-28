@@ -594,3 +594,33 @@ install. `mkfs.ext4 -f` is a belt after the braces: the DM devices are gone by t
 
 Nothing destructive happened before the third run: every earlier run refused **before** `mkfs`
 wrote, and `lsblk` in the third run's step 0 still shows `pve-swap`/`pve-root`.
+
+## The door, continued: p3 is raw now, and the live store is a read-only overlay
+
+Two things the previous table did not predict, both hit while `vgremove -f pve` had already
+succeeded. `p3` is **raw** now — the earlier run erased the LVM magic before its `mkfs` died — and
+the live ISO's store is **not writable**.
+
+| driver md5 | job | how far | exact output | what it means / the fix |
+|---|---|---|---|---|
+| `ebe46cc451f99322c6afd5da39473dcf` | `bash-8db79609581d463f` | tore down pve, wiped the magic, then died | `Logical volume "vm-100-disk-0" successfully removed` / `"data"` / `"swap"` / `"root"` / `Volume group "pve" successfully removed` → `DM-AFTER: sda1(254:3) ventoy(254:2)` → `wipefs: 8 bytes were erased at offset 0x218 (LVM2_member)` → `mkfs.ext4: invalid option -- 'f'` → `MKFS-RC: 1`, `REMOTE-RC=6` | `-f` is the busybox `mkfs` wrapper's force flag, not mke2fs's. With the DM devices gone the busy check passes anyway → drop `-f`. **PVE is gone from here on**: `vm-100-disk-0` was VM 100's disk on `local-lvm`, and `pve-root`/`pve-swap` were PVE's own filesystem — that is the retired-PVE decision, executed. The stick's DM (`ventoy`, `sda1`) stayed live, as required: the running ISO reads its kernel through it. |
+| `e51e4b8d37b6e897d266038e26a1e36a` | `bash-dbba905cc8744fb6` | running now | — | the guard grew a `""` case: `blkid -o value -s TYPE /dev/nvme0n1p3` prints **nothing** on the raw partition (`P3-TYPE: none-raw`), and the next act is `mkfs.ext4` |
+
+The store read as read-only because of how the live ISO builds it, not because of the media:
+
+```
+tmpfs   /nix/.ro-store  squashfs ro   (the ISO's 1.5 G store, loop0)
+overlay /nix/store      overlay ro    lowerdir=/sysroot/nix/.ro-store
+                                      upperdir=/sysroot/nix/.rw-store/store   <- writable dir,
+                                      workdir =/sysroot/nix/.rw-store/work       ro-mounted over
+```
+
+so `nix-store --restore` on the **live** side answers
+`filesystem error: cannot create directory: Read-only file system [/nix/store/glw7ngr0…-source]`
+and `mount -o remount,rw /nix/store` answers `overlay: No changes allowed in reconfigure`.
+That is why the offline seed is not restored live; `nixos-install`'s own man page is the answer —
+*"1. It copies Nix and its dependencies to /mnt/nix/store. 2. It runs Nix in /mnt to build the
+given NixOS configuration."* — the writable store during the build is the **target's** on `p3`.
+The stick seed stays staged for a no-network retry; this boot's build fetches the pinned rev
+(`curl -sI https://github.com/` → `HTTP/2 200` from the live env), which is the same
+fixed-output path `glw7ngr0dwbp3al07rdlqkrbas7w3a02-source` either way.

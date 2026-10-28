@@ -25,11 +25,19 @@ blkid /dev/nvme0n1p1 /dev/nvme0n1p2 /dev/nvme0n1p3 || true
 p3type=$(blkid -o value -s TYPE /dev/nvme0n1p3 2>/dev/null || true)
 echo "P3-TYPE: ${p3type:-none-raw}"
 case "$p3type" in
-  LVM2/*) echo "p3 holds PVE's LVM volume group — the planned door" ;;
+  LVM2_member|LVM2/*) echo "p3 holds PVE's LVM volume group — the planned door" ;;
   ext4)
     say "p3 is already ext4 — the door was walked before"
     echo "REFUSING: pass FORCE-EXT4 as the second argument to wipe it anyway"
     [ "$2" = "FORCE-EXT4" ] || exit 8 ;;
+  "")
+    # Reached when a previous run already ran vgremove + wipefs but died before
+    # mkfs: p3 is raw now (blkid answers no TYPE at all), PVE's DM devices are
+    # gone, and the layout step is what is left to do. Not a new assumption —
+    # the run that made it raw is recorded in README.md.
+    say "p3 is raw — a previous run already tore down pve's DM and wiped the magic"
+    echo "RAW-RESUME: continuing to mkfs"
+    echo "DM-AFTER-PREVIOUS: $(dmsetup ls 2>/dev/null | tr '\n' ' ')" ;;
   *)
     echo "P3-TYPE IS NEITHER PVE-LVM NOR ext4: stop, the layout assumption is wrong"
     exit 8 ;;
@@ -38,14 +46,34 @@ echo "IDENTITY-OK"
 
 say "1. stick"
 mkdir -p /mnt/stick
-mount /dev/sda1 /mnt/stick || exit 7
+umount /mnt/stick 2>/dev/null || true
+if mount -o remount /dev/sda1 /mnt/stick 2>/dev/null || mount /dev/sda1 /mnt/stick 2>/dev/null; then
+  echo "STICK-VIA-BLK: /dev/sda1"
+else
+  # The live ISO cannot open /dev/sda1 as a blockdev ("fsconfig() failed:
+  # Can't open blockdev") even though the node exists and blkid/dd read it;
+  # a loop device over the same node mounts fine.
+  L=$(losetup -f)
+  losetup "$L" /dev/sda1 || exit 7
+  mount "$L" /mnt/stick || exit 7
+  echo "STICK-VIA-LOOP: $L"
+fi
 ls -l /mnt/stick/repo-yzerd
 md5sum /mnt/stick/repo-yzerd/default.nix /mnt/stick/repo-yzerd/flake.nix /mnt/stick/repo-yzerd/flake.lock
 echo "STICK-OK"
 
 say "2. offline seed (the only network input of hosts/yzerd/flake.lock)"
+# NOTE from the live ISO: /nix/store is an OVERLAY MOUNTED READ-ONLY
+# (mounts: "overlay /nix/store overlay ro,... lowerdir=/sysroot/nix/.ro-store
+# upperdir=/sysroot/nix/.rw-store/store"), so a store restore on the live side
+# cannot work — "cannot create directory: Read-only file system". nixos-install
+# is built for exactly this: it copies Nix into /mnt2/nix/store and builds there,
+# so the fetch happens in the writable TARGET store. SEED-FAILED here is normal
+# on the live ISO and means "use the pinned GitHub fetch", which the live env
+# proved reachable (curl -sI https://github.com/ -> HTTP/2 200).
 if [ -e /mnt/stick/offline/nixpkgs-f20cd90.nar.xz ]; then
-  if xzdc /mnt/stick/offline/nixpkgs-f20cd90.nar.xz | nix-store --restore /nix/store/glw7ngr0dwbp3al07rdlqkrbas7w3a02-source; then
+  echo "SEED-PRESENT: $(md5sum /mnt/stick/offline/nixpkgs-f20cd90.nar.xz)"
+  if xz -dc /mnt/stick/offline/nixpkgs-f20cd90.nar.xz | nix-store --restore /nix/store/glw7ngr0dwbp3al07rdlqkrbas7w3a02-source; then
     echo "SEED-RESTORED"
   else
     echo "SEED-FAILED: falling back to the pinned GitHub fetch (needs the wired LAN)"
@@ -53,8 +81,19 @@ if [ -e /mnt/stick/offline/nixpkgs-f20cd90.nar.xz ]; then
 else
   echo "SEED-ABSENT: not staged on the stick yet — fetch needs the wired LAN"
 fi
+echo "NET-CHECK: $(curl -sI -m 10 https://github.com/ | head -1)"
 
-say "3. the door: wipe p3 and lay the declared layout"
+say "3. the door: tear down pve's device-mapper first, then wipe p3 and lay the declared layout"
+# mkfs.ext4 refuses with "/dev/nvme0n1p3 is apparently in use by the system"
+# while pve-root/pve-swap are ACTIVE device-mapper devices on that partition
+# (nothing mounts it, lsof/fuser are empty — the busy check is dm_dev_in_use).
+# Tear down ONLY the pve volume group: the live ISO reads its own /iso off the
+# Ventoy device-mapper, so ventoy/sda1 must stay live.
+vgremove -f pve || echo "VGREMOVE-NONZERO: read the dm map below"
+echo "DM-AFTER: $(dmsetup ls 2>/dev/null | tr '\n' ' ')"
+wipefs -a /dev/nvme0n1p3 || echo "WIPEFS-NONZERO"
+# -f is NOT an mke2fs option (it belongs to the busybox mkfs wrapper), so drop it:
+# the DM devices are gone by now and the busy check passes on its own.
 mkfs_rc=0
 mkfs.ext4 -L nixos-native -O Linux /dev/nvme0n1p3 || mkfs_rc=$?
 echo "MKFS-RC: $mkfs_rc"
