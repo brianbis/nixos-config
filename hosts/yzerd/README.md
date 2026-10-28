@@ -850,3 +850,60 @@ Then: jail `nix build` of the toplevel (new pin), closure copied to the box, `ni
 **on the box**, reboot into the new generation, and verify-native.sh re-pinned. The GPU modules load
 at switch time, so `nvidia-smi` answers before the reboot; the reboot is what makes the new
 generation the booted one.
+
+## Generation 2 — the driver delta, and what the cold boot proved
+
+The switch to `bs2k4hsnk2mhhz3g7a0zr159dg6f5zpw-nixos-system-yzerd-26.11.20261016.f20cd90`
+(`switch1.log`, 41 derivations incl. `nvidia-open-615.78.08-6.18.56`,
+`linux-6.18.56-modules`, `firmware`, `initrd-linux-6.18.56`) was NOT enough on its own:
+after `switch`, `lsmod | grep nvidia` was empty and `sudo modprobe -v nvidia` said
+`FATAL: Module nvidia not found in directory /run/booted-system/kernel-modules/lib/modules/6.18.56`.
+That is the generation-scoped module set — modprobe resolves through the modules of the
+generation that **booted**, and the NVIDIA `.ko`s and the whole `/lib/firmware` tree reach the
+kernel only from the new generation's initrd. The reboot is the fix, and the door needed no
+NVRAM edit: `nixos-rebuild switch` wrote the new loader entry
+(`nixos-b792dd78….conf`, `version Generation 2`) and pointed `loader.conf`'s `default` at it,
+so `sudo systemctl reboot --force` from the live system booted Generation 2 directly
+(`efibootmgr` was not installed then — the door script in ./boot-native.sh could not have run
+on the box itself, which is why efibootmgr is now in the package list).
+
+Cold-boot readout, Generation 2 (`/run/booted-system` == `/run/current-system` == the pin):
+
+```
+nvidia-smi        NVIDIA GeForce RTX 4090   KMD 615.78.08   CUDA UMD 13.4   Bus 00000000:0A:00.0
+                  11MiB / 24564MiB, Displ.A On, MIG N/A
+lsmod             nvidia 18702336  2 nvidia_uvm,nvidia_modeset
+                  nvidia_modeset 2019328  1 nvidia_drm     nvidia_uvm 2494464  0
+                  nvidia_drm 163840  0                    (+ video, ecc helpers)
+/dev/nvidia*      nvidia0 195,0  nvidiactl 195,255  nvidia-modeset 195,254  (root:video)
+                  nvidia-uvm 234,0  nvidia-uvm-tools 234,1
+/dev/dri          card1 226,1 root:video    renderD128 226,128 root:render
+/sys/class/drm    card1 card1-DP-1..4 card1-HDMI-A-1 renderD128
+/run/opengl-driver -> /nix/store/347qqlnk…-graphics-drivers, 32 vulkan/egl/glx libs
+firmware dir      915 files, 392 .bin.zst — nouveau GSP blobs 1534-2-0x… 15E2-0-0x… present
+groups            b wheel audio video
+```
+
+The card is an **RTX 4090** (`lspci: NVIDIA Corporation AD102 [GeForce RTX 4090] [10de:2684]`,
+plus `0a:00.1 Audio device … AD102 High Definition Audio Controller` — the HDMI/DP audio
+that journal registered as `input3..6` on `card0`).
+
+Audio needed no change: `/dev/snd` nodes are `root:audio` and `b` is now in `audio`
+(the gen-1 audit found the nodes with b in neither group). The webcam is genuinely absent
+(`/sys/class/media` empty, no `/dev/v4l`); `v4l-utils` is in the list so a future card
+reports itself instead of being assumed absent.
+
+WiFi flipped with the firmware: the first boot had **no** `wlp*`; Generation 2 logged
+`iwlwifi … loaded firmware version 77.8dbafb52.0` and `wlp6s0: renamed from wlan0`, so
+`/sys/class/net` = enp4s0 enp5s0 lo wlp6s0 with `iwlmvm/iwlwifi/mac80211/cfg80211` loaded.
+The AX200's other half (`8087:0029 Intel Corp. AX200 Bluetooth` in lsusb, kernel
+`bluetooth` module loaded) had no daemon — `Unit bluetooth.service could not be found` —
+hence `hardware.bluetooth.enable = true` and `hardware.wirelessRegulatoryDatabase = true`
+in the delta below.
+
+### the second delta (bluetooth + regdb + inspection tooling)
+
+`nvidia.nix` gained `hardware.bluetooth.enable`, `hardware.wirelessRegulatoryDatabase`,
+and `alsa-utils alsa-ucm-conf libva-utils v4l-utils efibootmgr` in `environment.systemPackages`,
+each with the live readout that motivated it in the comment. New pin to be recorded below
+after the jail build and the box switch.

@@ -17,6 +17,20 @@
 # present card, owned by nothing. lspci/lsusb were not even installed, so the box
 # could not report its own hardware either.
 #
+# The second native boot (Generation 2, the pin THIS file produces) proved the fix
+# from a cold start, with nothing loaded by hand:
+#
+#   nvidia-smi  -> NVIDIA GeForce RTX 4090, KMD 615.78.08, CUDA UMD 13.4, Bus 0A:00.0
+#   lsmod       -> nvidia 18.7M, nvidia_modeset, nvidia_uvm, nvidia_drm all inserted
+#   /dev/       -> nvidia0 nvidiactl nvidia-modeset nvidia-uvm nvidia-uvm-tools (root:video)
+#   /sys/class/drm -> card1 + renderD128, with card1-DP-1..4 and card1-HDMI-A-1
+#   firmware    -> 915 files, 392 of them .bin.zst, the nouveau GSP blobs (15E2-0-0x…)
+#
+# and the same firmware directory is why the WiFi card works now where it did not
+# before: `iwlwifi loaded firmware version 77.8dbafb52.0` and
+# `iwlwifi … wlp6s0: renamed from wlan0` — on the first native boot there was no
+# wlp* in /sys/class/net at all, because the card's firmware was absent.
+#
 # The driver branch is the one hosts/desktop/nvidia.nix already runs on the repo's
 # other NVIDIA box: the OPEN kernel modules, which this nixpkgs pin's own assertion
 # in nixos/modules/hardware/video/nvidia.nix asks for on Turing or later (the card is
@@ -104,11 +118,31 @@
   # in this pin, so the NVIDIA modules own the card while both are present.
   hardware.enableRedistributableFirmware = true;
 
+  # The AX200's Bluetooth half. lsusb named 8087:0029 Intel Corp. AX200 Bluetooth and
+  # the kernel side came up by itself (bluetooth referenced by btrtl,btmtk,btintel,btbcm,
+  # btusb), but `systemctl status bluetooth` on the second boot answered that the unit
+  # could not be found — there is no userspace daemon without bluez.
+  hardware.bluetooth.enable = true;
+
+  # wireless-regdb is a separate package: all-firmware.nix only puts it in the firmware
+  # dir when this option is set, so enableRedistributableFirmware alone would leave iw
+  # without the regulatory table it consults before serving a route.
+  hardware.wirelessRegulatoryDatabase = true;
+
   # The box gets a way to report its own hardware: nothing in the minimal config's
   # closure could enumerate PCI or USB, which is why the driver audit had to lean on
-  # /sys and the journal instead of lspci.
+  # /sys and the journal instead of lspci. The rest of this list is the userspace that
+  # inspects each surface this file declares — alsamixer/arecord for the ALSA nodes
+  # under /dev/snd, vainfo for the GL driver in /run/opengl-driver, v4l2_info for
+  # capture devices — plus efibootmgr, so the NVRAM door in ./boot-native.sh can run
+  # on the box itself and not only from a live ISO.
   environment.systemPackages = with pkgs; [
     pciutils
     usbutils
+    alsa-utils
+    alsa-ucm-conf
+    libva-utils
+    v4l-utils
+    efibootmgr
   ];
 }
