@@ -959,3 +959,136 @@ media class), and WiFi is present and unblocked but deliberately unmanaged —
 `networking.useDHCP = false` and the only networkd unit is `10-yz-enp4s0` for the wired
 cable, so `wlp6s0` answers `state DOWN` because no configuration asks it for a route.
 That is the same choice the wired identity was declared with, not a driver failure.
+
+## Strata: the coder model, native on the box (2026-10-28)
+
+The objective moved `qwen3.8-flash-next-coder` (Qwen3.8-Flash-Next GSQ-RCO,
+`IQ1_M`, expert-pruned 256-of-512) onto this box. The box qualifies as the dev
+box on measured numbers: `nvidia-smi` reports 24564 MiB total against the
+catalog row's `vramMib = 22000` (`hosts/desktop/catalog/default.nix`, ledger
+`strata_qwen38_coder`), 125 GB RAM, 845 GB free on `/`.
+
+### what the config adds, and why each piece is this shape
+
+* `llm/strata/{package.nix,vision.nix,default.nix,uv/{pyproject.toml,uv.lock}}`
+  plus `inputs.strata = github:Niko1221/Strata/v0.1.45 (flake = false)` and the
+  uv2nix toolchain inputs in `flake.nix`, plus `services.strata.enable = true`
+  in `default.nix`. `uv/{pyproject.toml,uv.lock}` are byte-identical copies of
+  the desktop's (md5 `3cc7aeaebcaec2166278c08820c71859` / `e060cd9fbfa4c0797e5e8ad2d2d87521`).
+* **`sm_89`, not `sm_120`.** `CMAKE_CUDA_ARCHITECTURES` is `89` in both
+  `package.nix` and `vision.nix`, and `BUILD.json` carries `"archs": [89]`. The
+  desktop builds `120` for its 5090. The box is an AD102-class card:
+  `nvidia-smi -L` → `GPU 0: NVIDIA GeForce RTX 4090 (UUID: GPU-cf5efaf1-f844-7553-bacf-18b94c5f53fb)`
+  and `/proc/driver/nvidia/gpus/*/information` → `Model: NVIDIA GeForce RTX 4090`.
+  CC 8.9 is the public mapping for that model name, not a box-side print —
+  `nvidia-smi -q` never printed a `Compute Capability` line on this driver.
+  A suffixed arch (`120a`) is refused by the upstream CMakeLists'
+  `if(_base LESS 80)` string compare, so the value is a bare integer.
+* **No gate here, so the module is a trimmed coder-only port**: one serve unit
+  (`strata-coder-serve`, `:18088`, no `wantedBy` — nothing boots resident), one
+  oneshot (`strata-coder-stage`), one target (`strata-prep`). With no gate there
+  is no idle unload (`idle = 0` in the launcher) and no `beforeLoad` sibling,
+  so the engine stays up for as long as its unit is started.
+* `systemd.services.strata-coder-serve.environment` is an **attrset**
+  (`CUDA_VISIBLE_DEVICES`, `LD_LIBRARY_PATH = "/run/opengl-driver/lib"`); the
+  option's type is `attrsOf (null or str or path or package)` and the desktop
+  carries the same pair as `serviceConfig.Environment` strings instead.
+
+### the weights came from HF on the box, not over the LAN
+
+The LAN route was tried and died, then the user chose the fallback:
+
+* No ssh identity we hold logs into `192.168.4.44`: `b` and `llm` each with
+  `id_ed25519` and with `ha_key` → `Permission denied (publickey,keyboard-interactive)`.
+  The authorized-keys door was built and tested: the jail's `/home/llm` **is**
+  the desktop's real home (btrfs `subvol=/home`), the written
+  `authorized_keys` landed (181 B, 0600, `.ssh` 0700), and `ssh -vv` shows the
+  key offered and the publickey packet sent — the desktop still refused. Leading
+  explanation: the `llm` login shell is `nologin`, which makes sshd skip
+  publickey auth. Opening the door would also have needed a desktop switch, and
+  that switch does not evaluate today (pre-existing `python3.14-posthog-7.71.0`
+  marked broken by the newer ambient nixpkgs — the desktop's generations are
+  `26.11.20261020.02c087f`, an older pkgs).
+* Decision (user): *"Fall back: yzerd downloads from HF"*. The desktop's
+  `security.nix` door edit was therefore reverted with
+  `git checkout -- hosts/desktop/security.nix` so their tree stays clean.
+
+Measured download: `strata-coder-stage` ran 10:56:28 → 11:10:25 (837 s) for
+59,316,130,529 B = **70.9 MB/s** average, one `hf download` of the whole set
+(no base set on this box to hardlink-reuse the n-gram shard, unlike the
+desktop's downloader).
+
+| file (under `/var/lib/strata/models`) | bytes | sha256 |
+|---|---|---|
+| `coder-IQ1_M/…-IQ1_M-00001-of-00002.gguf` | 29608446496 | `e11083ba855e7666b48ea3f2db6a9c3a20c18751a012cc24f948de91b7087fad` |
+| `coder-IQ1_M/…-IQ1_M-00002-of-00002.gguf` | 28800138432 | `316b46f3a2dbd68c900f43136ab9449f9dcc3725dfd8c794847c204bc161e113` |
+| `mmproj-Qwen3.8-Flash-Next-BF16.gguf` | 907543008 | `b1a82259702816a5330d7bd7607cd9676b11780e79ff7348c21103ff3ce49bd0` |
+
+All three hashes were read on the box (`sha256sum`) and agree with the LFS oids
+hf itself embeds in its cache filenames; shard 00002 and the mmproj are
+byte-identical to the desktop's copies of the same names in the base repo.
+The two `<shard>.done` marks are what make setup.py's step 5 trust the
+pre-seeded shards — without them it re-downloads them on the first request; the
+`mmproj` gets no mark. `/var/lib/strata/models.revision-coder` =
+`5348543e0147355ac9cbcb031184a3546350988e`.
+
+### the reproduction, and the gate that proves it
+
+```
+$ sudo bash /root/repo-yzerd/verify-strata.sh        # VERIFY-RC: 0
+```
+
+```
+current system                     /nix/store/g6kap9dx9h072003l8a8j6gwmp8y2f4q-nixos-system-yzerd-26.11.20261016.f20cd90
+revision stamp                     5348543e0147355ac9cbcb031184a3546350988e
+shard1 bytes                       29608446496
+shard2 bytes                       28800138432
+mmproj bytes                       907543008
+mark …00001-of-00002.gguf.done present
+mark …00002-of-00002.gguf.done present
+stray IQ1_M/                       absent
+engine BUILD.json                  {"version":"0.1.45","source":"local","archs":[89],"ptx":false,"cuda":"13.4","src":"b95137167bd9b751","vision_src":"13d9deaf827f14ef"}
+gpu                                GPU 0: NVIDIA GeForce RTX 4090 (UUID: GPU-cf5efaf1-f844-7553-bacf-18b94c5f53fb)
+unit: serve / stage / prep         active / active / active
+health                             http=200 loaded=true max_context=200000 images=true
+completion                         http=200 t=0.73 s  reply model=qwen3.8-flash-next-coder-iq1_m
+disk used / gpu vram used          56G / 23908MiB of 24564MiB
+```
+
+The full sequence, measured: `nixos-rebuild switch --flake /root/repo-yzerd#yzerd`
+(new toplevel `g6kap9dx9h072003l8a8j6gwmp8y2f4q-nixos-system-yzerd-26.11.20261016.f20cd90`,
+from toplevel drv `l0c32nshl7wmh681ghalczz3d8741p1g-…drv`) →
+`sudo systemctl start --no-block strata-coder-stage` (13m57s) →
+`sudo systemctl start strata-coder-serve` → first `:18088` listen **5m43s**
+after the unit started (setup.py trusted the staged set — its journal says
+`[ok] … already downloaded` — then prepared the pack: 1079 tensors, 302 served
+natively, arena 1.37 GiB, and fetched the ~5 GB MTP draft layer for
+speculative decoding). Engine flags the load settled on:
+`--expert-cache auto --prefill auto --spec 4 --spec-min-p 0.5 --kv int8
+--kv-resident 32768 --vram-reserve-mib 700 --conversation-cache-mib 16384
+--conversation-cache-slots 2 --conversation-cache-min-free-mib 4096`.
+Throughput read off the reply's own `timings`: **89.4 tok/s** decode over a
+220-token answer (draft 186, accepted 139 = 74.7%), **111.5–124.0 tok/s**
+prefill/decode on short prompts; VRAM 23908/24564 MiB used, RAM 33 GB used of
+125 with experts resident in RAM and a 16.45 GiB GPU expert cache.
+
+What is **not** claimed: the model answers through `reasoning_content` with
+`content: null` while the reasoning stream is open, so a consumer that only
+reads `content` sees nothing until its `max_tokens` clears that stream
+(`finish_reason: length` at 12 and 220 tokens). And `--vram-reserve-mib 700`
+is setup.py's own choice, while its own tip says a display-driving card may
+want 1500 (#779) — this box has `nvidia-x11-615.78.08-bin` on the unit's
+`PATH` but nothing was measured about a display.
+
+### falls and fixes on this leg
+
+| driver md5 | exact output | what fixed it |
+|---|---|---|
+| `7b91e30ac28ac1ba209a013bccf9903f` | `error: A definition for option "systemd.services.strata-coder-serve.environment" is not of type "attribute set of (null or string or absolute path or package)"` | the option is an attrset; the desktop's list-of-`Environment=` strings lives in `serviceConfig` — the two forms are not interchangeable |
+| `430cec9104c7d3714a40f044e068caf4` | `sudo cat > /root/repo-yzerd/verify-strata.sh` → `PUSH-RC=1`, then `chmod: cannot access …: No such file or directory` | the `>` redirection runs as `b`, not under `sudo`; `sudo tee … >/dev/null` writes it |
+| — | `bash /root/repo-yzerd/verify-strata.sh: Permission denied` (`VERIFY-RC=126`) while `sudo md5sum` of the same path worked | `/root` is 0700: only `sudo` can traverse it, so the gate runs as `sudo bash …` |
+| — | `nvidia-smi --query-gpu=… --no-units` → `ERROR: Option --no-units is not recognized` | the box's 615.78.08 rejects the flag the jail's copy accepts; read the plain table |
+| — | `bash: -c: line 1: unexpected EOF while looking for matching '"'` and `curl: (3) unmatched close brace/bracket` for the JSON bodies | a nested-quote ssh one-liner cannot survive `ssh` + remote `bash -c` + JSON; `ssh … 'bash -s' < script` |
+| — | `/v1/completions` → `{"error": {"message": "not found"}}` `HTTP=404` | this server exposes `/v1/chat/completions` and `/v1/messages`, not llama.cpp's `/completion(s)` |
+| — | `journalctl -u strata-coder-serve --since "11:12" -n 25` → `-- No entries --` | the unit's first journal line was 11:11:09 and hf progress never reaches the journal at all; query the unit without `--since` |
+| `4c74a7b` (earlier) | eval returned the **Generation-3** toplevel drv `acgss6zf3d0qm7cfn6mjjsl3rdvjzwdw-…drv` | the strata module was inert because `services.strata.enable` was never set in `default.nix` |
