@@ -565,11 +565,26 @@ warned about ownership while every md5 matched. Pin at write-time
 kernel `nh11qhhmdywbiqycrrzx3ag6wbq505pq-linux-6.18.56`, initrd
 `ymxh430m9j4j197m1zx3lf2pdjvbaf1z-initrd-linux-6.18.56`.
 
-`default_image` in `ventoy.json` could not be confirmed from upstream docs
-(`ventoy.net` index 404s and the doc mirror carries no article list), so the
-deterministic lever stayed: one ISO at the stick root + `boot_conf_replace`
-pointing at `/EFI/BOOT/grub.cfg`. **PXE was considered as the transport** (the
-box already has a `Boot0005* Realtek PXE` entry) — see
-`hosts/yzerd/README.md` → *Alternative boot paths considered*; it was not taken
-because it needs the same static-network decision and an ipxe script on media,
-and the Ventoy path is already armed end to end.
+The Ventoy keys are now confirmed from upstream ([Global Control plugin](https://www.ventoy.net/en/plugin_control.html)): the auto-select pair is
+`{ "VTOY_MENU_TIMEOUT": "n" }` + `{ "VTOY_DEFAULT_IMAGE": "/path/on/the/usb.iso" }`
+inside the `control` array — the bare `default_image` spelling in the staged
+`ventoy.json` is **not** a documented key, and there is a second menu that defaults
+to *waiting* (`VTOY_SECONDARY_BOOT_MENU` is `1` by default with no
+`VTOY_SECONDARY_TIMEOUT`). Empirically that is what happened on the box: after the
+`BootNext: 0007` reboot the monitor showed a **Ventoy menu** and nothing booted
+by itself. The deterministic lever (one ISO at the stick root +
+`boot_conf_replace` at `/EFI/BOOT/grub.cfg`) still holds for the pinned cmdline; the
+missing piece was auto-selection, and it can be fixed without any NVRAM work:
+
+```json
+{
+  "control": [
+    { "VTOY_MENU_TIMEOUT": "10" },
+    { "VTOY_DEFAULT_IMAGE": "/nixos-minimal-26.05.12707.718f670e8453-x86_64-linux.iso" },
+    { "VTOY_SECONDARY_TIMEOUT": "10" }
+  ]
+}
+```
+
+Until that is restaged, selecting the entry by hand at the JetKVM is enough —
+the menu is a choice, not damage.

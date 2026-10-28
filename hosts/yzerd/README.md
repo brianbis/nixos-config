@@ -214,7 +214,7 @@ one-shot flag.
 | attempt | what the firmware did | what it shows |
 |---|---|---|
 | `efibootmgr -c -d /dev/sda -p 2 -L VentoyPinned -l '\EFI\BOOT\BOOTX64.EFI'` → `Boot0001`, then `efibootmgr -n 0001` + reboot | `BootNext: 0001` consumed, `BootCurrent: 0000` — PVE booted again (uptime 2 min, `uname -a` = `7.0.14-26-pve`, `:8006` answering 301) | the entry was **written but not resolvable**: `-c` emits a bare `HD(2,MBR,0x42dfc3ef,0x3b92440,0x10000)` node, and this firmware addresses removable media through its device path — the same partition as `Boot0007* UEFI: SanDisk Cruzer Glide 1.26, Partition 2` = `PciRoot(0x0)/Pci(0x1,0x2)/Pci(0x0,0x0)/Pci(0x8,0x0)/Pci(0x0,0x3)/USB(3,0)/HD(2,MBR,0x42dfc3ef,0x3b92440,0x10000)` |
-| `efibootmgr -n 0007` + reboot | pending observation | use the firmware's **own** discovery of the stick instead of an entry we hand-assemble; BootOrder untouched, one-shot only |
+| `efibootmgr -n 0007` + reboot | the monitor showed a **Ventoy menu** and nothing proceeded by itself; the jail-side sweep then found no sshd anywhere and `192.168.5.186` = `No route to host` | the stick **did** boot through the firmware-discovered USB entry (`Boot0007`), so the device-path theory is confirmed and the USB transport works. What failed is Ventoy's *selection*: the staged `ventoy.json` used a `default_image` key that upstream does not document — the real pair is `VTOY_MENU_TIMEOUT` + `VTOY_DEFAULT_IMAGE` in the `control` array (plus a `VTOY_SECONDARY_TIMEOUT`, since `VTOY_SECONDARY_BOOT_MENU` defaults to `1` and waits). Nothing was wiped: `p3` still holds PVE, and the box is now reachable only at the monitor |
 
 The wipe had not happened in either case — the first reboot fell back to `Boot0000`
 (the PVE shim on `p2`), so the box stayed PVE and remained sshable while this was
@@ -237,8 +237,13 @@ box to `192.168.5.186` — the address it answers can move. The new config's sta
 unit only exists *after* the install. So the live stage is found, not assumed:
 
 ```sh
-# from the jail: price every candidate address for an open ssh socket
-timeout 120 masscan -p22 192.168.5.0/24 192.168.4.0/24
+# from the jail: price every candidate address for an open ssh socket. The ssh
+# banner is the only read that works here (see the masscan/nmap caveat below).
+probe() { b=$(timeout 3 nc -s1 -w1 "$1" 22 2>/dev/null | head -c 40)
+          case "$b" in SSH-*) printf '%s HELLO: %s\n' "$1" "$b";; esac; }
+for i in $(seq 1 254); do probe "192.168.5.$i"; done   # PVE's old static subnet
+for i in $(seq 0 63);  do probe "192.168.4.$i"; done   # the jail's own network
+echo "SWEEP-EXIT: $?"
 ```
 
 What the live ISO will not do is hand us a key by itself — `users.users.nixos`
