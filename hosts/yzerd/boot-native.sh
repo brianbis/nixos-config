@@ -17,17 +17,19 @@ say "1. what the NVRAM says now"
 efibootmgr -v | head -14
 efibootmgr --help 2>&1 | grep -iE "fallback|filepath|order|next" | head -8
 
-say "2. arm BootNext to the ESP's fallback path (single reboot, stick stays plugged)"
-# -f gives the fallback file (EFI/BOOT/bootx64.efi), which is exactly what the
-# systemd-boot builder copies when canTouchEfiVariables = false.
-efibootmgr -c -d /dev/nvme0n1 -p 2 -L nixos-native -f '\EFI\BOOT\BOOTX64.EFI' | head -4
-efibootmgr -v | head -14
-NEW=$(efibootmgr | awk -F'[ *]' '/Boot[0-9A-F]+.*nixos-native/{print substr($1,5); exit}')
-echo "NEW-ENTRY: ${NEW:-none-found}"
-[ -n "$NEW" ] || { echo "NO-NEW-ENTRY: read the efibootmgr map above before ordering"; exit 7; }
-efibootmgr -n "$NEW" | head -3
-echo "BOOTNEXT-NOW: $(efibootmgr | grep -i '^BootNext' || echo none)"
+say "2. order the ESP entry that already exists, and arm it for one reboot"
+# Proven on this box: Boot0004 = `UEFI OS -> HD(2,GPT,ae4fb41e-...)/EFI\BOOT\BOOTX64.EFI`
+# on the NVMe ESP, and bootctl's fallback copy made that file systemd-boot
+# (md5 equal to EFI/systemd/systemd-bootx64.efi). So no new entry is needed —
+# ordering plus BootNext is enough. Verify the file identity first.
+md5sum "$ESP/EFI/BOOT/BOOTX64.EFI" "$ESP/EFI/systemd/systemd-bootx64.efi" 2>/dev/null
+ENTRY=0004
+efibootmgr -o 0004,0006,0007,0008,0005,0000,0003
+efibootmgr -n "$ENTRY"
+efibootmgr | grep -E "^Boot(Order|Next)"
 
 say "3. reboot into it (the desk watches for sshd over the wire, never a screen)"
+# plain `systemctl reboot` from the live ISO did not reboot the box at all
+# (wtmp kept the old session and BootNext stayed set); --force does.
 sync
-systemctl reboot
+systemctl reboot --force

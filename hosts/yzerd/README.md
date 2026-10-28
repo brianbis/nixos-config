@@ -729,3 +729,77 @@ so the ESP's legacy path `EFI/BOOT/BOOTX64.EFI` **is** systemd-boot, and the pre
 `Boot0004* UEFI OS  HD(2,GPT,ae4fb41e-…,0x800,0x200000)/\EFI\BOOT\BOOTX64.EFI` points at exactly that.
 No new entry is needed — only ordering, and this firmware's handling of `BootOrder`/`BootNext` is still
 unproven (an earlier `efibootmgr -n 0007` never took effect).
+
+## the box booted natively, and the door that made it happen was `--force`
+
+The install finished at 14:15 UTC. `systemctl reboot` from the live ISO **did not reboot
+anything**: `w` still showed one session (`reboot system boot 6.18.57 … 13:49 still running`),
+and `efibootmgr` still printed `BootNext: 0004` — a one-shot that was never consumed is proof the
+firmware never ran a POST. `systemctl reboot --force` did reboot it (the ISO's PID-1 refuses the
+plain form from a non-login ssh session, silently, exit 0).
+
+Ordering was already right, and this firmware does honour it once a real POST runs:
+
+```
+$ efibootmgr | grep -E "^Boot(Order|Next)"
+BootOrder: 0004,0006,0007,0008,0005,0000,0003
+BootNext: 0004
+```
+
+`Boot0004` is `UEFI OS → HD(2,GPT,ae4fb41e-…,0x800,0x200000)/\EFI\BOOT\BOOTX64.EFI` — p2 of the
+NVMe, whose `EFI/BOOT/BOOTX64.EFI` bootctl had just written as a byte-identical copy of
+`systemd-bootx64.efi`. So the legacy-path fallback the loader writes under
+`boot.loader.efi.canTouchEfiVariables = false` is the working door, and no new NVRAM entry was
+needed: ordering plus a one-shot, then `sync; systemctl reboot --force`.
+
+What the wire then said, from the desk (the only oracle — no screen, and the stick is no longer in
+`lsblk` at all, so the ESP alone boots the box):
+
+```
+$ verify-native.sh 192.168.5.186            # log /home/llm/verify-native.log
+LISTENER-YES      ssh -vv -o PreferredAuthentications=none → Remote protocol version 2.0
+LOGIN-OK          ssh -l b 192.168.5.186 with ha_key authenticates
+PIN-PRESENT       /nix/store/4wcrl93il7…-nixos-system-yzerd-26.11.20261016.f20cd90
+                  Linux yzerd 6.18.56 … ; / ext4 on /dev/nvme0n1p3; /boot/efi vfat on p2
+UNIT: active      sshd
+PVE-WEB: 000      nothing serves :8006 — Proxmox is retired on this box
+```
+
+The wired identity is the declared one, not the ISO's MAC-derived accident: the box's own
+`ip route get 192.168.4.1` answers `dev enp4s0 src 192.168.5.186`, with `enp4s0` UP and
+`/etc/systemd/network/10-yz-enp4s0.network` a symlink into the generation's `etc/static/…`
+carrying `Address=192.168.5.186/22` + `Gateway=192.168.4.1`. `.5.186` is a legal local address
+because `192.168.4.0/22` spans `.4.0`–`.5.255`.
+
+### the reproducibility gate, closed on both sides
+
+`nixos-install --flake` leaves `/etc/nixos` on the target **empty** — the flake is the source of
+truth, and on the stick. The stick has been pulled since, so the pinned trio was staged into the
+installed system by hand and the copy is byte-identical to the jail's:
+
+```
+$ for f in flake.nix default.nix flake.lock; do ssh … "sudo tee /etc/nixos/$f" < hosts/yzerd/$f; done
+$ ssh … 'sudo md5sum /etc/nixos/{flake.nix,default.nix,flake.lock}'
+96a62ba8e69d44818cb8e9d05c9098ac  flake.nix      (jail: same)
+e8425d0a7cd5fd6a79128632d9f2ab0d  default.nix    (jail: same)
+03e099160ef125d9127031663b16a764  flake.lock     (jail: same)
+
+$ ssh … 'sudo -u b nix --extra-experimental-features "nix-command flakes" \
+         eval --raw "/etc/nixos#nixosConfigurations.yzerd.config.system.build.toplevel.drvPath"'
+/nix/store/srgrfiddhf1lb60d4vld78jy411s4v7n-nixos-system-yzerd-26.11.20261016.f20cd90.drv
+```
+
+Same flake bytes, two different machines, same derivation and the same out path
+(`4wcrl93il7vvqij3wihva6p83l3gk5n2-…`): the jail's `nix eval` pin is what the box realized, what
+its systemd-boot entry boots, and what the box re-evaluates today. `nix-env --list-generations` is
+empty because the install ran with `--no-root-password` and the store holds exactly one
+generation — `Generation 1`, per the entry's `version` line.
+
+### three verify-native.sh defects, fixed in place
+
+* the listener probe printed nothing without `-vv`: `Remote protocol version` lives on the
+  verbose channel only, so LISTENER-YES required `-vv` (and the string is `Remote protocol
+  version`, not `Server version`);
+* the pin check looked in `/boot`, which on this ESP-backed layout holds only `efi` — it now reads
+  `/nix/store/<gen>` and prints the loader entry next to it;
+* `curl -w %{http_code} || echo 000` printed `000000`; the fallback is now a `[ -z ]` guard.

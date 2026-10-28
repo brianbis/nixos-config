@@ -141,14 +141,20 @@ if [ "$install_rc" != 0 ]; then
 fi
 
 say "5. did the built generation equal the recorded pin?"
-GEN=/mnt2/boot/4wcrl93il7vvqij3wihva6p83l3gk5n2-nixos-system-yzerd-26.11.20261016.f20cd90
+# the generation is NOT under /boot: with fileSystems."/boot/efi" on p2 the loader
+# tree lives in the ESP and the system generation lives in the store. /mnt2/boot
+# holds only efi. Read the store, and the loader entry, not /boot/<gen>.
+GEN=/mnt2/nix/store/4wcrl93il7vvqij3wihva6p83l3gk5n2-nixos-system-yzerd-26.11.20261016.f20cd90
 if [ -e "$GEN" ]; then
-  echo "PIN-MATCH: generation present at /boot/<basename of the pinned out path>"
+  echo "PIN-MATCH: pinned generation present in the target's own store"
   ls -l "$GEN" | head -5
 else
   echo "PIN-MISMATCH: expected generation dir absent — list what the install produced"
-  ls -l /mnt2/boot | head -20
+  ls -d /mnt2/nix/store/*nixos-system* 2>/dev/null | head -5
 fi
+echo "LOADER-ENTRY: what the ESP will boot"
+cat /mnt2/boot/efi/loader/loader.conf 2>/dev/null | head -4
+cat /mnt2/boot/efi/loader/entries/* 2>/dev/null | head -8
 
 say "6. ESP evidence: open question 2 (does --variables=no land EFI/BOOT/bootx64.efi?)"
 find /mnt2/boot/efi -maxdepth 4 -type f \( -name 'bootx64.efi' -o -name '*.efi' -o -name 'boot.csv' \) 2>/dev/null | head -20 || echo "no ESP files found"
@@ -161,11 +167,22 @@ head -3 /mnt2/etc/ssh/authorized_keys.d/b 2>/dev/null || echo "no authorized_key
 grep -Ei '^(PasswordAuthentication|PermitRootLogin|AuthorizedKeysFile)' /mnt2/etc/ssh/sshd_config || echo "sshd_config: none of the three lines"
 ls -l /mnt2/etc/systemd/network 2>/dev/null | head -5
 cat /mnt2/etc/systemd/network/*enp4s0.network 2>/dev/null || echo "unit absent: check the name"
+# /etc/systemd/network/<name> is a symlink into <gen>/etc/static/..., so the read
+# above follows it; if the store dir behind it is not realized, read it directly:
+readlink -f /mnt2/etc/systemd/network/10-yz-enp4s0.network 2>/dev/null | head -1
 echo "DONE-AT-7"
 
-say "8. what to do at the console now"
+say "8. reboot the box into it"
+# proven on this box: plain `systemctl reboot` from the live ISO does NOT reboot it
+# (wtmp kept the old session and BootNext stayed set); `systemctl reboot --force`
+# does. The firmware then honours BootNext/BootOrder once a real POST runs, so
+# ordering p2's ESP entry first is enough:
+#   efibootmgr -o 0004,0006,0007,0008,0005,0000,0003
+#   efibootmgr -n 0004
+#   sync; systemctl reboot --force
+# Boot0004 is `UEFI OS -> HD(2,GPT,ae4fb41e-...)/\EFI\BOOT\BOOTX64.EFI`, and
+# bootctl's fallback copy made that file systemd-boot (md5-equal to
+# EFI/systemd/systemd-bootx64.efi), so no new NVRAM entry is needed.
+echo "ordering is done outside this script; see boot-native.sh for the efibootmgr lines"
 sync
-echo "sync once more, then power off the box: the install is done, the ESP is written"
-echo "first boot from its own hardware must land on Boot0004 (UEFI OS) -> EFI/BOOT/bootx64.efi; no NVRAM edit is expected"
-echo "if it does not boot, efibootmgr -n <entry> is the only one-shot knob left"
 echo "DONE-AT-8"
