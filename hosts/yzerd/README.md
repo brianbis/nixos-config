@@ -651,3 +651,25 @@ EXT4-fs (nvme0n1p3): mounted filesystem aa809936-… r/w
 The door now names the type on both mounts (`-t ext4`, `-t vfat`). The run that lays the layout is
 `sh /root/go-native.sh WIPE FORCE-EXT4` — p3 is ext4 already, so the guard's documented second
 argument is what resumes it (one more `mkfs`, ~a minute with lazy inode tables, same LABEL).
+
+## The wiring is one subnet, and only one socket is live
+
+Read from the live env (`ip -a link show`, `ip route get`, `ls -l /sys/class/net` on the box;
+the same probes from pve1 at `.5.201`):
+
+| read | result |
+|---|---|
+| box `enp4s0` | `state UP`, carrier — this is the live cable, and it is the NIC `default.nix` pins |
+| box `enp5s0` | `NO-CARRIER … state DOWN` — a second socket with no cable; the installed system must not depend on it |
+| box `wlp6s0` | present, deliberately unused |
+| box `ip route get 192.168.5.186` | `dev enp4s0 src 192.168.4.30` |
+| box `ip route get 192.168.5.201` | `dev enp4s0 src 192.168.4.30` |
+| box `/etc/systemd/network/` | **empty** — the ISO's `192.168.4.30` is the kernel's MAC-derived auto-assignment, not a rule |
+| pve1 `enp3s0 … master vmbr0` | pve1 hangs off PVE's `vmbr0` bridge — that is why pve1 could reach `.5.186` while PVE named that address |
+| pve1 `ip route get 192.168.5.186` / `…4.30` | both `dev vmbr0` |
+
+`192.168.4.0/22` spans `.4.0`–`.5.255`, so `.4.30` (what the live ISO picked) and `.5.186` (what
+PVE named the box) are **the same network**; the installed system pins `enp4s0` to `192.168.5.186/22`
+with `gateway = 192.168.4.1`, so after the install the wired identity moves back to `.5.186` and
+`.4.30` stops answering. The acceptance test should watch **both**, and `ssh proxmox-186` is the
+read that matters afterwards.
