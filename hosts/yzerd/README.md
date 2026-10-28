@@ -225,12 +225,46 @@ typed at the monitor. One console line, either a password or our key:
 sudo sh -c 'echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIDKuUwgF6tCaTogYB+/iP5HH/G9v3/fuNfFh1lpoQqm dsh-agent" > /etc/ssh/authorized_keys.d/root'
 ```
 
-(`/etc/ssh/authorized_keys.d/%u` is in the ISO's own `AuthorizedKeysFile`, same
+(`%h/.ssh/authorized_keys.d/%u` is in the ISO's own `AuthorizedKeysFile`, same
 module, so the file needs no mode play and no home directory.) Then the jail can
 take over: `ssh -o BatchMode=yes root@<found-address> 'uname -a; ss -lntp'`.
 
+Measured, not assumed: `masscan` will not run from the jail (`FAIL: permission
+denied … need to sudo` — a privileged probe it needs and the jail will not give),
+so the read that works is a plain `nc` banner sweep, and it found **no sshd at all**
+over `192.168.5.1-254` or `192.168.4.1-60` after the `BootNext: 0007` reboot.
+`192.168.4.1` itself answers `Connection refused` on `:22` (the LAN is there, no
+socket) while `192.168.5.186` answers `No route to host` (that network no longer
+exists) — PVE is definitively not what booted.
+
 Unverified: whether an empty live-ISO password is accepted by sshd's PAM path —
 do not plan around it, plan around the console line above.
+
+### Making the install need no network at all
+
+`hosts/yzerd/flake.lock` carries exactly two nodes — `root` and `nixpkgs` — so the
+pinned GitHub fetch is the *only* network input the install has. Pre-seeding the live
+store with that single path makes evaluation offline; the path is 209733232 B unpacked,
+and the jail exported it as:
+
+```text
+/home/llm/offline-seed/nixpkgs-f20cd90.nar.xz   34703312 B   md5 5e86e8f13b8be035a1642d33c3875c00
+```
+
+Verified of that artifact: `xz -t` returns 0 and `nix-store --query` resolves
+`/nix/store/glw7ngr0dwbp3al07rdlqkrbas7w3a02-source` in the jail store, so the dump is
+the same content-addressed path the pin names. On the live box, once the stick is
+mounted at `/mnt/stick`:
+
+```sh
+xzdc /mnt/stick/offline/nixpkgs-f20cd90.nar.xz | nix-store --restore /nix/store/glw7ngr0dwbp3al07rdlqkrbas7w3a02-source
+```
+
+That `--restore` has **not been run anywhere** — plan, not result; if it fails, the
+fallback is the wired LAN, which the box needs for one fetch only. Everything else the
+install builds locally — the kernel and world on this pin, the same 1-2 h of
+compilation the guest already paid. Staging the artifact to `/mnt/stick/offline` is
+pending: the 9p bridge is unreachable while the box is booted off PVE.
 
 ## Alternative boot paths considered (not taken)
 
