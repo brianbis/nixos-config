@@ -286,6 +286,21 @@ for i in $(seq 0 63);  do r=$(probe "192.168.4.$i");  [ -n "$r" ] && printf '192
 echo "SWEEP-EXIT: $?"
 ```
 
+What the sweep found, completed in the background over 268 addresses: exactly two
+live listeners on the wired LAN, and **neither of them is this box** —
+
+| address | `ssh -v` reports | who it is | the read that identifies it |
+|---|---|---|---|
+| `192.168.5.201` | `OpenSSH_10.0p2 Debian-7+deb13u4` | **another** Proxmox machine, `pve1` | `uname -a` = `pve1 7.0.14-12-pve`, `vmbr0 192.168.5.201/22`, `nvme0n1p3` = `zfs_member rpool`, a `zd0` USB carrying `hassos-boot`/`hassos-overlay`/`hassos-data` |
+| `192.168.5.202` | `OpenSSH_10.3` | Home Assistant OS core, `core-ssh` | `/etc/os-release` = Alpine `3.24.1`, `uname -a` = `core-ssh 6.18.52-haos`, no `lsblk` on it |
+
+Both accept `root` with the agent's `ha_key`, which is why presence-only probing was
+the defect rather than the answer: identity (`os-release` + `uname -a` + the wired
+address) is what separates these neighbours from `yzerd`. `192.168.5.186` itself
+answered `Connection timed out` and `:8006` returned 0 bytes, so **this box had no
+listener** — the live NixOS ISO had not started sshd, and PVE was not running. A
+sweep hit must therefore never be treated as "the box" without that identity read.
+
 What the live ISO will not do is hand us a key by itself — `users.users.nixos`
 there has an empty password and no authorized key, so the first step has to be
 typed at the monitor. One console line, either a password or our key:
