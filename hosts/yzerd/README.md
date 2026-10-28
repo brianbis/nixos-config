@@ -449,3 +449,67 @@ matter:
    through `ssh proxmox-186` — it exists only while the box is booted at PVE, and it is
    dead right now, because the box is on the live ISO.
 
+## Driving the JetKVM at `192.168.4.27` from the jail, and what it says about the box
+
+The KVM answers over HTTP **only** for the login form; control goes through the
+browser's WebRTC `rpc` data channel, reached in-jail with Playwright and the
+page's own `window.__kvmTestHooks.sendJsonRpc`. There is no plain-HTTP JSON-RPC
+door: `POST /rpc`, `/api/rpc`, `/rpc/` all return `404 page not found`, and
+`/device` plus `/diagnostics` stay `{"error":"Unauthorized"}` even after
+`POST /auth/login-local` answers `{"message":"Login successful"}` — that call
+sets no cookie and returns no token, so a fresh `curl` is still unauthenticated.
+The WebRTC session opens only after the DOM login form is filled
+(`input[name=password]` + `button`), and only then do the hooks report
+`isWebRTCConnected() == true` with HID and terminal ready.
+
+Firmware is app `0.5.9` / system `0.2.8`, and the method names are camelCase;
+every legacy snake_case name is rejected. What each name answered, verbatim:
+
+| method | answer |
+|---|---|
+| `get_state`, `get_version`, `get_hdmi_state`, `get_ota_status`, `type_text`, `key`, `press_keys`, `list_methods`, `mount`, `unmount`, `eject`, `set_usb_boot`, `set_firmware`, `trigger_reboot`, `boot_config`, `power_status`, `get_power_mode`, `set_power_mode`, `set_hid_enabled`, `get_hid_state`, `get_terminal_text`, `get_terminal_state`, `set_terminal_type`, `get_terminal_type`, `set_network_settings`, `get_edid` | `{"code":-32601,"message":"Method not found"}` |
+| `getVideoState` | `{ready:true, streaming:0, width:1920, height:1080, fps:60}` |
+| `getUsbDevices` | `{absolute_mouse:true, relative_mouse:true, keyboard:true, mass_storage:true, serial_console:false, audio:true}` |
+| `getHostDisplayIdleMode` | `{enabled:false}` |
+| `getVideoSleepMode` | `{supported:true, enabled:false, duration:0}` |
+| `getDisplayRotation` | `{rotation:"270"}` — captured frames arrive rotated |
+| `getStreamQualityFactor` | `1` |
+| `getUpdateStatus` | local app `0.5.9` / system `0.2.8`; remote wants the same `0.5.9` |
+| `sendCustomCommand {"command":"id"}` | accepted, `result:null` (this is the UI's terminal text input; the UI appends the terminator, labelled `LF (\n)`) |
+| `wakeHost` | accepted, `result:null` |
+| `setHostDisplayIdleMode {"mode":"off"}` | `missing parameter: enabled` |
+| `setVideoSleepMode {"sleep":false}` | `missing parameter: duration` |
+| `getSerialSettings` | `-32603 open /userdata/serialSettings.json: no such file or directory` — and `serial_console:false`, so the serial-terminal path does not exist on this KVM |
+
+`captureVideoRegion(0,0,1920,1080)` writes a real 44075-byte PNG, and decoding
+it with numpy (RGBA, per-row PNG filters) gives an entirely black frame: the
+page's `<video>` element reports `videoWidth:0` and no `currentSrc`, so the
+recvonly video track delivered no frame at all (`streaming:0` in
+`getVideoState`). The KVM's own log names the reason:
+
+```
+stream_cif_mipi_id0: open video, entity use_count 1
+m00_b_tc35874x 4-000f: Reset: IR: 1, CEC: 1, CSI TX: 0, HDMI: 0
+m00_b_tc35874x 4-000f: Cable detected (+5V power): yes
+m00_b_tc35874x 4-000f: -----Signal status-----
+m00_b_tc35874x 4-000f: TMDS signal detected: no
+m00_b_tc35874x 4-000f: Stable sync signal: no
+m00_b_tc35874x 4-000f: Waiting for particular sync signal: no
+```
+
+`TMDS signal detected: no` is the KVM saying the box's HDMI output carries no
+picture, which agrees with the network side — `192.168.5.186` still gives
+`Connection timed out` (route present, no listener). So there is no console to
+drive: the box is either powered off or not feeding the KVM, and HID text
+arrives nowhere useful until it is. `getKeyboardLedState` came back all-false
+and `getKeyDownState` `{modifier:0, keys:[0,0,0,0,0,0]}` after the probes, so
+the HID keyboard itself is wired and idle.
+
+Nothing was typed this round on purpose: the driver script raised
+`SyntaxError: unmatched ')'` before its first send, so the only text ever sent
+was the single `sendCustomCommand {"command":"id"}` probe. That is the row to
+remember — a syntax failure, not a device failure — and the sequence to send
+once the box has a signal is still the two monitor lines from *Reaching the
+live system* (`systemctl start sshd` and the authorized-key write), with the
+`ip addr add` / `ip route add` pair done from the jail over the resulting
+connection.
