@@ -215,6 +215,44 @@ one-shot flag.
 |---|---|---|
 | `efibootmgr -c -d /dev/sda -p 2 -L VentoyPinned -l '\EFI\BOOT\BOOTX64.EFI'` → `Boot0001`, then `efibootmgr -n 0001` + reboot | `BootNext: 0001` consumed, `BootCurrent: 0000` — PVE booted again (uptime 2 min, `uname -a` = `7.0.14-26-pve`, `:8006` answering 301) | the entry was **written but not resolvable**: `-c` emits a bare `HD(2,MBR,0x42dfc3ef,0x3b92440,0x10000)` node, and this firmware addresses removable media through its device path — the same partition as `Boot0007* UEFI: SanDisk Cruzer Glide 1.26, Partition 2` = `PciRoot(0x0)/Pci(0x1,0x2)/Pci(0x0,0x0)/Pci(0x8,0x0)/Pci(0x0,0x3)/USB(3,0)/HD(2,MBR,0x42dfc3ef,0x3b92440,0x10000)` |
 | `efibootmgr -n 0007` + reboot | the monitor showed a **Ventoy menu** and nothing proceeded by itself; the jail-side sweep then found no sshd anywhere and `192.168.5.186` = `No route to host` | the stick **did** boot through the firmware-discovered USB entry (`Boot0007`), so the device-path theory is confirmed and the USB transport works. What failed is Ventoy's *selection*: the staged `ventoy.json` used a `default_image` key that upstream does not document — the real pair is `VTOY_MENU_TIMEOUT` + `VTOY_DEFAULT_IMAGE` in the `control` array (plus a `VTOY_SECONDARY_TIMEOUT`, since `VTOY_SECONDARY_BOOT_MENU` defaults to `1` and waits). Nothing was wiped: `p3` still holds PVE, and the box is now reachable only at the monitor |
+| third reboot — corrected `ventoy.json` staged, `efibootmgr -n 0007` (`BootNext: 0007`), `systemctl reboot` | the jail read the PVE door dead (`http://192.168.5.186:8006/` → `000` / 0 bytes) and `192.168.5.186` = `Connection timed out` instead of `No route to host` | the box left PVE, so the live ISO booted: the corrected `control` array did its job (5 s timeout + default image + secondary menu disabled). Nothing listens at the pinned address because the live image configures no static address — that is the `ip addr add`/`ip route add` block below, not a boot failure |
+
+Between the second and the third reboot the box was power-cycled by hand (the monitor
+moved from the dead DisplayPort connection to HDMI) and came back to **PVE on its own**:
+`BootCurrent: 0000`, `/dev/nvme0n1p3` still `LVM2_member`, ssh at `.5.186` answering
+`Remote protocol version`, `:8006` returning 301. Nothing has ever been wiped, and
+`BootNext: 0007` was re-armed after that return rather than before it.
+
+### The Ventoy config that was staged, and what upstream says about it
+
+The file that produced the waiting menu (`/mnt/vtoy/ventoy/ventoy.json`, 358 B, md5
+`de8c6d527dcf71926be40cb06e032d38`) had two independent defects, both checked against
+upstream rather than guessed:
+
+* `control` is upstream an **array of single-key objects with string values** —
+  `[ { "VTOY_MENU_TIMEOUT": "10" }, { "VTOY_DEFAULT_IMAGE": "/ISO/debian_netinstall.iso" } ]`
+  ([plugin_control](https://www.ventoy.net/en/plugin_control.html)). The staged file used an
+  *object* holding `default_image` and `timeout` — neither name appears in that key list, so
+  the plugin read nothing at all and the menu waited. `VTOY_MENU_TIMEOUT` is the auto-select
+  timer and `VTOY_DEFAULT_IMAGE` the image it selects (the path as Ventoy lists it), and with
+  a timeout set and no default image the **first** image boots.
+* The secondary boot menu — the special-mode menu Ventoy shows since 1.0.80
+  ([doc_secondary_boot_menu](https://www.ventoy.net/en/doc_secondary_boot_menu.html)) — is
+  disabled by the documented `VTOY_SECONDARY_BOOT_MENU` control key, which the staged file
+  never mentioned; the docs' advice to set a `VTOY_SECONDARY_TIMEOUT` was never verified
+  against that page, so the staged file uses only the disable instead.
+* The replacement stanza was named `boot_conf_replace` with `dst`/`src` fields. The plugin key
+  is `conf_replace` (or `conf_replace_uefi` / `conf_replace_legacy`) and the fields are `iso`,
+  `org`, `new` ([plugin_bootconf_replace](https://www.ventoy.net/en/plugin_bootconf_replace.html))
+  — and that page's own example replaces exactly `/EFI/BOOT/grub.cfg`, which is what the ISO
+  really carries (loop-mounted and listed this round: `/EFI/BOOT/grub.cfg` 20459 B,
+  `/isolinux/isolinux.cfg` 9159 B). So the staged stanza was **inert**: nothing was replaced.
+  It is now not staged at all — with `control` fixed the boot was attempted with no
+  `conf_replace`, because whether Ventoy hands that replaced file to the ISO's own grub in
+  UEFI mode is untested, and a bad `grub.cfg` would make the ISO unbootable.
+  `/mnt/vtoy/ventoy/conf/nixos-pinned.cfg` (643 B, md5 `dc34b0a9395658110a53f0202ed9a77b`)
+  stays on the stick for the attempt that needs it; it leans on Ventoy's own grub variables
+  (`${vtoy_iso_part}`) and on the ISO's store paths, so it is unverified by construction.
 
 The wipe had not happened in either case — the first reboot fell back to `Boot0000`
 (the PVE shim on `p2`), so the box stayed PVE and remained sshable while this was
@@ -344,39 +382,37 @@ pending: the 9p bridge is unreachable while the box is booted off PVE.
 Nothing has been *installed* from this config yet. Open, in the order they
 matter:
 
-1. **Resolved: the stick booted, the ISO did not launch.** After the `BootNext: 0007`
-   reboot the monitor showed a **Ventoy menu** — the user confirmed it — and nothing
-   proceeded by itself, so the USB transport and the firmware-discovered entry both work
-   and only Ventoy's selection failed (undocumented `default_image` key; see *The reboot
-   itself* attempt 3 and `hosts/nixos-vm/README.md` → the `control` keys). Consistent
-    with the jail side: `192.168.5.186` = `No route to host`, `:8006` = no bytes. The
-    classifier at `192.168.4.44` (this machine's own wired address) answers
-    `Remote protocol version` — the classifier works and there is **no listener at the
-    box's pinned address**, which is the LAN-dark proof; a whole-LAN sweep adds nothing
-    (one was started and cut short). The fix is one selection at the JetKVM, then the
-    console lines printed above in *Reaching the live system* — or the corrected `ventoy.json`
-    staged from the 9p bridge.
+1. **Resolved twice: the stick booted, and Ventoy now selects the ISO by itself.**
+   The stick reached Ventoy's menu through the firmware-discovered USB entry (`Boot0007`),
+   and the reason the menu waited is in the staged config, not in the transport — see
+   *The Ventoy config that was staged* above. With the corrected `control` array staged
+   (md5 `69f400444c7aff5363c6a5151a3f07a1`) and `BootNext: 0007` armed, the reboot left
+   PVE (`:8006` = 0 bytes; `192.168.5.186` = `Connection timed out`, i.e. route there,
+   no listener), so the live ISO booted with no hand on the menu. What is missing now is
+   not a boot but the live stage's own wiring: the live image configures no static address
+   and carries no authorized key, so the console lines in *Reaching the live system* (key,
+   `ip addr add`, `ip route add`) are the next action at the monitor, after which
+   `ssh -o BatchMode=yes root@192.168.5.186` takes over and `go-native.sh WIPE` runs.
 2. **Whether `bootctl install --variables=no` really lands `EFI/BOOT/bootx64.efi`**
    in this systemd version — read from the pin, not yet observed on the box.
    If it does not, the fix is an explicit copy to that path, not an NVRAM edit.
 3. **GPU decision** (see above).
 4. **Guest VM unit** on the native host (the replacement for vmid 100).
-5. **Staging is currently stale on the stick.** Both READMEs grew after the last
-   copy, so `/mnt/vtoy/repo-yzerd/README.md` carries `fa4d3248ae94e7ed1cb480d482681736`
-   and `/mnt/vtoy/repo/README.md` carries `d57faca0a524d7d4066811a0144ff871`, both behind
-   the jail (the jail values move with every doc edit; read them with
-   `md5sum hosts/yzerd/README.md hosts/nixos-vm/README.md` at copy time — the pair at the
-   time of this note was `f7c292db5b54c1fb88df956e86b28e2f` / `eec42a85554cbe160af53ddff1965c14`).
-   The 9p bridge is unreachable while the box is booted off PVE (`ssh proxmox-186` →
-   `No route to host`), so restaging waits until the box answers again. `default.nix`,
-   `flake.nix` and `flake.lock` on the stick still match the jail byte for byte, and
-   re-evaluation with the edited README in place reproduced
-   `srgrfiddhf1lb60d4vld78jy411s4v7n-nixos-system-yzerd-26.11.20261016.f20cd90.drv`, so
-   README text sits outside the build's input closure — the docs lag, the config does not.
-    Two artifacts are **not on the stick at all** yet and both are needed before the
-    install: `go-native.sh` (jail/repo md5 `78eefedaa1510983cb5b37e5b6ffd129`, 4677 B,
-    to be copied into `/mnt/vtoy/repo-yzerd/`) and `offline/nixpkgs-f20cd90.nar.xz`
-    (34703312 B, md5 `5e86e8f13b8be035a1642d33c3875c00`, from
-    `/home/llm/offline-seed/`, to be copied into `/mnt/vtoy/offline/`). The stick has
-    25 G free, so space is not the constraint — the missing transport is.
+5. **Staging ledger (at copy time — re-md5sum before trusting it).** Now on the
+   stick: `go-native.sh` in `/mnt/vtoy/repo-yzerd/` (md5 `78eefedaa1510983cb5b37e5b6ffd129`,
+   matching the repo copy) and `nixpkgs-f20cd90.nar.xz` in `/mnt/vtoy/offline/`
+   (34703312 B, md5 `5e86e8f13b8be035a1642d33c3875c00`, matching `/home/llm/offline-seed/`),
+   plus the corrected `/mnt/vtoy/ventoy/ventoy.json`. The three files the install actually
+   reads — `default.nix`, `flake.nix`, `flake.lock` — match the repo byte for byte, which is
+   what keeps the pin reproducible from the stick:
+   `srgrfiddhf1lb60d4vld78jy411s4v7n-nixos-system-yzerd-26.11.20261016.f20cd90.drv`.
+   Still behind on the stick: the guest doc `/mnt/vtoy/repo/README.md`
+   (`d57faca0a524d7d4066811a0144ff871` there vs `178b235c754fb45b8f10761b99b2c1a5` in the
+   jail) — documentation only, no effect on the build. `hosts/yzerd/README.md` itself is
+   behind too — the stick carries
+   `b3e26f2cd9d42246e38324ffdef3495c`, while the jail copy is whatever
+   `md5sum hosts/yzerd/README.md` says at the moment of copying (this file changes on
+   every doc edit, so its own value is never recorded here). The transport that made restaging possible at all is the 9p bridge
+   through `ssh proxmox-186` — it exists only while the box is booted at PVE, and it is
+   dead right now, because the box is on the live ISO.
 
