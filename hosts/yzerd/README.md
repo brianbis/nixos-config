@@ -536,3 +536,20 @@ mounts the stick itself (`go-native.sh:39-44`), so nothing has to be copied firs
 mkdir -p /mnt/stick; mount /dev/sda1 /mnt/stick
 sh /mnt/stick/repo-yzerd/go-native.sh WIPE
 ```
+
+## This reboot (2026-10-28 ~06:41-06:52 America/Phoenix): the box is dark, and two oracles proved it
+
+| read | verbatim answer | consequence |
+|---|---|---|
+| `VTOY_SECONDARY_BOOT_MENU` in [the Global Control plugin doc](https://www.ventoy.net/en/plugin_control.html) | `"0": Disable` / `"1": Enable (default)` | the staged `ventoy.json` value `"0"` was **already** the disabling value — the secondary menu is not the hang. (The claim in chat that `1` disables it was wrong; the doc says the opposite.) |
+| `getVideoLogStatus` in **every** observed boot | `TMDS signal detected: no`, `Stable sync signal: no`, `No video detected`, `horizontal: fp = 0, -sync = 0, bp = 0` while `Cable detected (+5V power): yes` | the box's video has **never** traversed the KVM's HDMI-in, so the browser view is not an oracle in any state. `getVideoState` later made this explicit: `{"ready":false,"streaming":0,"error":"no_signal","width":0,"height":0,"fps":0}` — the earlier `ready:true 1920x1080@60` was the KVM's configured dims, never a captured frame |
+| watcher `bash-67263051f6b24961` on `pve1` (route proven: `ip route get 192.168.5.186` → `dev vmbr0`) | every ~11 s from 06:47 to 06:51: `SSH-NO`, `PVEWEB=000` | no sshd and no PVE web at the box's wired address — it is either powered off or booted without its wired network up |
+| the desk's own class flip-flop | `ip route get 192.168.5.186` → `dev enp5s0 src 192.168.4.44` yet ssh gave `Connection timed out` (06:41) then `No route to host` (06:52) | the desk's bridging toward `.5.186` is unstable; both messages mean **no usable listener**, and neither says anything about the box |
+| KVM web login | attempt 0: `isWebRTCConnected: false` (page still `Welcome back to JetKVM … Password … Log In`); attempt 1 connected | any driver needs the login retry loop; one click is not enough |
+
+`verify-native.sh` is the goal's acceptance test, run from the jail: `LISTENER-YES`
+(ssh identity, not a banner) → `LOGIN-OK` (ssh as `b` with `ha_key`) → `NATIVE-OK`
+(hostname `yzerd`, `os-release` NixOS, `/boot/4wcrl93il7vvqij3wihva6p83l3gk5n2-nixos-system-yzerd-26.11.20261016.f20cd90` present) → `PVE-WEB: 000` (PVE retired).
+It passes the generation name as a positional to the remote `sh -s` so it interpolates
+locally — `$GEN` inside a single-quoted remote string would have reached the box's shell
+unset, the same trap as every other interpolated name.
