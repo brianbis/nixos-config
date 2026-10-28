@@ -624,3 +624,10 @@ given NixOS configuration."* — the writable store during the build is the **ta
 The stick seed stays staged for a no-network retry; this boot's build fetches the pinned rev
 (`curl -sI https://github.com/` → `HTTP/2 200` from the live env), which is the same
 fixed-output path `glw7ngr0dwbp3al07rdlqkrbas7w3a02-source` either way.
+
+### one more refusal on the same partition
+
+| driver md5 | job | exact output | fix |
+|---|---|---|---|
+| `e51e4b8d37b6e897d266038e26a1e36a` | `bash-dbba905cc8744fb6` | `Volume group "pve" not found` → `VGREMOVE-NONZERO` (expected: already torn down) → `mke2fs 1.47.4` → `Invalid filesystem option set: Linux` → `MKFS-RC: 1`, `REMOTE-RC=6` | capital `-O` is mke2fs's **feature** list; the creator string is lowercase `-o`. Now `mkfs.ext4 -L nixos-native -o Linux` |
+| `796cee2a8b8e16c67274036017adb0e8` | `bash-2ea9433fc7c54ca9` | running: `mkfs` on 930 G then `nixos-install` | — |

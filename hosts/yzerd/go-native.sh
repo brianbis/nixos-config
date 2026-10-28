@@ -94,8 +94,10 @@ echo "DM-AFTER: $(dmsetup ls 2>/dev/null | tr '\n' ' ')"
 wipefs -a /dev/nvme0n1p3 || echo "WIPEFS-NONZERO"
 # -f is NOT an mke2fs option (it belongs to the busybox mkfs wrapper), so drop it:
 # the DM devices are gone by now and the busy check passes on its own.
+# -O is mke2fs's FEATURE list ("Invalid filesystem option set: Linux"); the
+# creator string is the LOWERCASE -o. Use it, and keep the feature list unset.
 mkfs_rc=0
-mkfs.ext4 -L nixos-native -O Linux /dev/nvme0n1p3 || mkfs_rc=$?
+mkfs.ext4 -L nixos-native -o Linux /dev/nvme0n1p3 || mkfs_rc=$?
 echo "MKFS-RC: $mkfs_rc"
 [ "$mkfs_rc" = 0 ] || exit 6
 mkdir -p /mnt2
