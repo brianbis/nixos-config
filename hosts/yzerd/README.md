@@ -575,3 +575,22 @@ fallback) was pushed to `/root/go-native.sh` with `cat >` over the wire and the 
 then run as `sh /root/go-native.sh WIPE` in background job `bash-f2a1d1cd1ad84456`, logged to
 `/home/llm/inst7.log`. That is the one-way door: `mkfs.ext4 -L nixos-native /dev/nvme0n1p3` then
 `nixos-install --root /mnt2 --flake /mnt/stick/repo-yzerd#nixosConfigurations.yzerd`.
+
+## The door, three times over the wire (2026-10-28 ~07:00–)
+
+`go-native.sh` is pushed with `cat >` and re-md5summed on the box, so a run is attributable to a
+driver byte-for-byte. Each attempt below is one row: what it was, the exact refusal, the fix.
+
+| driver md5 (box `/root/go-native.sh`) | job | how far it got | exact refusal | fix |
+|---|---|---|---|---|
+| `9597f3e5643118979b53e1ad2391ccc8` | `bash-f2a1d1cd1ad84456` | step 0 only | `P3-TYPE: LVM2_member` → `P3-TYPE IS NEITHER PVE-LVM NOR ext4: stop, the layout assumption is wrong` | the guard matched only the slashed form; `blkid -o value -s TYPE` answers `LVM2_member` here. Case became `LVM2_member|LVM2/*)` |
+| `c6269a0817c9de8efd38ed09a93db12f` | `bash-5b279e338db84edb` | steps 0–3, stopped before touching p3 | `line 59: xzdc: command not found` → `error: unexpected end-of-file` → `SEED-FAILED`; then `mke2fs … /dev/nvme0n1p3 is apparently in use by the system; will not make a filesystem here!` → `MKFS-RC: 1`, `REMOTE-RC=6` | `xzdc` is a jail convenience, the ISO ships `xz`/`xzcat` only → `xz -dc`. The mkfs refusal is **not** a mount and **not** an open fd: `/proc/swaps` empty, `lsof /dev/nvme0n1p3` and `fuser -m` empty, `grep nvme0n1 /proc/mounts` empty — e2fsprogs' busy check is `dm_dev_in_use`, and `dmsetup ls` answers `pve-root (254,1) pve-swap (254,0)` ACTIVE on that partition |
+| `ebe46cc451f99322c6afd5da39473dcf` | `bash-8db79609581d463f` | running now | — | `vgremove -f pve` before the wipe, then `wipefs -a`, then `mkfs.ext4 -f -L nixos-native` |
+
+The teardown is scoped to the `pve` volume group on pain of death: the live ISO reads its own
+kernel and store through the **Ventoy** device-mapper (`ventoy (254,2)`, `sda1 (254,3)` are its
+`/iso` and the stick), so removing all DM devices would cut the running system out from under the
+install. `mkfs.ext4 -f` is a belt after the braces: the DM devices are gone by then.
+
+Nothing destructive happened before the third run: every earlier run refused **before** `mkfs`
+wrote, and `lsblk` in the third run's step 0 still shows `pve-swap`/`pve-root`.
