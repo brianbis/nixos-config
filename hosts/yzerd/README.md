@@ -553,3 +553,25 @@ sh /mnt/stick/repo-yzerd/go-native.sh WIPE
 It passes the generation name as a positional to the remote `sh -s` so it interpolates
 locally — `$GEN` inside a single-quoted remote string would have reached the box's shell
 unset, the same trap as every other interpolated name.
+
+## The box booted the stick after all, and it is reachable over the wire (2026-10-28 ~06:55)
+
+The user's report was literal: `machine is live on 4.30 … boot environment off the USB of nixos`.
+`ip route get 192.168.4.30` from the desk resolves, and the ssh **identity** read (not a banner)
+answered `OpenSSH_10.5`, while `.5.186` stayed `No route to host`.
+
+| read (from the jail, `root@192.168.4.30`) | verbatim answer | consequence |
+|---|---|---|
+| `uname -a; hostname; lsblk` | `Linux nixos 6.18.57 … x86_64`, hostname `nixos`, `sda1 exfat Ventoy` with `ventoy … iso9660 … /iso`, `nvme0n1p3 LVM2_member` still holding `pve-swap`/`pve-root` | the live ISO booted off the stick, and **nothing has been wiped yet** |
+| `enp4s0 UP 192.168.4.30/22` | the live ISO configured the wired interface at `.4.30`, not the native config's `.5.186/22` | the native address only exists **after** the install boots; every pre-install probe of `.5.186` is expected to be dark |
+| login | `pexpect` ssh with `root` + the password the user set → then `/root/.ssh/authorized_keys` + `/root/.ssh/authorized_keys.d/{root,b}` written → a later `ssh -o BatchMode=yes -l root` printed `KEY-AUTH-OK` | the whole install is now drivable from the desk; no console typing, no screen needed |
+| `mount /dev/sda1 /mnt/stick` | `mount: /mnt/stick: fsconfig() failed: /dev/sda1: Can't open blockdev.` while `ls -l /dev/sda1` shows a real node (`8, 1`), `blkid /dev/sda1` → `LABEL="Ventoy" TYPE="exfat"`, and `dd if=/dev/sda1` reads the `EXFAT` magic | the node is fine, mount's blockdev open is not — the same signature as the earlier `by-label` failure |
+| `losetup /dev/loop1 /dev/sda1` then `mount /dev/loop1 /mnt/stick` | `LOOP-MOUNT-OK`, `df -h /mnt/stick` → `30G 5.3G 25G 18%` | **fix**: loop-mount the stick when the direct mount refuses; `go-native.sh` now does exactly that (`STICK-VIA-LOOP: /dev/loopN`) |
+| `free -m; nproc; df -h /nix; curl -sI https://github.com/` | `Mem: 128709`, `32`, `tmpfs 63G … /`, `HTTP/2 200` | the live store is a 63 G tmpfs over 128 G of RAM, so building the pinned system on the ISO is not memory-bound, and the pinned nixpkgs rev can also be re-fetched |
+| stick md5s vs the repo | `default.nix e8425d0a7cd5fd6a79128632d9f2ab0d` `flake.nix 96a62ba8e69d44818cb8e9d05c9098ac` `flake.lock 03e099160ef125d9127031663b16a764` `offline/nixpkgs-f20cd90.nar.xz 5e86e8f13b8be035a1642d33c3875c00` — all four identical to the jail's repo | the stick carries the same flake the jail evaluated, so the pin can be compared honestly |
+
+`go-native.sh` (md5 `9597f3e5643118979b53e1ad2391ccc8`, 5136 B — the version with the loop-mount
+fallback) was pushed to `/root/go-native.sh` with `cat >` over the wire and the same md5 came back,
+then run as `sh /root/go-native.sh WIPE` in background job `bash-f2a1d1cd1ad84456`, logged to
+`/home/llm/inst7.log`. That is the one-way door: `mkfs.ext4 -L nixos-native /dev/nvme0n1p3` then
+`nixos-install --root /mnt2 --flake /mnt/stick/repo-yzerd#nixosConfigurations.yzerd`.
