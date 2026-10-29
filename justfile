@@ -93,35 +93,57 @@ push message="NixOS configuration update":
 # LAN CI door: the yzerd physical box keeps its own copy of the whole tree at
 # /etc/nixos and runs its own `ci` runner there (see hosts/yzerd/README.md,
 # "CI box"). The git wire is desk-side only — the DESK holds the private keys
-# and both pubkeys are authorized on the box (hosts/yzerd/default.nix) — so
+# both pubkeys are authorized on the box (hosts/yzerd/default.nix:108-111) — so
 # push/pull run here and the box never needs a key toward the desk. `ci-push`
-# also checks the tree out on the box: a push to a non-bare repo moves the
-# ref, not the files, and the box's gates read the FILES.
-yz-door := "ssh://b@192.168.5.186//etc/nixos"
-ci-key := "-i /home/llm/.ssh/id_ed25519"
+# also checks the tree out on the box: a push to a non-bare repo moves the ref,
+# not the files, and the box's gates read the FILES. Do NOT hardcode `-i
+# /home/llm/...`: the desktop user is `b` too and cannot read the agent user's
+# key (Permission denied -> password fallback). Password auth to the box works
+# from a b shell today (hosts/yzerd/default.nix:104 declares it); for a key
+# instead, put the box address in your ~/.ssh/config Host block and set ci-host
+# to that alias — the two authorized keys on the box are exactly the ones the
+# desk can present.
+ci-host := "b@192.168.5.186"
+yz-door := "ssh://{{ci-host}}//etc/nixos"
+# Your key: generate it ONCE (ssh-keygen -f ~/.ssh/id_ci -N ''; ssh-copy-id -i
+# ~/.ssh/id_ci b@192.168.5.186) and every leg below answers key-only — ssh with
+# a missing -i still falls back to password, so this line is safe before the
+# keygen. Paste the new pubkey into the box's authorizedKeys list in
+# hosts/yzerd/default.nix:112 so the switch keeps authorizing it forever.
+ci-key := "-i ~/.ssh/id_ci"
 
 ci-push:
     GIT_SSH_COMMAND="ssh {{ci-key}}" git push {{yz-door}} HEAD:main
-    ssh {{ci-key}} b@192.168.5.186 'git -C /etc/nixos checkout -f main'
+    ssh {{ci-key}} {{ci-host}} 'git -C /etc/nixos checkout -f main'
 
 ci-pull:
     GIT_SSH_COMMAND="ssh {{ci-key}}" git pull {{yz-door}} main
 
+# Bootstrap (box without git): stream the COMMITTED tree to the box. Extract
+# into a CLEAN dir, never onto the box's /etc/nixos — that is its own older
+# copy, and leftover files there would make the box's flake-self differ from
+# the desk's and silently break the offload (identical trees => identical
+# drv hashes; that equality is the whole point). Box-side switch door after
+# this ships: sudo nixos-rebuild switch --flake /srv/ci-repo#yzerd.
+ship:
+    ssh {{ci-key}} {{ci-host}} 'sudo mkdir -p /srv/ci-repo && sudo chown -R b:b /srv/ci-repo'
+    git archive --format=tar.gz HEAD | ssh {{ci-key}} {{ci-host}} 'tar -x -z -C /srv/ci-repo'
+
 ci-gate:
-    ssh {{ci-key}} b@192.168.5.186 'sudo /run/current-system/sw/bin/ci gate'
+    ssh {{ci-key}} {{ci-host}} '/run/current-system/sw/bin/ci gate'
 
 ci-fix:
-    ssh {{ci-key}} b@192.168.5.186 'sudo /run/current-system/sw/bin/ci fix'
+    ssh {{ci-key}} {{ci-host}} '/run/current-system/sw/bin/ci fix'
 
 ci-status:
-    ssh {{ci-key}} b@192.168.5.186 'sudo /run/current-system/sw/bin/ci status'
+    ssh {{ci-key}} {{ci-host}} '/run/current-system/sw/bin/ci status'
 
 # The offload door: run `just switch` (same activation, same desktop) but pay
 # the heavy toplevel build on yzerd instead of the desk — the desk spends its
 # minutes activating, not its hours computing. Mechanics, all LAN-ssh:
-#   1. ci-push so the box's checkout is the committed tree (run `just save`
-#      FIRST — the box builds what HEAD says, the desk must evaluate the same
-#      tree, so nothing may be staged-but-uncommitted);
+#   1. `ship` (NOT ci-push — the box has no git yet, its generation predates
+#      ci.nix; run `just save` FIRST, the box builds what HEAD says and the
+#      desk must evaluate the same tree, nothing staged-but-uncommitted);
 #   2. `nix build` of the DESKTOP toplevel on the box: b's nix client talks to
 #      the box's own daemon, so the build is privileged there (uid b alone
 #      could not realize input-addressed drvs, the daemon can);
@@ -133,10 +155,10 @@ ci-status:
 # 8/8 caps mirror the CI runner's, not the desk's 4/4 (that throttle exists
 # because the 4-core desk OOM'd; yzerd is 32c/125G and is allowed more).
 switch-remote:
-    just ci-push
-    ssh {{ci-key}} b@192.168.5.186 'NIX_CONFIG="experimental-features = nix-command flakes" nix build --impure --no-link --max-jobs 8 --cores 8 --out-link /tmp/desk-gen ".#nixosConfigurations.nixos.config.system.build.toplevel" 2>&1 | tail -4'
-    ssh {{ci-key}} b@192.168.5.186 'P=$(readlink /tmp/desk-gen); nix-store --export $(nix-store -q --closure $P)' | nix-store --import
-    ssh {{ci-key}} b@192.168.5.186 'P=$(readlink /tmp/desk-gen); D=$(nix-store -q --deriver $P); nix-store --export $(nix-store -q --closure $D)' | nix-store --import
+    just ship
+    ssh {{ci-key}} {{ci-host}} 'cd /srv/ci-repo && G=$(NIX_CONFIG="experimental-features = nix-command flakes" nix-build --no-link --expr "(import <nixpkgs> {}).git" 2>/dev/null | tail -1); PATH="$PATH:$G/bin" NIX_CONFIG="experimental-features = nix-command flakes" nix build --impure --no-link --max-jobs 8 --cores 8 --out-link /tmp/desk-gen ".#nixosConfigurations.nixos.config.system.build.toplevel" 2>&1 | tail -4'
+    ssh {{ci-key}} {{ci-host}} 'P=$(readlink /tmp/desk-gen); nix-store --export $(nix-store -q --closure $P)' | nix-store --import
+    ssh {{ci-key}} {{ci-host}} 'P=$(readlink /tmp/desk-gen); D=$(nix-store -q --deriver $P); nix-store --export $(nix-store -q --closure $D)' | nix-store --import
     just switch
 
 gc:
