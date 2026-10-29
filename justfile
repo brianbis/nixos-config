@@ -129,6 +129,14 @@ ship:
     ssh {{ci-key}} {{ci-host}} 'sudo mkdir -p /srv/ci-repo && sudo chown -R b:b /srv/ci-repo'
     git archive --format=tar.gz HEAD | ssh {{ci-key}} {{ci-host}} 'tar -x -z -C /srv/ci-repo'
 
+# Progress readout for whatever yzerd is doing right now: which builds are
+# alive (etime), store paths written in the last 5 min, newest paths — the
+# build's live edge. Ctrl-C on switch-remote kills the LOCAL tail only; the
+# remote build keeps running as an orphan, so duplicates here are normal —
+# they all converge on the same valid paths.
+ci-watch:
+    ssh {{ci-key}} {{ci-host}} 'ps -eo etime,cputime,args | grep -E "nix build|nix-build" | grep -v grep; echo NEW-5MIN=$(find /nix/store -maxdepth 1 -type d -newermt "-5 minutes" 2>/dev/null | wc -l); ls -t /nix/store | head -8'
+
 ci-gate:
     ssh {{ci-key}} {{ci-host}} '/run/current-system/sw/bin/ci gate'
 
@@ -154,11 +162,18 @@ ci-status:
 #      trusted-locally by design; that is what sidesteps the sig gate here.
 # 8/8 caps mirror the CI runner's, not the desk's 4/4 (that throttle exists
 # because the 4-core desk OOM'd; yzerd is 32c/125G and is allowed more).
+# The mechanics now live in hosts/desktop/ci-offload.sh: same steps PLUS an
+# auto-debug loop for stuck builds — a failed box build feeds its error tail
+# to the desk's own gate (llm.local :8100, the interactive coder model), and
+# the returned patch is applied ONLY if every touched path is an existing
+# tracked *.nix (flake.nix, hosts/**, home/**, catalog/**), committed as
+# "ci-fix (desk-build)", re-shipped, re-built — max 3 tries (CI_TRIES). It
+# never activates anything, on either side: activation stays `just switch`,
+# yours. Env knobs: CI_HOST CI_KEY CI_TRIES. Run `just save` first — the
+# script itself refuses while the repo is dirty, because HEAD is exactly what
+# the box builds and what the desk must evaluate.
 switch-remote:
-    just ship
-    ssh {{ci-key}} {{ci-host}} 'cd /srv/ci-repo && G=$(NIX_CONFIG="experimental-features = nix-command flakes" nix-build --no-link --expr "(import <nixpkgs> {}).git" 2>/dev/null | tail -1); PATH="$PATH:$G/bin" NIX_CONFIG="experimental-features = nix-command flakes" nix build --impure --no-link --max-jobs 8 --cores 8 --out-link /tmp/desk-gen ".#nixosConfigurations.nixos.config.system.build.toplevel" 2>&1 | tail -4'
-    ssh {{ci-key}} {{ci-host}} 'P=$(readlink /tmp/desk-gen); nix-store --export $(nix-store -q --closure $P)' | nix-store --import
-    ssh {{ci-key}} {{ci-host}} 'P=$(readlink /tmp/desk-gen); D=$(nix-store -q --deriver $P); nix-store --export $(nix-store -q --closure $D)' | nix-store --import
+    bash /etc/nixos/hosts/desktop/ci-offload.sh
     just switch
 
 gc:
