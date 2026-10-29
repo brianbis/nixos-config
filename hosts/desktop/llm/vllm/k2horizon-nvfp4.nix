@@ -14,7 +14,7 @@
 # The checkpoint is fetched declaratively (pkgs.fetchurl, pinned sha256 per
 # file) and assembled into a store dir the container mounts read-only — so the
 # source tree fully describes the input and there is no runtime HF download
-# inside the container (the same pattern as the Bonsai model).
+# inside the container (the same pattern as LensVLM).
 #
 # Note: the checkpoint README's `docker run` example omits the `cu129-` prefix
 # from the nightly tag; the real Docker Hub tag is the prefixed one below.

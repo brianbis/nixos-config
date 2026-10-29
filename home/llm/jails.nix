@@ -1,4 +1,4 @@
-# Builds the (user, system) jail pair for each jailed agent (crush, opencode, aider, claude, dsh). System jails run as the llm agent user (via `sudo -u llm`) so they can edit /etc/nixos without being root.
+# Builds the (user, system) jail pair for each jailed agent (crush, opencode, aider, dsh). System jails run as the llm agent user (via `sudo -u llm`) so they can edit /etc/nixos without being root.
 { lib, pkgs, jail-nix, llm-agents, deepseekSecret, nvidiaSecret, shared, userHome, dshSrc }:
 
 let
@@ -586,10 +586,6 @@ let
     ".local/share/opencode"
     ".local/state/opencode"
   ];
-  claudeDirPaths = [
-    ".claude"
-    ".claude.json"
-  ];
   # dsh keeps all user data under a single root (~/.dsh, overridable via $DSH_HOME); the jail pins HOME, so the default root is what gets mounted.
   dshDirPaths = [
     ".dsh"
@@ -708,7 +704,6 @@ let
       ];
     })
     // (makeTool { name = "opencode"; pkg = withDeepSeekKey (agent "opencode") "opencode"; dirPaths = opencodeDirPaths; })
-    // (makeTool { name = "claude"; pkg = agent "claude-code"; dirPaths = claudeDirPaths; })
     // (makeTool {
       name = "dsh";
       # Dummy key: the real DeepSeek key is injected host-side by the headroom-proxy-deepseek service (8788, outside the jail); see withDummyKey.

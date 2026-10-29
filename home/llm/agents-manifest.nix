@@ -21,7 +21,6 @@ in
     gateDefaultModel = shared.gateDefaultModel;
     headroomLocalPort = toString shared.headroomPort;
     headroomCloudPort = toString shared.headroomCloudPort;
-    headroomClaudePort = toString shared.headroomClaudePort;
     headroomLocalUrl = "http://127.0.0.1:${toString shared.headroomPort}/health";
 
     # System paths from catalog

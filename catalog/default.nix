@@ -49,6 +49,10 @@ rec {
   #
   # Freed (never reuse — these were the front ports the gate replaced):
   #   8080 8082 8084 8086 8088 8091 18085 18087 18089 18091 18093 18095 18097 18099
+  # Freed with the llama.cpp Bonsai fleet, whose weights were deleted on disk
+  # (the router, and the Anthropic-shaped headroom face that had it as upstream
+  # — the gate speaks only the OpenAI wire, so that face had no other upstream):
+  #   8010 8789
   ports = {
     # The one public face for every local model.
     gate = 8100;
@@ -58,13 +62,9 @@ rec {
     # retrieve flow keep working on the routes that want them.
     headroom = 8787; # -> gate
     headroomCloud = 8788; # -> api.deepseek.com (host-side key injection)
-    headroomClaude = 8789; # -> bonsai llama-server, Anthropic-shaped face
+    headroomLanCoder = 8790; # -> the yzerd coder engine, over the LAN
     headroomNinfer = 8791; # -> ninfer child
     headroomNvidia = 8792; # -> integrate.api.nvidia.com (host-side key)
-
-    # Boot-resident engines (always live; the router sleeps its weights on its
-    # own idle window).
-    llamacppBonsai = 8010;
 
     # On-demand engines: each binds ONLY its own loopback port while resident.
     ninfer = 8081;
@@ -91,10 +91,10 @@ rec {
   # the model is reached through a cloud headroom front (key injected host-side)
   # rather than through the gate.
   providers = {
-    llamacpp_bonsai = {
-      label = "llama.cpp Bonsai fork (local)";
-      hosted = false;
-    };
+    # The llama.cpp Bonsai group is gone with its two rows: the router's weights
+    # were deleted from disk, and a provider group with no rows would break the
+    # tool-config renderers. Its headroomClaude face went too — the gate speaks
+    # only the OpenAI wire, so nothing left can upstream an Anthropic one.
     vllm_k2horizon = {
       label = "vLLM K2-Horizon NVFP4 (local)";
       hosted = false;
@@ -166,51 +166,6 @@ rec {
 
   # ─── The models ───────────────────────────────────────────────────────────
   models = {
-
-    # ── llama.cpp Bonsai fork router (:8010, boot-resident) ─────────────────
-    # Two modes (thinking/instruct) over one router; effort is per-request.
-    bonsai2_27b_pq2_thinking = {
-      provider = "llamacpp_bonsai";
-      id = "bonsai2-27b-pq2_0-thinking";
-      name = "Ternary-Bonsai-2-27B PQ2_0 Thinking";
-      engine = "llamacpp";
-      unit = "llamacpp-bonsai";
-      port = ports.llamacppBonsai;
-      relay = null;
-      family = "bonsai";
-      context = 262144;
-      maxTok = 8192;
-      reason = true;
-      attachments = true;
-      thinkingBudget = -1;
-      reasoningEfforts = {
-        medium = "medium";
-        xhigh = "xhigh";
-      };
-      vramMib = 8000;
-      onDemand = false;
-    };
-    bonsai2_27b_pq2_instruct = {
-      provider = "llamacpp_bonsai";
-      id = "bonsai2-27b-pq2_0-instruct";
-      name = "Ternary-Bonsai-2-27B PQ2_0 Instruct";
-      engine = "llamacpp";
-      unit = "llamacpp-bonsai";
-      port = ports.llamacppBonsai;
-      relay = null;
-      family = "bonsai";
-      context = 262144;
-      maxTok = 8192;
-      reason = true;
-      attachments = true;
-      thinkingBudget = -1;
-      reasoningEfforts = {
-        medium = "medium";
-        xhigh = "xhigh";
-      };
-      vramMib = 8000;
-      onDemand = false;
-    };
 
     # ── NInfer (native, lifecycle idle wrapper) ─────────────────────────────
     # Four engines over the SAME Qwen3.8-27B NVFP4 artifact; they share the

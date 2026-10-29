@@ -1,7 +1,7 @@
 """
 The LLM gate: one boot-resident front door for every model in the fleet.
 
-Every jailed agent (crush, opencode, aider, claude, dsh) talks to this one
+Every jailed agent (crush, opencode, aider, dsh) talks to this one
 port (the ledger's `gate`, served as llm.local); the engines' own loopback
 ports are private plumbing the gate forwards to. One port, one process, one
 routing table.
@@ -299,9 +299,9 @@ class Fleet:
         The gate is the process starter, so it never asks an engine what it
         can serve: the facts are the unit's state (systemctl) and the card's
         accounting (the ledger's vramMib against the used memory). A
-        boot-resident llama.cpp router that slept on its idle window is an
-        active unit holding no weights, and a port that answers /health says
-        nothing about which model it could load into a full card.
+        unit the gate started but has not loaded yet is active and holds
+        no weights, and a port that answers /health says nothing about
+        which model it could load into a full card.
         """
 
         if row.hosted or row.unit is None:

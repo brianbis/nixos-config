@@ -13,7 +13,6 @@ let
     "{{gateDefaultModel}}" = manifest.formatted.gateDefaultModel;
     "{{headroomLocalPort}}" = manifest.formatted.headroomLocalPort;
     "{{headroomCloudPort}}" = manifest.formatted.headroomCloudPort;
-    "{{headroomClaudePort}}" = manifest.formatted.headroomClaudePort;
     "{{headroomLocalUrl}}" = manifest.formatted.headroomLocalUrl;
     "{{agentHome}}" = manifest.formatted.agentHome;
     "{{agentUsername}}" = manifest.formatted.agentUsername;

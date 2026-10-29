@@ -1,4 +1,4 @@
-# Jailed LLM tooling (crush/opencode/aider/claude/dsh) home-manager module for
+# Jailed LLM tooling (crush/opencode/aider/dsh) home-manager module for
 # b: the jail packages + wrappers, the headroom proxy user services, and the
 # shared agent-home config (./jail-home.nix).
 #

@@ -24,10 +24,14 @@ in
   security.sudo.extraConfig = ''
     Defaults>llm umask=0002
   '';
+  # Names must exist in the pinned NSS certdata (buildcatrust hard-fails on
+  # blocklist entries missing from the cert store). "emSign ECC Root CA - G3"
+  # is gone from Mozilla's root store since NSS 3.131.1 (only "emSign Root CA - G1"
+  # remains), so it is not blacklisted here. "Comodo AAA Services root" (CVE-2026-111943)
+  # is still in the store and is also added by nixpkgs' security.pki default.
   security.pki.caCertificateBlacklist = [
-  "Comodo AAA Services root"
-  "emSign ECC Root CA - G3"
-];
+    "Comodo AAA Services root"
+  ];
   # TPM2 unseal: the age key is sealed in the TPM bound to PCRs 0,2,3; this
   # script unseals the key into tmpfs (/run/agenix-tpm) for agenix to use as
   # its identity. Runbook (sealing/rotation/recovery): docs/secrets.md.

@@ -215,18 +215,6 @@
       inputs.uv2nix.follows = "uv2nix";
     };
 
-    # llama.cpp: router server for the local LLM fleet; re-pinning may need a new npmDepsHash in hosts/desktop/llm/llamacpp/package.nix.
-    llama-cpp = {
-      url = "github:ggml-org/llama.cpp";
-      flake = false;
-    };
-
-    # llama.cpp Bonsai fork: carries the ternary kernels (PTQ1_0/PQ2_0) stock llama.cpp rejects; only Ternary-Bonsai-2-27B needs it.
-    llama-cpp-bonsai = {
-      url = "github:PrismML-Eng/llama.cpp";
-      flake = false;
-    };
-
     # dsh (deepseek-harness) source (pnpm monorepo); built offline by
     # home/llm/dsh/ (npm ci OOMs). Pinned to a published release tag: its
     # tarball's production deps are all on the npm registry, so the npm-closure
@@ -993,6 +981,15 @@
 
           ({ config, pkgs, lib, ... }: {
             nixpkgs.config.allowUnfree = true;
+
+            # nixpkgs' own QA statement marks python3.14-posthog `broken` once the pinned
+            # python `mcp` reaches 2 (this pin 3ec63636: mcp 2.2.0, posthog 7.71.0), and
+            # that rev refuses a broken package at evaluation ("Refusing to evaluate
+            # package 'python3.14-posthog-7.71.0'"), which the aider jail pays:
+            # home/llm/llm.nix home.packages -> pkgs.aider-chat -> posthog. A handler
+            # downgrades that one package+problem to a warning; allowBroken would opt
+            # out of every broken package in the fleet.
+            nixpkgs.config.problems.handlers.posthog.broken = "warn";
 
             # Socket-activated: with autoStop it exits after the 120s idle window (VRAM + host memory freed) and re-activates on demand.
             services.whisper-service = {

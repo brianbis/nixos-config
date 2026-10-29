@@ -396,11 +396,11 @@ let
       ];
 
       # The engine's CPU expert pool (one worker per logical CPU) shares the CFS
-      # pie with the llamacpp fleet (llamacpp-bonsai stays online at boot),
-      # headroom's compression calls and the agent toolchain. At equal weight the
-      # decode stalls whenever those are busy; CPUWeight (a raw [Service] lvalue,
-      # no NixOS module option for it in this pin) doubles strata's share under
-      # contention without starving the rest (they keep the remainder of the pie).
+      # pie with headroom's compression calls and the agent toolchain. At equal
+      # weight the decode stalls whenever those are busy; CPUWeight (a raw
+      # [Service] lvalue, no NixOS module option for it in this pin) doubles
+      # strata's share under contention without starving the rest (they keep
+      # the remainder of the pie).
       extraServiceConfig = { CPUWeight = 200; };
     };
 

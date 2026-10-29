@@ -7,8 +7,6 @@ let
   inherit (shared)
     headroomUpstreamUrl
     headroomPort
-    headroomClaudePort
-    headroomClaudeUpstreamUrl
     headroomNvidiaUpstreamUrl
     headroomNvidiaPort
     headroomNinferUpstreamUrl
@@ -88,35 +86,6 @@ in
 
     Service = {
       ExecStart = "${headroomNvidiaWrapper}/bin/headroom-nvidia";
-      Restart = "on-failure";
-      RestartSec = "3";
-      WorkingDirectory = "%h/.local/share/headroom";
-      Environment = "HOME=%h";
-    };
-
-    Install.WantedBy = [ "default.target" ];
-  };
-
-  # The Anthropic-shaped face over the boot-resident Bonsai llama-server:
-  # llama-server serves /v1/messages natively, so this face needs an engine as
-  # its upstream — the gate speaks only the OpenAI wire format.
-  #
-  # --lossless, not CCR: Claude Code registers no headroom MCP server (see
-  # claudeConfig in ./catalog.nix), so it has no headroom_retrieve tool to redeem
-  # a <<ccr:...>> marker with — proactive compression would leave markers the model
-  # cannot expand, corrupting its own context. Same reason the ninfer face at 8791
-  # is lossless. The crush-facing face at 8787 keeps CCR because crush does
-  # register the retrieve tool.
-  systemd.user.services.headroom-proxy-claude = {
-    Unit = {
-      Description = "Headroom context-compression proxy (Claude Code / llama.cpp upstream)";
-      After = [ "network.target" ];
-    };
-
-    Service = {
-      ExecStart = "${pkgs.headroom}/bin/headroom proxy " +
-        "--anthropic-api-url ${headroomClaudeUpstreamUrl} --lossless " +
-        "--host 127.0.0.1 --port ${toString headroomClaudePort}";
       Restart = "on-failure";
       RestartSec = "3";
       WorkingDirectory = "%h/.local/share/headroom";

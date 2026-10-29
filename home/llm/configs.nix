@@ -12,24 +12,17 @@ let
     defaultModel
     opencodeProviders
     crushConfigFor
-    claudeConfig
-    stdioMcpFor
     opencodeMcpFor
     ;
 
   crushConfig = crushConfigFor userHome;
 
-  # opencode's mcp section: the same four code-analysis servers crush and claude
-  # get, in opencode's local-server shape (type "local" + one argv array).
+  # opencode's mcp section: the same four code-analysis servers crush gets, in
+  # opencode's local-server shape (type "local" + one argv array).
   opencodeConfig = builtins.toJSON (opencodeProviders // {
     "$schema" = "https://opencode.ai/config.json";
     mcp = opencodeMcpFor userHome;
   });
-
-  # Claude Code reads user-scope MCP servers from the top-level mcpServers key of
-  # ~/.claude.json (settings.json has no such key), so jail-home.nix merges this
-  # object into that file rather than owning it.
-  claudeMcpServers = builtins.toJSON (stdioMcpFor userHome);
 
   aiderConfig = ''
     # The single LLM door: the availability gate loads/redirects whichever local
@@ -45,7 +38,6 @@ let
     # Model shortcuts (from the shared model catalog). Only the model served
     # by the backend you actually started is reachable.
     alias:
-      bonsai: "${models.bonsai2_27b_pq2_instruct.providerName}/${models.bonsai2_27b_pq2_instruct.id}"
       pro: "${models.deepseekPro.providerName}/${models.deepseekPro.id}"
       flash: "${models.deepseekFlash.providerName}/${models.deepseekFlash.id}"
       strata: "${models.strata_qwen38.providerName}/${models.strata_qwen38.id}"
@@ -60,5 +52,5 @@ let
   '';
 in
 {
-  inherit crushConfig opencodeConfig aiderConfig claudeConfig claudeMcpServers;
+  inherit crushConfig opencodeConfig aiderConfig;
 }

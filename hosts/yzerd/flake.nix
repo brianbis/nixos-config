@@ -184,6 +184,10 @@
               gpu-unlock-firmware = gpuUnlockFirmwarePkg;
             }) ];
           })
+          # The CI half: declares flake-eval capability, the git/jq tools the
+          # runner needs, the runner itself (./ci-runner.sh), and the state
+          # dir whose last-green entry is the CD pointer. Never activates.
+          ./ci.nix
         ];
       };
 

@@ -26,7 +26,6 @@ let
     "llm.local" = catalog.gate.port;
     "headroom.local" = catalog.ports.headroom; # -> gate (compression front)
     "deepseek.local" = catalog.ports.headroomCloud; # -> DeepSeek cloud
-    "claude.local" = catalog.ports.headroomClaude; # -> bonsai llama-server, Anthropic-shaped
     "dsh.local" = 3080; # DeepSeek Harness web GUI
     "searxng.local" = 8888; # SearXNG metasearch (loopback; dsh web-search backend)
     "archipelago.local" = 8090; # Archipelago WebHost (multiworld server + tracker + generator)

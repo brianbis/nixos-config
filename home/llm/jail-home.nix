@@ -55,7 +55,6 @@ in
     ".config/opencode/.keep".text = "";
     ".local/share/opencode/.keep".text = "";
     ".local/state/opencode/.keep".text = "";
-    ".claude/.keep".text = "";
     ".dsh/.keep".text = "";
   };
 
@@ -66,8 +65,7 @@ in
         "$HOME/.config/opencode" \
         "$HOME/.local/share/opencode" \
         "$HOME/.config/headroom" \
-        "$HOME/.local/share/headroom" \
-        "$HOME/.claude"
+        "$HOME/.local/share/headroom"
 
       # Crush rtk rewrite hook (used by the PreToolUse hook in crush.json)
       $DRY_RUN_CMD rm -f "$HOME/.config/crush/hooks/rtk-rewrite.sh"
@@ -88,31 +86,6 @@ in
       $DRY_RUN_CMD rm -f "$HOME/.config/opencode/opencode.json"
       $DRY_RUN_CMD printf '%s\n' ${shellQuote tool-configs.opencodeConfig} \
         > "$HOME/.config/opencode/opencode.json"
-
-      # Claude Code: settings.json carries the env block (the Claude-facing
-      # headroom proxy to local llama.cpp). The MCP servers are NOT a settings.json
-      # key — Claude Code reads user-scope servers from the top-level mcpServers of
-      # ~/.claude.json, the same file that carries its session history — so the
-      # update is a jq merge that keeps every other key and only adds/overwrites
-      # our own server rows. jq is named by store path so the system closure
-      # realises it for this activation step; a file jq cannot parse is left
-      # untouched (with a warning) rather than replaced by garbage.
-      $DRY_RUN_CMD [ -f "$HOME/.claude.json" ] || printf '{}\n' > "$HOME/.claude.json"
-
-      if ${pkgs.jq}/bin/jq -c --argjson mcp ${shellQuote tool-configs.claudeMcpServers} '. + {mcpServers: ((.mcpServers // {}) + $mcp)}' "$HOME/.claude.json" > "$HOME/.claude.json.tmp"; then
-        if [ -f "$HOME/.claude.json" ] \
-          && cmp -s "$HOME/.claude.json.tmp" "$HOME/.claude.json"; then
-          $DRY_RUN_CMD rm -f "$HOME/.claude.json.tmp"
-        else
-          $DRY_RUN_CMD mv -f "$HOME/.claude.json.tmp" "$HOME/.claude.json"
-        fi
-      else
-        $DRY_RUN_CMD rm -f "$HOME/.claude.json.tmp"
-        echo "WARN: $HOME/.claude.json is not valid JSON; MCP servers not merged." >&2
-      fi
-      $DRY_RUN_CMD rm -f "$HOME/.claude/settings.json"
-      $DRY_RUN_CMD printf '%s\n' ${shellQuote tool-configs.claudeConfig} \
-        > "$HOME/.claude/settings.json"
     '';
 
   home.activation.writeDshHomePatch =

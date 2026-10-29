@@ -31,9 +31,6 @@ let
     headroomCloudPort
     headroomCloudProxyUrl
     headroomCloudUpstreamUrl
-    headroomClaudePort
-    headroomClaudeProxyUrl
-    headroomClaudeUpstreamUrl
     headroomNinferPort
     headroomNinferProxyUrl
     headroomNinferUpstreamUrl
@@ -193,8 +190,6 @@ let
           base_url = "${m.url}/v1";
           api_key = p.api_key;
           models = (acc.${m.providerName}.models or [ ]) ++ [ (crushModelEntry m) ];
-        } // lib.optionalAttrs (m.providerName == "llamacpp_bonsai" && m ? thinkingBudget) {
-          extra_body = { thinking_budget_tokens = m.thinkingBudget; };
         };
       })
     { }
@@ -226,7 +221,7 @@ let
 
   # The MCP servers every agent tool gets: the four tools that ship a stdio MCP
   # server (knife, graphify, graphlore, ripwire), declared ONCE here and rendered
-  # into each client's shape below, so crush/opencode/claude/dsh all serve the same
+  # into each client's shape below, so crush/opencode/dsh all serve the same
   # set. `command`/`args` are what the client spawns; `cwd`/`env` pin the project
   # root for the servers that need one.
   #
@@ -248,7 +243,7 @@ let
     ripwire = { command = "ripwire"; args = [ "--mcp" ]; };
   };
 
-  # crush and Claude Code read the same stdio shape (type/command/args/env).
+  # crush reads this stdio shape (type/command/args/env).
   stdioMcpFor = home: lib.mapAttrs
     (_n: s: {
       type = "stdio";
@@ -444,21 +439,6 @@ let
     providers = crushProviders;
   };
 
-  # Claude Code user settings (settings.json); the env block routes the agent
-  # through the Claude-facing headroom proxy, which forwards to the boot-resident
-  # Bonsai llama-server (the Anthropic face is a passthrough, so it cannot sit
-  # on the gate), naming that engine's own thinking row.
-  claudeConfig = builtins.toJSON {
-    env = {
-      ANTHROPIC_BASE_URL = headroomClaudeProxyUrl;
-      ANTHROPIC_AUTH_TOKEN = "sk-local";
-      # The face is a passthrough to its own engine, so Claude Code names that
-      # engine's thinking row — the gate's default would not exist behind it.
-      ANTHROPIC_MODEL = models.bonsai2_27b_pq2_thinking.id;
-      ANTHROPIC_SMALL_FAST_MODEL = models.bonsai2_27b_pq2_thinking.id;
-    };
-  };
-
 in
 {
   inherit
@@ -470,9 +450,6 @@ in
     headroomCloudPort
     headroomCloudProxyUrl
     headroomCloudUpstreamUrl
-    headroomClaudePort
-    headroomClaudeProxyUrl
-    headroomClaudeUpstreamUrl
     headroomNinferPort
     headroomNinferProxyUrl
     headroomNinferUpstreamUrl
@@ -498,7 +475,6 @@ in
     agentHome
     agentUsername
     crushConfigFor
-    claudeConfig
     defaultModel
     gateDefaultModel
     ;

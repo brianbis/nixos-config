@@ -13,7 +13,7 @@ identity-key := "/run/agenix-tpm/key.txt"
 # many derivations build at once. 4-way is the safe setting. These are
 # client-side flags, so they apply to the very next build (no chicken-and-egg:
 # no successful switch required first).
-build-flags := "--cores 1 --max-jobs 16"
+build-flags := "--cores 4 --max-jobs 4"
 
 secret-edit name:
     @mkdir -p {{secrets-dir}}
@@ -89,6 +89,55 @@ push message="NixOS configuration update":
     just save "{{message}}"
     sudo GIT_SSH_COMMAND="ssh -i /home/b/.ssh/id_ed25519" git fetch origin
     sudo GIT_SSH_COMMAND="ssh -i /home/b/.ssh/id_ed25519" git push --force-with-lease
+
+# LAN CI door: the yzerd physical box keeps its own copy of the whole tree at
+# /etc/nixos and runs its own `ci` runner there (see hosts/yzerd/README.md,
+# "CI box"). The git wire is desk-side only — the DESK holds the private keys
+# and both pubkeys are authorized on the box (hosts/yzerd/default.nix) — so
+# push/pull run here and the box never needs a key toward the desk. `ci-push`
+# also checks the tree out on the box: a push to a non-bare repo moves the
+# ref, not the files, and the box's gates read the FILES.
+yz-door := "ssh://b@192.168.5.186//etc/nixos"
+ci-key := "-i /home/llm/.ssh/id_ed25519"
+
+ci-push:
+    GIT_SSH_COMMAND="ssh {{ci-key}}" git push {{yz-door}} HEAD:main
+    ssh {{ci-key}} b@192.168.5.186 'git -C /etc/nixos checkout -f main'
+
+ci-pull:
+    GIT_SSH_COMMAND="ssh {{ci-key}}" git pull {{yz-door}} main
+
+ci-gate:
+    ssh {{ci-key}} b@192.168.5.186 'sudo /run/current-system/sw/bin/ci gate'
+
+ci-fix:
+    ssh {{ci-key}} b@192.168.5.186 'sudo /run/current-system/sw/bin/ci fix'
+
+ci-status:
+    ssh {{ci-key}} b@192.168.5.186 'sudo /run/current-system/sw/bin/ci status'
+
+# The offload door: run `just switch` (same activation, same desktop) but pay
+# the heavy toplevel build on yzerd instead of the desk — the desk spends its
+# minutes activating, not its hours computing. Mechanics, all LAN-ssh:
+#   1. ci-push so the box's checkout is the committed tree (run `just save`
+#      FIRST — the box builds what HEAD says, the desk must evaluate the same
+#      tree, so nothing may be staged-but-uncommitted);
+#   2. `nix build` of the DESKTOP toplevel on the box: b's nix client talks to
+#      the box's own daemon, so the build is privileged there (uid b alone
+#      could not realize input-addressed drvs, the daemon can);
+#   3. the result comes back as two store imports over the wire — the output
+#      closure (the system itself) and the drv+source closure, so the desk's
+#      later `nixos-rebuild switch` finds that drv already valid: its build
+#      is a no-op and only activation runs locally. Unsigned nar imports are
+#      trusted-locally by design; that is what sidesteps the sig gate here.
+# 8/8 caps mirror the CI runner's, not the desk's 4/4 (that throttle exists
+# because the 4-core desk OOM'd; yzerd is 32c/125G and is allowed more).
+switch-remote:
+    just ci-push
+    ssh {{ci-key}} b@192.168.5.186 'NIX_CONFIG="experimental-features = nix-command flakes" nix build --impure --no-link --max-jobs 8 --cores 8 --out-link /tmp/desk-gen ".#nixosConfigurations.nixos.config.system.build.toplevel" 2>&1 | tail -4'
+    ssh {{ci-key}} b@192.168.5.186 'P=$(readlink /tmp/desk-gen); nix-store --export $(nix-store -q --closure $P)' | nix-store --import
+    ssh {{ci-key}} b@192.168.5.186 'P=$(readlink /tmp/desk-gen); D=$(nix-store -q --deriver $P); nix-store --export $(nix-store -q --closure $D)' | nix-store --import
+    just switch
 
 gc:
     sudo nix-collect-garbage -d
@@ -332,31 +381,3 @@ llm-models:
 # Release a model's VRAM now (the gate never stops an engine behind your back).
 llm-unload model:
     curl -s -X POST http://127.0.0.1:8100/unload -H 'Content-Type: application/json' -d '{"model":"{{model}}"}' | jq .
-
-# llama.cpp (the Bonsai fork router) shortcuts
-
-llamacpp-start:
-    sudo systemctl start llamacpp-bonsai.service
-
-llamacpp-stop:
-    sudo systemctl stop llamacpp-bonsai.service
-
-llamacpp-restart:
-    sudo systemctl restart llamacpp-bonsai.service
-
-llamacpp-status:
-    sudo systemctl status llamacpp-bonsai.service --no-pager
-
-llamacpp-logs:
-    sudo journalctl -u llamacpp-bonsai.service -f
-
-llamacpp-health:
-    curl -s http://127.0.0.1:8010/health || echo "llama.cpp not responding"
-
-llamacpp-psi:
-    sudo systemctl is-active --quiet llamacpp-bonsai.service && echo "running" || echo "stopped"
-
-# Short aliases
-alias lc-start := llamacpp-start
-alias lc-stop := llamacpp-stop
-alias lc-status := llamacpp-status

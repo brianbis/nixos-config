@@ -77,14 +77,6 @@ let
   headroomFaces = {
     headroom = { port = ports.headroom; upstreamUrl = gateUrl; };
     headroomCloud = { port = ports.headroomCloud; upstreamUrl = "https://api.deepseek.com/v1"; };
-    # The Anthropic face is a passthrough: headroom optimizes the request and
-    # forwards it to an upstream that speaks /v1/messages natively. llama-server
-    # does (the gate does not), so this face keeps an engine as its upstream —
-    # the boot-resident Bonsai router.
-    headroomClaude = {
-      port = ports.headroomClaude;
-      upstreamUrl = urlOfPort ports.llamacppBonsai;
-    };
     # The gate fronts the engine, so this proxy upstreams the engine's own port.
     headroomNinfer = { port = ports.headroomNinfer; upstreamUrl = urlOfPort ports.ninfer; };
     headroomNvidia = { port = ports.headroomNvidia; upstreamUrl = "https://integrate.api.nvidia.com/v1"; };

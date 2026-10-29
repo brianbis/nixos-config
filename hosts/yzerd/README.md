@@ -1092,3 +1092,107 @@ want 1500 (#779) — this box has `nvidia-x11-615.78.08-bin` on the unit's
 | — | `/v1/completions` → `{"error": {"message": "not found"}}` `HTTP=404` | this server exposes `/v1/chat/completions` and `/v1/messages`, not llama.cpp's `/completion(s)` |
 | — | `journalctl -u strata-coder-serve --since "11:12" -n 25` → `-- No entries --` | the unit's first journal line was 11:11:09 and hf progress never reaches the journal at all; query the unit without `--since` |
 | `4c74a7b` (earlier) | eval returned the **Generation-3** toplevel drv `acgss6zf3d0qm7cfn6mjjsl3rdvjzwdw-…drv` | the strata module was inert because `services.strata.enable` was never set in `default.nix` |
+
+## CI box (2026-10-29)
+
+The box is the CI/CD half: it carries the whole repo at `/etc/nixos`, gates
+it, and holds the CD pointer. It never activates. The desk remains the push
+door to GitHub and the place the human switches.
+
+Measured on the running box over the LAN ssh door (2026-10-29, `b` uid 1000,
+wheel, NOPASSWD sudo):
+
+```text
+nix-store/nix-build 2.34.9; a trivial `nix-build --expr derivation{…}` as b
+                      realized and exited 0 — the daemon socket is open to b
+running /etc/nix/nix.conf  experimental-features EMPTY — the box cannot
+                      flake-eval today (see bootstrap below)
+PATH                     git, jq, python3 absent; curl, patch, diff, tar,
+                         ssh, sudo, systemctl present
+32 cores / ~125.7 GB RAM / no swap; /dev/nvme0n1p3 915G ext4 (779G free)
+strata-coder-serve     exists, no wantedBy, on demand, port 18088,
+                       qwen3.8-flash-next-coder-iq1_m, /v1/chat/completions
+```
+
+`ci.nix` (added to `hosts/yzerd/flake.nix` modules) declares: `nix.settings.experimental-features`
+(same spelling as the desktop's host.nix), `nix.settings.max-jobs = 8`,
+`pkgs.git`/`pkgs.jq`, the runner `ci` — `writeScriptBin` reading `./ci-runner.sh`
+straight from the repo, interpreter pinned to store bash — and a state dir
+`/var/lib/nixos-ci` owned by b. **Chicken-and-egg, stated honestly:** the
+declaration lands in the generation being built, so a fresh box cannot flake-eval
+from it; the FIRST such generation arrives through the install flow (the live
+stick's nix already speaks flakes). After that generation boots, the box is
+natively flake-capable and `ci` exists in the same generation.
+
+The gates (`ci-runner.sh`, cheap → expensive, first failure is what fix repairs):
+
+```text
+yz-eval     nix eval --raw .#nixosConfigurations.yzerd.config.system.build.toplevel.drvPath
+pkg-…       narrow pkgs builds — default gpu-unlock-kmod-check (CI_GATE_PKGS widens)
+toplevel    nix build … --profile /var/lib/nixos-ci/last-green  ← the CD pointer
+desk-eval   opt-in (CI_DESK_EVAL=1): the root nixpkgs rev may be a first-run
+            download on the box; yz gates stay on the box's own older pin
+```
+
+last-green semantics are what make it CD: a failed build never touches the
+profile, so `last-green` is always a green toplevel. Deploying it is a HUMAN
+door, and the runner never runs either form:
+
+```shell
+sudo $(readlink /var/lib/nixos-ci/last-green)/launch-sudo        # pointer, no re-eval
+sudo nixos-rebuild switch --flake /etc/nixos#yzerd               # or re-eval in place
+```
+
+The loop commands: `ci gate` (the set above), `ci update [IN…]` (nix flake
+update on the checkout, re-gate, commit the lock green / roll it back red —
+per-row pin policy is nix flake update's own: exact-rev rows never move, tags
+bump, the path input re-hashes by content), `ci fix` (red → failing gate's
+output tail to the box's own strata coder at :18088 — `sudo systemctl start`
+on demand, the lifecycle daemon idles itself — the coder answers with ONE JSON
+line of full-file patches; each is validated (repo `*.nix` path, never
+`flake.lock`, ≤4 files, ≤200 k) before it touches the checkout, ≤3 tries
+(`CI_FIX_TRIES`), on green the touched files are committed as `ci-box`, on
+give-up every patch is rolled back and `$STATE/last-fail.md` is written for
+the human). Full-file patches, not diffs, because the IQ1_M coder is steadier
+rewriting a 134-line file than emitting a correct diff.
+
+Transport (the wire direction is settled by the keys, not by wish): the DESK
+holds the private keys; both pubkeys (`llm@jail`, `dsh-agent`) are authorized
+on the box. So all git motion runs desk-side — the justfile recipes
+`ci-push` (push into `ssh://b@192.168.5.186//etc/nixos` + `git checkout -f` on
+the box, because pushing to a non-bare repo moves the ref and the gates read
+the FILES), `ci-pull` (box fix-commits land back in the desk's truth),
+`ci-gate`, `ci-fix`, `ci-status`. Run `just save` before `ci-push` — push
+sends committed HEAD, not the working tree. The box runner itself is fully
+local: it never talks to GitHub.
+
+One-time bootstrap for the box checkout, once the new generation (git present)
+boots — run from the desk over the existing door, the repo bundle carries the
+agenix ciphertext (PCR-encrypted, undecryptable on the box; yz references no
+secrets, so a gate that does not evaluate the desktop config never touches it):
+
+```shell
+git -C /etc/nixos bundle create /tmp/ci.bundle main
+ssh -i /home/llm/.ssh/id_ed25519 b@192.168.5.186 'cat > /tmp/ci.bundle' < /tmp/ci.bundle
+ssh -i /home/llm/.ssh/id_ed25519 b@192.168.5.186 '
+  cd /etc/nixos && git init &&
+  git remote add bootstrap /tmp/ci.bundle &&
+  git fetch bootstrap && git checkout -f -b main bootstrap/main &&
+  git remote rename bootstrap origin'
+```
+
+Caveats the loop lives under: the yz-native pin carries the OLDER nixpkgs rev
+than the root lock, so cross-box store sharing only hits identical-rev
+derivations (`nix-copy-closure` over LAN is optional, not assumed); the box
+commit author is `ci-box` (desk commits stay `b` — the desk's `just save`
+never amends over a ci-box commit, the pull just merges); and `verify-native.sh`'s
+hardcoded GEN pin is a human constant that must be bumped when a generation
+changes — `ci status` prints the pointer to compare against.
+
+### falls and fixes on this leg
+
+| input | exact output | what fixed it |
+|---|---|---|
+| `nix-build --no-link '<nixpkgs>' -A bash` (ssh, double-quoted) | `error: experimental Nix feature 'flakes' is disabled; add --extra-experimental-features flakes` | the legacy probe itself refuses on nix 2.34 pre-flakes; the decisive probe is a pure `--expr` derivation: `nix-build --no-link --expr 'derivation { … }'` → realized, `EXIT=0` — b drives the daemon |
+| `systemctl cat nix-daemon.socket` | only `[Socket]` headers, no socket path; `find /run -maxdepth 2 -name 'nix*'` empty | the path question was dropped: empirical realization answered the real question (daemon reachable by uid 1000) without knowing the socket's location |
+

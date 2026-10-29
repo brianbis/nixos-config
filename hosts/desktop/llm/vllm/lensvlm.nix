@@ -10,7 +10,7 @@
 # The checkpoint is fetched declaratively (pkgs.fetchurl, pinned sha256 per
 # file) and assembled into a store dir the container mounts read-only — so the
 # source tree fully describes the input and there is no runtime HF download
-# inside the container (the same pattern as K2-Horizon / Bonsai). The image is
+# inside the container (the same pattern as K2-Horizon). The image is
 # pinned by manifest digest (the cu130-nightly tag is a rolling tag; the digest
 # makes the pull reproducible).
 #
