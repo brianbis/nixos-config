@@ -63,6 +63,7 @@ build() {
     ssh -i "$key" "$host" '
         cd /srv/ci-repo
         rm -f /tmp/desk-gen
+        touch /tmp/ci-build-marker 2>/dev/null || true
         G=$(NIX_CONFIG="experimental-features = nix-command flakes" \
             nix-build --no-link --expr "(import <nixpkgs> {}).git" 2>/dev/null | tail -1)
         PATH="$PATH:$G/bin" NIX_CONFIG="experimental-features = nix-command flakes" \
@@ -79,21 +80,51 @@ import_closure() {
         nix-store --import
 }
 
+# The blind tail of the build log is "building '...'" noise: the derivation
+# that actually failed prints its own error ABOVE the last few lines, so a
+# tail -8 (4 building + 4 error-block lines) hid the one thing that matters.
+# Centre the excerpt on the LAST "error:" line instead.
+excerpt() {
+    python3 - "$1" <<'PY'
+import sys
+raw = open(sys.argv[1], errors="ignore").read()
+i = raw.rfind("error:")
+if i < 0:
+    sys.stdout.write(raw[-4000:])
+    raise SystemExit
+sys.stdout.write(raw[max(0, i - 5000):min(len(raw), i + 4000)])
+PY
+}
+
 propose_fix() {
-    python3 - "$log" "$repo" "$patch_file" <<'PY'
-import json, re, subprocess, sys
-log, repo, patch_out = sys.argv[1:4]
-tail = open(log, errors="ignore").read()[-8000:]
+    err_block=$(excerpt "$log")
+
+    # Name the gate's own default model rather than leaving it to the gate's
+    # pick: an unnamed request can be redirected to a weaker row, and a patch
+    # author wants the coder. The id comes from the gate's /gate/state readout
+    # (the ledger stays the only truth for what is servable) — never hardcoded.
+    default_model=$(curl -s -m 30 "${gate%/v1/*}/gate/state" |
+        python3 -c 'import json,sys; print(json.load(sys.stdin).get("default",""))' 2>/dev/null)
+
+    ERR="$err_block" MODEL="$default_model" python3 - "$repo" "$patch_file" <<'PY'
+import json, os, re, subprocess, sys
+
+repo, patch_out = sys.argv[1:3]
+err, model = os.environ.get("ERR", ""), os.environ.get("MODEL", "")
 body = {"messages": [{"role": "user", "content":
     "NixOS flake repo at /etc/nixos (git, main). A build of the DESKTOP "
     "toplevel (.#nixosConfigurations.nixos.config.system.build.toplevel) failed "
-    "on the CI box. Log tail:\n" + tail +
+    "on the CI box. The failing derivation's own error block:\n" + err +
     "\n\nEmit ONE minimal unified diff (git format, applies with git apply -p1 "
     "from /etc/nixos) that fixes the root cause in the FLAKE. Only modify "
     "existing tracked *.nix files (flake.nix, hosts/**, home/**, catalog/**). "
     "No new/removed files, no shell commands, no non-.nix paths. "
+    "If the failure is environmental (network fetch, missing substitute, store "
+    "state) and not flake content, reply NO_FIX. "
     "Wrap the diff in a ```diff fence. If no safe fix is visible, reply NO_FIX."
-}]}
+}], "temperature": 0, "max_tokens": 1500}
+if model:
+    body["model"] = model
 json.dump(body, open("/tmp/gate-req.json", "w"))
 PY
     curl -s -m 900 -H 'Content-Type: application/json' \
@@ -103,9 +134,15 @@ PY
 import json, re, subprocess, sys
 repo, patch_out = sys.argv[1:3]
 try:
-    txt = json.load(open("/tmp/gate-resp.json"))["choices"][0]["message"]["content"]
+    resp = json.load(open("/tmp/gate-resp.json"))
 except Exception as exc:
-    sys.exit("GATE_FAIL: %s" % exc)
+    sys.exit("gate reply unreadable: %s" % exc)
+if "choices" not in resp:
+    # The gate answers a refused request with an error envelope (502 upstream
+    # unreachable / 503 no model in the fleet can serve) and relays an engine's
+    # own error verbatim; both lack "choices". Printing the envelope says which.
+    sys.exit("gate refused: %s" % json.dumps(resp)[:1500])
+txt = resp["choices"][0]["message"]["content"]
 m = re.search(r"```diff\n(.*?)```", txt, re.S) or \
     re.search(r"(diff -u .*?)(?:\n```|$)", txt, re.S)
 if not m:
@@ -154,7 +191,9 @@ while : ; do
         say "done: run 'just switch' — the toplevel is already valid, activation is yours"
         exit 0
     fi
-    say "build FAILED; last lines:"
+    say "build FAILED; the failing derivation's own error block:"
+    excerpt "$log" | sed 's/^/  /'
+    say "last lines:"
     tail -8 "$log" | sed 's/^/  /'
     try=$((try + 1))
     if [ "$try" -gt "$tries" ]; then
@@ -163,10 +202,12 @@ while : ; do
     fi
     say "asking the gate (llm.local :8100) for a minimal flake fix..."
     if propose_fix; then
-        apply_fix || say "fix rejected — next try asks again"
+        if apply_fix; then
+            ship
+        else
+            say "fix rejected — next try asks again"
+        fi
     else
-        say "no usable patch — stopping; inspect $log"
-        exit 1
+        say "no usable patch this try — retrying (raw gate reply at /tmp/gate-resp.json, build log at $log)"
     fi
-    ship
 done

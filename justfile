@@ -137,6 +137,16 @@ ship:
 ci-watch:
     ssh {{ci-key}} {{ci-host}} 'ps -eo etime,cputime,args | grep -E "nix build|nix-build" | grep -v grep; echo NEW-5MIN=$(find /nix/store -maxdepth 1 -type d -newermt "-5 minutes" 2>/dev/null | wc -l); ls -t /nix/store | head -8'
 
+# Percent-done for the toplevel build ON THE BOX: BFS the toplevel drv's input
+# graph, count valid outputs. Needs the script on the box — `ship` carries it;
+# after that this door is one ssh call, run it every few minutes.
+# Percent-done for the desktop toplevel building ON THE BOX: ssh the progress
+# script straight out of the repo (no ship needed) and run it there. BFS of
+# the toplevel drv's inputDrvs graph — valid drvs are not expanded, so
+# "pending" is exactly the work still left. depth= is graph distance, not time.
+ci-progress:
+    ssh {{ci-key}} {{ci-host}} 'bash -s' < /etc/nixos/hosts/yzerd/ci-progress.sh
+
 ci-gate:
     ssh {{ci-key}} {{ci-host}} '/run/current-system/sw/bin/ci gate'
 
