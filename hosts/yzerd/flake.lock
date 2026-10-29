@@ -1,5 +1,22 @@
 {
   "nodes": {
+    "gpu-unlock": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1793226676,
+        "narHash": "sha256-1KD/J1S1uyI5GGoTwQ1cU/sXeEKlG54exSvi6U+j73M=",
+        "owner": "Zagitta",
+        "repo": "gpu-unlock",
+        "rev": "7eb51bccae0a0b7e599e084d971170e9a1e82d0c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Zagitta",
+        "repo": "gpu-unlock",
+        "rev": "7eb51bccae0a0b7e599e084d971170e9a1e82d0c",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1792116957,
@@ -102,6 +119,7 @@
     },
     "root": {
       "inputs": {
+        "gpu-unlock": "gpu-unlock",
         "nixpkgs": "nixpkgs",
         "pyproject-build-systems": "pyproject-build-systems",
         "pyproject-nix": "pyproject-nix_2",

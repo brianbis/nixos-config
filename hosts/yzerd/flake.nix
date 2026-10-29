@@ -34,6 +34,19 @@
   inputs.pyproject-build-systems.url = "github:pyproject-nix/build-system-pkgs";
   inputs.pyproject-build-systems.inputs.nixpkgs.follows = "nixpkgs";
 
+  # gpu-unlock (Zagitta/gpu-unlock), pinned to the commit of main that carries
+  # the AD102 port in kernel/gpu_unlock/recipes.c (ad102_v67 — the six-write
+  # chain this box's 4090 needs). flake = false: a plain source tree.
+  inputs.gpu-unlock.url = "github:Zagitta/gpu-unlock/7eb51bccae0a0b7e599e084d971170e9a1e82d0c";
+  inputs.gpu-unlock.flake = false;
+
+  # NOTE the two NVIDIA artifacts gpu-unlock's firmware is rebuilt from are NOT
+  # URL inputs: a flake URL input is always fed through the archive importer
+  # ("Failed to open archive (Unrecognized archive format)" on the makeself
+  # .run, and ?recursive=0 is ignored), so they are hashed builtins.fetchurl
+  # calls in the let below instead — same pinning strength, the sha256 lives in
+  # this file where a reviewer can see it.
+
   outputs = { self, nixpkgs, ... }@inputs:
     let
       system = "x86_64-linux";
@@ -110,6 +123,38 @@
         engine = strataEnginePkg;
         cudaToolkit = cudaPkgs.cudaPackages_13.cudatoolkit;
       };
+
+      # gpu-unlock rebuilds its firmware from two pinned NVIDIA artifacts
+      # (upstream Makefile: NV := 610.43.03, INPUTS = the kernel-module source
+      # tarball + the .run installer). Hashed builtins.fetchurl: pure at eval,
+      # fetched once into the store, and the sha256 is visible here. Both match
+      # the copies already on the box in /home/b (sha256sum there agrees).
+      nvKernelSource610 = builtins.fetchurl {
+        url = "https://download.nvidia.com/XFree86/NVIDIA-kernel-module-source/NVIDIA-kernel-module-source-610.43.03.tar.xz";
+        sha256 = "sha256-fhGJI8eiPtw2EU1jJzpG4+BOmvmGlaQiA+esLf6fwdw=";
+      };
+      nvInstaller610 = builtins.fetchurl {
+        url = "https://download.nvidia.com/XFree86/Linux-x86_64/610.43.03/NVIDIA-Linux-x86_64-610.43.03-no-compat32.run";
+        sha256 = "sha256-4IRFHbcwpt8p09dPZVdJxNI248lF99lLUgXoQxj+L5A=";
+      };
+
+      # gpu-unlock's blobs, rebuilt from the two artifacts above with upstream's
+      # own extractors (config-independent, so this is the very derivation the
+      # module consumes).
+      gpuUnlockFirmwarePkg = cudaPkgs.callPackage ./gpu-unlock/firmware.nix {
+        src = inputs.gpu-unlock;
+        nvKernelSource = nvKernelSource610;
+        nvInstaller = nvInstaller610;
+      };
+
+      # Narrow compile check ONLY: the module the system actually builds comes
+      # from ./gpu-unlock/default.nix against config.boot.kernelPackages.kernel
+      # (randstruct seed + patches must match the booted kernel). This one uses
+      # the pin's default kernel package so a compile error surfaces in seconds.
+      gpuUnlockKmodCheck = cudaPkgs.callPackage ./gpu-unlock/module.nix {
+        src = inputs.gpu-unlock;
+        kernel = cudaPkgs.linuxPackages.kernel;
+      };
     in
     {
       nixosConfigurations.yzerd = nixpkgs.lib.nixosSystem {
@@ -128,6 +173,17 @@
               strata-serve-env = strataServeEnv;
             }) ];
           })
+          ./gpu-unlock/default.nix
+          # gpu-unlock's sources come from the flake inputs (a module cannot see
+          # inputs), and the firmware package is config-independent so the flake
+          # defines it; only the .ko, which needs config.boot.kernelPackages, is
+          # built inside the module.
+          ({ config, ... }: {
+            nixpkgs.overlays = [ (final: prev: {
+              gpu-unlock-src = inputs.gpu-unlock;
+              gpu-unlock-firmware = gpuUnlockFirmwarePkg;
+            }) ];
+          })
         ];
       };
 
@@ -140,6 +196,8 @@
         "strata-engine-sm89" = strataEnginePkg;
         "strata-vision-app-sm89" = strataVisionAppPkg;
         "strata-serve-env" = strataServeEnv;
+        "gpu-unlock-firmware" = gpuUnlockFirmwarePkg;
+        "gpu-unlock-kmod-check" = gpuUnlockKmodCheck;
       };
     };
 }

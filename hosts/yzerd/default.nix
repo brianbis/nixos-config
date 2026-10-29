@@ -127,8 +127,8 @@
   #    answered AD102 in the boot journal and nothing owned it). What stays open is
   #    the card's residency policy: no llm-gate on this box yet, so powerManagement
   #    is off there rather than inherited from hosts/desktop/nvidia.nix.
-  #  * the guest VM (the NixOS-under-NixOS setup that replaces vmid 100). QEMU argv
-  #    and the disk image are runtime state; the unit that owns it belongs in a
-  #    later revision, once the box boots natively and the pin is known.
+  #  * the guest VM — there IS no guest VM. The "new NixOS VM on the old PVE box"
+  #    plan died the moment PVE itself became NixOS: a NixOS VM inside the NixOS
+  #    box is a vm-in-a-vm, so the box IS the target and vmid 100 is simply gone.
   system.stateVersion = "26.11";
 }
