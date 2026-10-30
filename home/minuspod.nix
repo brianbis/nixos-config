@@ -8,9 +8,18 @@ let
   # against src's, and the pin's nodejs 24.21.0/npm resolve a different closure than
   # the old pin's, so the stale hash failed the consistency check (procedure:
   # lib.fakeHash -> build -> copy the got: value back).
+  # Re-pinned 2026-10-30: `nix flake update` moved nixpkgs 02c087f3 -> 3ec63636
+  # (the generation is 26.11.20261023.3ec6363), so this pin's npm resolves a newer
+  # frontend closure than the Oct-22 pin's. The box's offload build said
+  #   hash mismatch in fixed-output derivation ...-npm-deps.drv
+  #   specified: sha256-rwmyDHo7…  got: sha256-6oRE4YdL…
+  # and that single fetchdrv was the only real failure: minuspod-2.97.4,
+  # home-manager-path, minuspod.service, home-manager-generation,
+  # unit-home-manager-b.service, system-units, etc and the toplevel all just said
+  # "1 dependency failed". Value below is that got:.
   npmDeps = pkgs.fetchNpmDeps {
     src = src + "/frontend";
-    hash = "sha256-rwmyDHo7QBRpzGXTCPt42cbYYAi+F2/tbBEO9GBIrZI=";
+    hash = "sha256-6oRE4YdLhcYG+VNCCpF7i5N3BXl6zjZZJfd5vFlG4eQ=";
   };
 
   # faster-whisper needs a CUDA CTranslate2 (nixpkgs' core is CPU-only unless
