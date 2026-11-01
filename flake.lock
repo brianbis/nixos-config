@@ -170,6 +170,23 @@
         "type": "github"
       }
     },
+    "dsh_2": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1792221763,
+        "narHash": "sha256-WcPs3q4NFTRnH2y1Rc/o7/rvJAOe8s7isoTQYf8APFU=",
+        "owner": "deepseek-ai",
+        "repo": "deepseek-harness",
+        "rev": "687f282e8625c6b8d11ff58211a90524be2e4317",
+        "type": "github"
+      },
+      "original": {
+        "owner": "deepseek-ai",
+        "ref": "dsh-v0.2.1-rc.2",
+        "repo": "deepseek-harness",
+        "type": "github"
+      }
+    },
     "echarts": {
       "flake": false,
       "locked": {
@@ -295,11 +312,11 @@
     "graphify": {
       "flake": false,
       "locked": {
-        "lastModified": 1793403401,
-        "narHash": "sha256-zd+0d26T/3ZZNkuJo8YME2452svbXj+AD+/caBk6w10=",
+        "lastModified": 1793493839,
+        "narHash": "sha256-GUilodOOzVUuJ7VLLPVzen82j4K6hM/NmagY+U7KsSc=",
         "owner": "Graphify-Labs",
         "repo": "graphify",
-        "rev": "a0946f962af31b19bff941b453f6dae9a7077c7a",
+        "rev": "f5155badddaa3286c78a51653791131e9e2e4d29",
         "type": "github"
       },
       "original": {
@@ -469,11 +486,11 @@
     "minuspod": {
       "flake": false,
       "locked": {
-        "lastModified": 1793486953,
-        "narHash": "sha256-V8Y6SFiiDw8vPX77dFuBo3rBYre2RnHF7YE3vosKFsY=",
+        "lastModified": 1793490785,
+        "narHash": "sha256-BXb5PR1DOlDmrTxTI/02o31pwFp52shEc+WXvjsvu0g=",
         "owner": "ttlequals0",
         "repo": "MinusPod",
-        "rev": "4c96b9e4df2e6f4625d84745662e8e4f75ea3130",
+        "rev": "af4941687b1f0f0cabd2a849452648d0e2d9b23d",
         "type": "github"
       },
       "original": {
@@ -707,11 +724,11 @@
         "nixpkgs": "nixpkgs_5"
       },
       "locked": {
-        "lastModified": 1793489354,
-        "narHash": "sha256-vauHtCJmDODb+rCIQp2mBFFCralS1K1/8Q3S7QupY+c=",
+        "lastModified": 1793496430,
+        "narHash": "sha256-XDqFFjgZ0FyxONHIvUr0S5hJDC9CZYLN3OdZr2f6EfQ=",
         "owner": "nix-community",
         "repo": "NUR",
-        "rev": "6072e91e0fd47f8a4ab5b83aedf31b7728429107",
+        "rev": "929fbedf536d8b51016a794063a5e932f431873d",
         "type": "github"
       },
       "original": {
@@ -1106,11 +1123,11 @@
     "tabbyapi": {
       "flake": false,
       "locked": {
-        "lastModified": 1793484132,
-        "narHash": "sha256-OujHixWOn+lazFiN0eFEKPSnIcp3JY6TGY39EGnIzF8=",
+        "lastModified": 1793492634,
+        "narHash": "sha256-9P5jGxcBMD9nZ5GZ5g42xPZHu6reoiU13LuSAFJjN+0=",
         "owner": "theroyallab",
         "repo": "tabbyAPI",
-        "rev": "3cacaf2374d6641544b059080449f38b7bacb17e",
+        "rev": "3eb1b80ee32b198cf8249afd37c0863630d1975e",
         "type": "github"
       },
       "original": {
@@ -1299,6 +1316,7 @@
     },
     "yz-native": {
       "inputs": {
+        "dsh": "dsh_2",
         "gpu-unlock": "gpu-unlock",
         "nixpkgs": "nixpkgs_6",
         "pyproject-build-systems": "pyproject-build-systems_2",
