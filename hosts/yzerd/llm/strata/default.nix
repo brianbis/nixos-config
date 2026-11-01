@@ -42,7 +42,7 @@ let
   # desktop; there is no catalog here, so the same number is repeated literally
   # and every consumer reaches the coder through an ssh tunnel to it.
   childPort = 18088;
-  context = 200000;
+  context = 262144;
   model = "IQ1_M";
   modelRepo = "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF";
   modelRevision = "5348543e0147355ac9cbcb031184a3546350988e";

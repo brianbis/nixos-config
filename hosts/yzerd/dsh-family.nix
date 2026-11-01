@@ -59,7 +59,8 @@ let
   # says so). Loopback-only like every engine port: model traffic never
   # crosses the tailnet, the browser only ever talks to the member's own
   # Serve hostname. Row facts mirror catalog/default.nix's
-  # strata_qwen38_coder row (id, context 200K, maxTok 32768) plus the
+  # strata_qwen38_coder row (id; context/maxTok raised to 256K/64K here,
+  # matching the engine's own bumped --context below; maxTok = context/4) plus the
   # compat pair every non-deepseek openai-completions route carries; no
   # reasoningEfforts row, so no effort is sent (the desktop patch's
   # render agrees).
@@ -79,8 +80,8 @@ let
             models:
               - id: qwen3.8-flash-next-coder
                 name: Qwen3.8-Flash-Next Coder IQ1_M (Strata)
-                contextWindow: 200000
-                maxTokens: 32768
+                contextWindow: 262144
+                maxTokens: 65536
                 compat:
                   supportsDeveloperRole: false
                   maxTokensField: max_tokens
@@ -88,6 +89,13 @@ let
       config:
         provider: strata_coder
         model: qwen3.8-flash-next-coder
+    # Web auth has no off-switch (launch exchange code + signed session cookie
+    # is structural), but the cookie is signed with the secret persisted in
+    # .credentials.yaml, so sessions survive restarts; stretching the
+    # 30-day default to a decade makes the one-time link effectively final.
+    - id: client-connection
+      config:
+        cookieMaxAgeDays: 3650
   '';
 in
 {
