@@ -40,6 +40,13 @@
   inputs.gpu-unlock.url = "github:Zagitta/gpu-unlock/7eb51bccae0a0b7e599e084d971170e9a1e82d0c";
   inputs.gpu-unlock.flake = false;
 
+  # The dsh runtime for the family door (hosts/yzerd/dsh-family.nix): the
+  # same tag pin the root flake carries for its `dsh` input — a *tag* ref
+  # again, so a bare `nix flake update` cannot jump it to refs/heads/main
+  # (same staleness class the root's comment warns about).
+  inputs.dsh.url = "github:deepseek-ai/deepseek-harness/dsh-v0.2.1-rc.2";
+  inputs.dsh.flake = false;
+
   # NOTE the two NVIDIA artifacts gpu-unlock's firmware is rebuilt from are NOT
   # URL inputs: a flake URL input is always fed through the archive importer
   # ("Failed to open archive (Unrecognized archive format)" on the makeself
@@ -155,6 +162,16 @@
         src = inputs.gpu-unlock;
         kernel = cudaPkgs.linuxPackages.kernel;
       };
+
+      # The dsh runtime the family door's private instances run on: the
+      # ./dsh builder (a copy of home/llm/dsh, self-contained per the
+      # stick-copy rule) fed by the dsh input pinned above. versionCheckHomeHook
+      # stays at the copy's default (this subflake carries no llm-agents
+      # input; the hook is only an install-check plugin).
+      yzDsh = import ./dsh {
+        pkgs = cudaPkgs;
+        src = inputs.dsh;
+      };
     in
     {
       nixosConfigurations.yzerd = nixpkgs.lib.nixosSystem {
@@ -182,6 +199,19 @@
             nixpkgs.overlays = [ (final: prev: {
               gpu-unlock-src = inputs.gpu-unlock;
               gpu-unlock-firmware = gpuUnlockFirmwarePkg;
+            }) ];
+          })
+          # The family door (2026-10-31): tailscale join + tag (./tailscale.nix)
+          # and the per-member user/instance/Serve/firewall rows
+          # (./dsh-family.nix). The dsh runtime package comes from the flake
+          # through an overlay row — a module cannot see flake inputs, same
+          # contract as the strata and gpu-unlock rows above — because the
+          # builder (./dsh) is this directory's copy of home/llm/dsh.
+          ./tailscale.nix
+          ./dsh-family.nix
+          ({ config, ... }: {
+            nixpkgs.overlays = [ (final: prev: {
+              dsh-pkg = yzDsh.package;
             }) ];
           })
           # The CI half: declares flake-eval capability, the git/jq tools the

@@ -1196,3 +1196,91 @@ changes — `ci status` prints the pointer to compare against.
 | `nix-build --no-link '<nixpkgs>' -A bash` (ssh, double-quoted) | `error: experimental Nix feature 'flakes' is disabled; add --extra-experimental-features flakes` | the legacy probe itself refuses on nix 2.34 pre-flakes; the decisive probe is a pure `--expr` derivation: `nix-build --no-link --expr 'derivation { … }'` → realized, `EXIT=0` — b drives the daemon |
 | `systemctl cat nix-daemon.socket` | only `[Socket]` headers, no socket path; `find /run -maxdepth 2 -name 'nix*'` empty | the path question was dropped: empirical realization answered the real question (daemon reachable by uid 1000) without knowing the socket's location |
 
+## The family door over the tailnet (2026-10-31)
+
+The ask: family members, from anywhere on the internet, at our own dsh GUI,
+"simple sign in", "prefer not to reinvent the wheel", one-time account
+creation per member, data separation. The decision that closed the design:
+**the tailnet IS the gate.** No nginx, no caddy, no htpasswd on this box —
+an earlier experiment wired a basic-auth reverse proxy (caddy/nginx, E2E
+proven at the proxy layer) and was never shipped; the user said "lets just
+use tailscale" and every layer that experiment added went with it, including
+its bcrypt password gate. The gate that remains is Tailscale's own login:
+a member reaches a Serve hostname only from a device enrolled in the tailnet
+under their tailnet account.
+
+What the config grew (./tailscale.nix, ./dsh-family.nix):
+
+```text
+jeffbis  dsh web :3091 (127.0.0.1)   svc:jeffbis  https 443  →  https://jeffbis.tail835824.ts.net
+```
+
+One member = one unix user (`/home/jeffbis`, 0700, so their dsh state in
+`~/.dsh` is theirs alone — the data separation), one private loopback
+instance on its own port, one Serve service on its own allowed port
+(80/8080/443/8443, unique per node — the docs' "same port cannot be used
+for Serve"). Serve means tailnet-only: no public funnel URL exists for this
+box, and `interfaces.tailscale0.allowedTCPPorts = [ 80 443 ]` admits exactly
+the Serve listener and its redirect partner — the dsh ports themselves stay
+loopback-bound. dsh carries `--trusted-host jeffbis.tail835824.ts.net`
+because Serve hands its own hostname up as Host unchanged (the desktop's
+dsh-web does the same thing for the same reason).
+
+The ceremony, in order (nothing here is in the repo except the rows):
+
+1. human joins the node: `sudo tailscale up` on yz over LAN ssh; the consent
+   page opens in any browser. No agenix on this box, so the authkey stays
+   human-side — this is the one difference from the desktop's networking.nix.
+2. `tag:devices` (already in tailnet policy with family tagOwners) gets
+   applied by the advertise-tags unit; the serve unit waits ≤60s for it and
+   fails loudly if the console Tags pane never applied it.
+3. per member, once: they create a tailnet account, install tailscale on the
+   devices they will use (phone browsers route Serve hostnames only through
+   the tailscale app), and sign in. That sign-in IS their password.
+4. repo side, also once per member: one row in `members` (dshPort,
+   servePort) — the user, the instance, and the Serve service all come from
+   that row on the next CI rebuild. Ongoing registration is not a thing this
+   box carries: rows are the ledger, and the tailnet side is console state,
+   which is worth remembering when auditing: **the repo is not the whole
+   door.**
+5. optional tightening, console-side: a tailnet policy grant limiting
+   `user:<member>` to their own svc host — without it every enrolled tailnet
+   member can open every member's URL.
+
+The accepted risk, written where it can be found (both modules and here): a
+signed-in family member's dsh on this box is an agent with bash, unjailed,
+at their own uid — the CI box is what it guards; rows deliberately carry no
+wheel/sudo group, so the boundary is "agent at uid jeffbis", not root's CI
+state. The default model layer is NOT manual first-load ceremony anymore:
+dsh-family.nix ships one `etc/dsh-family/cordis.patch.yml` seed, copied into
+each member's `~/.dsh/cordis.patch.yml` on their service's first start
+(install-if-absent, so a member's own edits survive restarts), and it
+defaults every member to the box's local coder engine — qwen3.8-flash-next-coder
+at `http://127.0.0.1:18088/v1`. Replacing the provider row wholesale drops
+the hosted routes on purpose: a family member never reaches api.deepseek.com
+(there is no real key on this box anyway; the pi-ai credential is a dummy).
+
+Trying the local LLM out, end to end:
+
+1. the operator (LAN-side, this repo's normal operator path) runs
+   `systemctl start strata-coder-serve` on yz — weights prep is pulled in by
+   the start, ~23 GB goes on the card; `curl 127.0.0.1:18088/health` is the
+   readout. Stopping the unit is what releases the card (nothing strata is
+   boot-resident, by design — this repo says so); jeffbis themselves cannot
+   start system units, so family try-outs ride an operator start.
+2. model traffic never crosses the tailnet: the browser only ever speaks to
+   `jeffbis.tail835824.ts.net`; the member's dsh process (its own uid) calls
+   the coder engine over loopback. :18088 stays loopback-bound — no firewall
+   row, no Serve service for it.
+3. while the engine is down, a session's chat fails (no gate/redirect on
+   this box — the desktop's llm-gate does not exist here); start it and the
+   same session recovers, the patch layer is hot-reloaded.
+
+Falls and fixes on this leg:
+
+| input | exact output | what fixed it |
+|---|---|---|
+| `tailscale` (jail PATH) | not found | the empirical serve/funnel CLI probe was dropped; Serve behavior came from docs + the shipped desktop precedent, which already runs `svc:dsh --https=443` end-to-end |
+| `caddy run --config X --caddyfile` | `Error: unknown flag: --caddyfile` (v2.11.7) | format auto-detects; moot anyway once the user said "lets just use tailscale" |
+| caddy cleartext host-literal vhost on `:8443` | `enabling automatic HTTP->HTTPS redirects` then `listen tcp :80: bind: permission denied` (jail cannot bind low ports), all curls `000` | the whole front-gate experiment was retired, not patched |
+

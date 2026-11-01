@@ -64,6 +64,16 @@ exllamav3Version:
               filename = "exllamav3-1.6.5+cu132.torch2.13.0-cp312-cp312-linux_x86_64.whl";
               versionLabel = "1.6.5+cu132.torch2.13.0";
             };
+            # exllamav3 moved to 1.6.6 with the re-pin at bd1f519 (locked rev
+            # bd1f519172406a9560bd5c90e61000691bb69a07, whose version.py says
+            # __version__ = "1.6.6"); the wheel was hashed here, not copied:
+            # 159326122 bytes, sha256sum of the release asset (same cu132/torch
+            # 2.13.0/cp312 flavour as the venv's pinned torch).
+            "1.6.6" = {
+              sha256 = "93b9f503ebf5f7e2c2cf76ffee9bb01a1f4f2a0ded6fba6829027f09760dc55a";
+              filename = "exllamav3-1.6.6+cu132.torch2.13.0-cp312-cp312-linux_x86_64.whl";
+              versionLabel = "1.6.6+cu132.torch2.13.0";
+            };
           }
         ).${exllamav3Version}
           or (throw "omarchy: no exllamav3 wheel pin for version ${exllamav3Version} - add its sha256 to the attrset above (wheel: https://github.com/turboderp-org/exllamav3/releases/download/v${exllamav3Version}/)");

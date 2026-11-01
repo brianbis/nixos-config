@@ -1,5 +1,22 @@
 {
   "nodes": {
+    "dsh": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1792221763,
+        "narHash": "sha256-WcPs3q4NFTRnH2y1Rc/o7/rvJAOe8s7isoTQYf8APFU=",
+        "owner": "deepseek-ai",
+        "repo": "deepseek-harness",
+        "rev": "687f282e8625c6b8d11ff58211a90524be2e4317",
+        "type": "github"
+      },
+      "original": {
+        "owner": "deepseek-ai",
+        "ref": "dsh-v0.2.1-rc.2",
+        "repo": "deepseek-harness",
+        "type": "github"
+      }
+    },
     "gpu-unlock": {
       "flake": false,
       "locked": {
@@ -119,6 +136,7 @@
     },
     "root": {
       "inputs": {
+        "dsh": "dsh",
         "gpu-unlock": "gpu-unlock",
         "nixpkgs": "nixpkgs",
         "pyproject-build-systems": "pyproject-build-systems",

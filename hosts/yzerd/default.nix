@@ -130,5 +130,15 @@
   #  * the guest VM — there IS no guest VM. The "new NixOS VM on the old PVE box"
   #    plan died the moment PVE itself became NixOS: a NixOS VM inside the NixOS
   #    box is a vm-in-a-vm, so the box IS the target and vmid 100 is simply gone.
+  #
+  # Declared now, two files over — the family door (2026-10-31): ./tailscale.nix
+  # joins the tailnet (tag:devices, human `tailscale up` ceremony, no agenix
+  # here) and ./dsh-family.nix carries the per-member rows: one unix user +
+  # one private loopback dsh instance + one Tailscale Serve service each, so
+  # the sign-in IS a Tailscale login and each member's ~/.dsh is their own
+  # data. No nginx/caddy front gate on this box — the tailnet is the gate
+  # ("lets just use tailscale"), and the accepted risk (a signed-in member's
+  # dsh is an agent with bash at their uid on this CI box, unjailed, no sudo)
+  # is written in both files and in README.md.
   system.stateVersion = "26.11";
 }
