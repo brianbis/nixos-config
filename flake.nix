@@ -2,7 +2,27 @@
   description = "b's NixOS configuration";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # Pinned by exact revision, like every sub-flake in this repo
+    # (hosts/nixos-vm:9, hosts/yzerd:20, hosts/desktop/whisper-service:5). The
+    # floating ref here was the repo's only unpinned first-party input, and it
+    # was the largest cost driver on this box: this lock's `nixpkgs` node
+    # carries original.ref = "nixpkgs-unstable" while this line declared
+    # nixos-unstable, so the lock entry no longer matched the declaration and
+    # nix DISCARDED it on every evaluation — re-resolving a brand-new nixpkgs
+    # revision and giving every nixpkgs-built package a fresh identity.
+    # Measured consequence: 19 distinct `-llvm-21.1.8.drv` paths and 18
+    # llvm-21.1.8 realisations accumulated in /nix/store across a 98-day birth
+    # window (1785131431..1793655648), and the identity being instantiated
+    # today (444afl2g8mmpx5hl5my7b9z77nkq39s7) is NOT valid in
+    # cache.nixos.org (`nix path-info --store https://cache.nixos.org …drv`
+    # exits 1), so each one paid a from-scratch local compile. A rev pin makes
+    # evaluation byte-stable and `nix flake update` a no-op for nixpkgs; pin a
+    # nixos-unstable rev specifically, because hydra serves llvm from that
+    # channel (19bnwrkj363vlbi4l02i6bs33xyvimql-llvm-21.1.8 is valid there,
+    # realisations land 442-552 s after their drv) while the nixpkgs-unstable
+    # channel's llvm identities are cache-absent. Re-pin deliberately and
+    # per-input — see `just nixpkgs-update` — never by blanket `flake update`.
+    nixpkgs.url = "github:NixOS/nixpkgs/0bb2eedc20e4739f29e8045034f2828ad7054f8f";
 
     home-manager = {
       url = "github:nix-community/home-manager";
@@ -606,11 +626,46 @@
         ];
       };
 
+      # LLVM target selection — the dominant cost in llvm's cxx phase.
+      #
+      # Measured on this box: nixpkgs passes NO -DLLVM_TARGETS_TO_BUILD. The
+      # drv instantiated today (444afl2g8mmpx5hl5my7b9z77nkq39s7-llvm-21.1.8.drv
+      # in the agent's private store, byte-identical to the same-named drv in
+      # /nix/store) carries 14 -DLLVM_* cmake flags and ZERO TARGETS ones, so
+      # cmake falls back to its own default `All`: codegen plus TableGen for
+      # every backend this box never uses. The same file's drv at the pinned
+      # nixpkgs rev is ilibjg9gxb1n6xh43q8mgx1a8irfbnnp-llvm-21.1.8.drv, also
+      # with 0 TARGETS hits.
+      #
+      # Verified propagation: pkgs/mesa/default.nix's drv
+      # (902xzvz0ibwa0dcxz51c0qgpbnjz3m4m-mesa-26.2.6.drv) lists
+      # ilibjg9g…-llvm-21.1.8.drv in its inputDrvs, so narrowing the llvm attr
+      # narrows what mesa links — and mesa's llvmpipe JITs host-arch shaders
+      # (x86_64 here; the drv's own -DLLVM_DEFAULT_TARGET_TRIPLE is
+      # x86_64-unknown-linux-gnu). clang's build links that same llvm lib.
+      # Nothing in the repo cross-compiles: no aarch64-/riscv64- toolchain in
+      # any *.nix. triton keeps its OWN llvm — pkgs/by-name/tr/triton-llvm/
+      # package.nix sets LLVM_TARGETS_TO_BUILD itself (line 132, via
+      # lib.cmakeFeature) — so NVPTX for triton is untouched by this overlay.
+      #
+      # Applying it only to the `llvm` attr is deliberate: at this pin both
+      # `pkgs.clang` and `pkgs.clang_21` resolve to clang-wrapper-21.1.8
+      # (a cc-wrapper, no cmake build), so injecting cmakeFlags there is inert
+      # churn, not a win. The test phase shrinks with the build phase: the drv
+      # sets -DLLVM_BUILD_TESTS:BOOL=TRUE, -DLLVM_INCLUDE_TESTS:BOOL=TRUE and
+      # -DLLVM_LIT_ARGS="--verbose -j${NIX_BUILD_CORES}", so check-llvm runs
+      # lit over one target's FileCheck suite instead of every target's.
+      llvmTargetsToBuild = final: prev: {
+        llvm = prev.llvm.overrideAttrs (old: {
+          cmakeFlags = (old.cmakeFlags or [ ]) ++ [ "-DLLVM_TARGETS_TO_BUILD=X86" ];
+        });
+      };
+
       # Base package set for the NixOS configuration.
       pkgs = import nixpkgs {
         inherit system;
 
-        overlays = [ headroomOverlay ccclPatchWorkaround ltraceSkipCheck aiderLiteLLMExceptions semgrepRuntimeDeps anyioPytestNoise pytestPostgresqlStartupRace psycopgCancelRace jupyterServerFdLeakRace openaiMtlsExampleTimeout scikitLearnCallbackLokyRace nodeSharedIsolatePumpRace pycurlPauseRecvTimeoutRace pybind11SubinterpreterSpawnRace pythonUlidSameMillisecondRace hypothesisTeardownRace ];
+        overlays = [ headroomOverlay ccclPatchWorkaround ltraceSkipCheck aiderLiteLLMExceptions semgrepRuntimeDeps anyioPytestNoise pytestPostgresqlStartupRace psycopgCancelRace jupyterServerFdLeakRace openaiMtlsExampleTimeout scikitLearnCallbackLokyRace nodeSharedIsolatePumpRace pycurlPauseRecvTimeoutRace pybind11SubinterpreterSpawnRace pythonUlidSameMillisecondRace hypothesisTeardownRace llvmTargetsToBuild ];
       };
 
       dshPkg = import ./home/llm/dsh {
@@ -1011,6 +1066,12 @@
 
               # CUDA cccl patch workaround (see ccclPatchWorkaround); also applied to the system pkgs.
               ccclPatchWorkaround
+
+              # llvm/clang built for X86 only (see llvmTargetsToBuild). The jails
+              # consume pkgs.mesa/pkgs.clang through this system pkgs set
+              # (useGlobalPkgs), so the narrowed llvm has to be applied here too
+              # or the jail closure rebuilds the all-targets one.
+              llvmTargetsToBuild
 
               # The jails are built by the home-manager modules, which see this system pkgs
               # set (useGlobalPkgs), not the flake-level pkgs above — so every overlay that

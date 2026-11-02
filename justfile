@@ -5,15 +5,26 @@ secrets-dir := "secrets"
 # These recipes run under sudo, so root can read the 0400 tmpfs key.
 identity-key := "/run/agenix-tpm/key.txt"
 
-# Cap build parallelism. The box is 24 cores / 64 GB with NO swap, so an
-# uncapped 24-way rustc build of the heavy local Rust package (librepods:
-# iced/wgpu/winit + bluer + libpulse + dbus) would OOM and hard-crash the box.
-# The caps below keep it within the memory budget: --cores caps rustc
-# parallelism INSIDE a cargo build (NIX_BUILD_CORES) and --max-jobs caps how
-# many derivations build at once. 4-way is the safe setting. These are
-# client-side flags, so they apply to the very next build (no chicken-and-egg:
-# no successful switch required first).
-build-flags := "--cores 4 --max-jobs 4"
+# Cap build parallelism. Measured on this box (nproc; /proc/meminfo): 24
+# cores, MemTotal 62.7 GiB with only MemAvailable 16.6 GiB free (the resident
+# LLM engines hold the rest), and swap IS real — hosts/desktop/host.nix
+# fallocates a 64 G /swapfile (SwapTotal 64.0 GiB, SwapFree 54.0 GiB), so the
+# old "no swap → uncapped rustc hard-crashes the box" claim below was stale.
+# Swap is the fallback, not a licence to go 24-way: past RAM, build work
+# page-faults off the NVMe instead of failing.
+# --cores caps work INSIDE one derivation (NIX_BUILD_CORES) and --max-jobs
+# caps how many derivations build at once. The cap that used to be the whole
+# story (a 24-way rustc of librepods: iced/wgpu/winit + bluer + libpulse +
+# dbus) is a RUST-front-end memory shape; it is not the shape that costs most
+# here. llvm/clang is: the instantiated drv passes no -DLLVM_TARGETS_TO_BUILD
+# (cmake default = All = ~22 backends) and drives its test phase with
+# -DLLVM_LIT_ARGS="--verbose -j${NIX_BUILD_CORES}" plus
+# -DLLVM_BUILD_TESTS:BOOL=TRUE, so 4-way throttles a cmake C++ compile and a
+# lit FileCheck suite that have no such memory constraint. 8-way doubles that
+# phase while staying clear of the 24-way OOM-crash shape; drop back to 4 for
+# a Rust-heavy switch if the swap traffic shows up in `nethogs`/`iftop`.
+# These are client-side flags, so they apply to the very next build.
+build-flags := "--cores 8 --max-jobs 4"
 
 secret-edit name:
     @mkdir -p {{secrets-dir}}

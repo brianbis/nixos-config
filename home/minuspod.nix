@@ -8,18 +8,17 @@ let
   # against src's, and the pin's nodejs 24.21.0/npm resolve a different closure than
   # the old pin's, so the stale hash failed the consistency check (procedure:
   # lib.fakeHash -> build -> copy the got: value back).
-  # Re-pinned 2026-10-30: `nix flake update` moved nixpkgs 02c087f3 -> 3ec63636
-  # (the generation is 26.11.20261023.3ec6363), so this pin's npm resolves a newer
-  # frontend closure than the Oct-22 pin's. The box's offload build said
+  # Re-pinned 2026-10-31: the Oct-30 pin's closure (sha256-6oRE4YdL…) is stale at
+  # this nixpkgs pin again — the failed build said
   #   hash mismatch in fixed-output derivation ...-npm-deps.drv
-  #   specified: sha256-rwmyDHo7…  got: sha256-6oRE4YdL…
+  #   specified: sha256-6oRE4YdL…  got: sha256-MR9ehQ5…
   # and that single fetchdrv was the only real failure: minuspod-2.97.4,
   # home-manager-path, minuspod.service, home-manager-generation,
   # unit-home-manager-b.service, system-units, etc and the toplevel all just said
   # "1 dependency failed". Value below is that got:.
   npmDeps = pkgs.fetchNpmDeps {
     src = src + "/frontend";
-    hash = "sha256-6oRE4YdLhcYG+VNCCpF7i5N3BXl6zjZZJfd5vFlG4eQ=";
+    hash = "sha256-MR9ehQ5sVWip/G4tELxl4ybt4qA+YhfbVKTT5ImU3tc=";
   };
 
   # faster-whisper needs a CUDA CTranslate2 (nixpkgs' core is CPU-only unless
@@ -69,6 +68,34 @@ let
       django = super.django.overridePythonAttrs (old: {
         pythonRelaxed = true;
         doCheck = false;
+      });
+      # typer 0.27.2 (this pin) fails 1 test of 1372 — tests/test_types_file.py::
+      # test_file_error asserts the offending filename appears in rich's error
+      # panel, but rich truncates the argument to the build's terminal width, so
+      # the name is elided ("Could not open file" panel only). Width-dependent
+      # assertion, not a defect; typer only enters MinusPod's closure transitively
+      # (huggingface-hub's CLI), and the wheel itself is fine. Skip that one file.
+      typer = super.typer.overridePythonAttrs (old: {
+        disabledTestPaths = (old.disabledTestPaths or [ ]) ++ [
+          "tests/test_types_file.py"
+        ];
+      });
+      # pyarrow 24.0.0 fails 1 test of 7701 (pyarrow/tests/test_pandas.py::
+      # test_cast_timestamp_unit, ARROW-1680/ARROW-1906). It is clock-dependent,
+      # not package-dependent: the test starts from `val = datetime.now()` and
+      # then compares pyarrow's TimestampScalar.as_py() (pytz DstTzInfo) with
+      # pandas' to_pydatetime() (zoneinfo); aware datetimes compare by UTC
+      # instant, so the two agree except inside a DST-transition window, where
+      # pytz's static offset and zoneinfo's real one put the same label an hour
+      # apart. Observed failing at 2026-11-01 01:44 local America/New_York — the
+      # hour before the 02:00 fall-back. Any build whose wall clock lands in
+      # such a window loses this test, so deselect the one node (the pytest hook
+      # turns a "::"-carrying disabledTestPaths entry into --deselect=, the same
+      # mechanism nixpkgs' own pyarrow recipe already uses for its tz tests).
+      pyarrow = super.pyarrow.overridePythonAttrs (old: {
+        disabledTestPaths = (old.disabledTestPaths or [ ]) ++ [
+          "pyarrow/tests/test_pandas.py::test_cast_timestamp_unit"
+        ];
       });
     };
   };

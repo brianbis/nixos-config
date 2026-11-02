@@ -77,6 +77,187 @@ in
     options = "--delete-older-than 30d";
   };
 
+  # GC of the AGENT's store, not just the system one. The jail binds /nix/store
+  # read-only and the agent runs as uid `llm`, which is not in
+  # `trusted-users = root`, so the agent cannot write the system store at all.
+  # Pinned nix (2.34.9) defaults to `store = auto`, whose documented fallback is
+  # a *private store under $HOME*: the literal string ".local/share/nix/root" is
+  # compiled into the pinned `nix` binary, and the tree exists here as
+  # ~/.local/share/nix/root/nix/{store,var} with its own db, gcroots, temproots,
+  # profiles and gc.lock. It was born 2026-08-21 and now holds 69,056 paths =
+  # 453 GiB ON THE SAME BTRFS VOLUME as /nix — 88% of /home/llm's 512 GiB.
+  # `nix.gc` above never sees it: it runs against /nix/store. So every `nix
+  # build`/`nix eval` an agent ran since August materialized a second copy of
+  # the closure (124 of 200 sampled names exist in /nix/store too) and nothing
+  # ever reclaimed it. `nix store gc --dry-run` as uid llm reports
+  # 65,823 of 69,056 paths unreachable, i.e. ~430 GiB reclaimable.
+  #
+  # GCing is the right shape, not deleting: the private store is load-bearing —
+  # it is how a jailed agent can build at all, and keeping it warm is what makes
+  # agent builds fast. Only its garbage must be bounded. Note `--store` is NOT
+  # usable to name it: `--store .../nix/store` opens an empty store with a fresh
+  # db (0 paths deleted) because the db lives at <root>/nix/var/nix/db relative
+  # to that root, and pinning `store = <root>` in nix.conf is wrong too — the
+  # `local:` grammar takes the value as the STORE DIR (measured: it reported
+  # 28 paths, not 65k, i.e. it scanned the wrong tree against the system db),
+  # so `store = auto` + HOME remains the only resolution that finds it and this
+  # unit mirrors the jail's nix environment (uid llm, HOME=/home/llm, the same
+  # NIX_CONFIG as home/llm/jails.nix sets) instead of hardcoding a path.
+  #
+  # There is no sharing shortcut here: the jail cannot write /nix/store (mode
+  # 1775, owner-only, so no group/ACL route exists) and pinned nix 2.34.9 has
+  # no `daemon:` store scheme at all — every form (`--store daemon:/…`,
+  # `store = daemon:…`, with or without `//`) errors
+  # "don't know how to open Nix store with scheme 'daemon'", so the only
+  # RemoteStore left is `ssh:`, i.e. a second shell on the host. Hence a second
+  # store is forced, and the answer to its size is reclaimed in two steps below.
+  #
+  # Step 1 `nix store optimise` collapses identical files *inside* the private
+  # store to hard links (its `.links` index exists but is empty, so it has never
+  # run): measured on a 200k-file sample, same-size duplicates are 0.97 GiB of
+  # 10.97 GiB = an 8.8% ceiling. Small, but it keeps every path live, so it
+  # costs no rebuild. Step 2 `nix store gc` then removes the unreachable paths,
+  # the dominant lever (65,827 of 69,056 paths). `nix store gc --max n` is a cap
+  # on bytes FREED PER RUN, not a cap on the store's size, so it is not a
+  # ceiling either; a hard ceiling needs btrfs qgroups on a dedicated subvolume,
+  # which is a host-side `btrfs quota enable` + `btrfs qgroup set` and cannot
+  # even be probed from the jail (`btrfs qgroup show /` says "not a btrfs
+  # filesystem: /" because the jail's / is fresh tmpfs).
+  systemd.services.llm-store-gc = {
+    description = "Garbage-collect the llm agent's private Nix store (~/.local/share/nix/root)";
+
+    # Boot ordering only needs /home/llm mounted so the fallback root exists;
+    # the timer below is what actually runs it.
+    unitConfig.RequiresMountsFor = "/home/llm";
+
+    # The uid whose HOME pins the fallback root. There is NO
+    # `systemd.services.<name>.user` option at this nixpkgs pin (evaluating it
+    # errors: "The option `systemd.services.llm-store-gc.user' does not exist"),
+    # so this is the raw systemd lvalue `User=` instead — a genuine lvalue, which
+    # renders and is honoured, unlike a made-up key that systemd would ignore.
+    # It relies on the pre-existing `llm` user (the jails run `sudo -u llm`), so
+    # nothing here creates or renumbers a user.
+    serviceConfig = {
+      Type = "oneshot";
+
+      User = "llm";
+
+      # 65k+ paths to unlink: well past a default start timeout.
+      TimeoutStartSec = 0;
+
+      # Deleting is metadata-heavy on an ssd-backed volume shared with /nix.
+      Nice = 19;
+      IOSchedulingClass = "idle";
+
+      # HOME and NIX_CONFIG must match the jail: `store = auto` resolves the
+      # private root from HOME, and `nix store gc` is an experimental
+      # nix-command subcommand. systemd allows several quoted assignments on
+      # one Environment= line.
+      Environment = ''HOME="/home/llm" NIX_CONFIG="experimental-features = nix-command flakes"'';
+
+      # optimise first, gc second: dedup keeps every path live (so nothing an
+      # agent is about to reuse gets thrown away), and gc then works on a
+      # smaller tree. Type=oneshot runs ExecStart lines in order and stops on the
+      # first failure, so a failed optimise cannot silently skip the gc.
+      ExecStart = [
+        "${lib.getExe' pkgs.nix "nix"} store optimise"
+        "${lib.getExe' pkgs.nix "nix"} store gc --delete-older-than 30d"
+      ];
+    };
+  };
+
+  systemd.timers.llm-store-gc = {
+    description = "Weekly GC of the llm agent's private Nix store";
+    wantedBy = [ "timers.target" ];
+
+    timerConfig = {
+      # Same cadence as the system-store GC above; `nix.gc` uses a list here
+      # because its option is a list, while OnCalendar in timerConfig is a
+      # plain string.
+      OnCalendar = "weekly";
+      Persistent = true;
+    };
+  };
+
+  # The store is only one of the two tenants of this one btrfs volume: `/`,
+  # `/home` (subvol=home) and `/nix` (subvol=nix) are three mounts of the SAME
+  # fs (uuid e3974dc1-...), so `df` 100% is not "the store grew" — it is the
+  # volume, shared by /nix/store and /home. GC bounds the store; it does nothing
+  # for the other half, and it does nothing for btrfs' own overhead.
+  #
+  # btrfs reserves space in *chunks* (block groups), so `df` used is the
+  # allocated chunk bytes, not the referenced payload: at this writing the fs
+  # reported Data total=1.70TiB for used=1.48TiB, i.e. ~220 GiB of allocation
+  # stranded inside partially used chunks. `df` calls that space used (it is
+  # allocated), so a full volume refuses writes long before the data is full.
+  # `btrfs balance` relocates the sparse chunks and returns it — the manual run
+  # `btrfs balance start -dusage=50 /` took allocation 1.70TiB -> 1.58TiB and
+  # free space 189G -> 321G (91% -> 83%) while `used` stayed 1.48TiB: balance
+  # moves extents, it never deletes data.
+  #
+  # nixpkgs' btrfs module (tasks/filesystems/btrfs.nix at this pin) only offers
+  # `services.btrfs.autoScrub`, which runs `btrfs scrub` — a checksum re-read
+  # that frees ZERO bytes — and its own comment says balance is deliberately
+  # out of scope: "One could also do regular btrfs balances, but that
+  # shouldn't be necessary during normal usage and as long as the filesystems
+  # aren't filled near capacity". This volume IS near capacity, so the
+  # balance timer below is the missing piece: there is no nixpkgs option for it
+  # (and no `services.btrfs.trim` at this pin either — generic TRIM is
+  # `services.fstrim`, which already defaults to enabled weekly).
+  services.btrfs.autoScrub = {
+    enable = true;
+    # Scrub is integrity/SSD-health, not space recovery; the module defaults to
+    # monthly, weekly keeps the re-read off the hot path of a single day.
+    interval = "weekly";
+    # fileSystems stays unset: the module's mkDefault derives it from
+    # `config.fileSystems` deduplicated by device, which collapses this volume's
+    # three mounts (/, /home, /nix) to one unit on `/` — scrubbing each mount
+    # separately would walk the same 1.5 TiB three times.
+  };
+
+  systemd.services.btrfs-balance = {
+    description = "Reclaim btrfs fragmentation slack on / (balance -dusage=50)";
+    documentation = [ "man:btrfs-balance(8)" ];
+
+    # Pulled in by the timer below, never at boot: a balance is not a boot-time
+    # action and the units' RequiresMountsFor edge makes ordering explicit.
+    unitConfig.RequiresMountsFor = "/";
+
+    serviceConfig = {
+      Type = "oneshot";
+
+      # A whole-volume balance on 1.5 TiB runs far past a default start timeout;
+      # 0 disables it (oneshot would otherwise be killed mid-relocation, leaving
+      # a half-balanced volume).
+      TimeoutStartSec = 0;
+
+      # Same idle scheduling the scrub unit uses, so the I/O storm cannot starve
+      # the desktop or the LLM engines while it relocates chunks.
+      Nice = 19;
+      IOSchedulingClass = "idle";
+
+      # -dusage=50: only relocate data block groups that are <=50% used, which
+      # is what bounds the work — a healthy volume finds few candidates, so the
+      # weekly pass is cheap instead of a full re-pack. Metadata chunks
+      # (total=38GiB, used=24GiB) are left alone; add `-musage=50` if that
+      # 14 GiB of slack ever matters.
+      ExecStart = "${lib.getExe' pkgs.btrfs-progs "btrfs"} balance start -dusage=50 /";
+    };
+  };
+
+  systemd.timers.btrfs-balance = {
+    description = "Weekly btrfs balance on /";
+
+    # Explicit: nixpkgs' own timer modules (services.fstrim, btrfs-scrub@) set
+    # this rather than relying on an implicit default.
+    wantedBy = [ "timers.target" ];
+
+    timerConfig = {
+      OnCalendar = "weekly";
+      Persistent = true;
+    };
+  };
+
   # pre-commit's git (cloning hook repos) and the `nix` client run in an
   # environment whose /nix/store view may not include the system store, so the
   # default /etc/ssl/certs CA *symlinks* (into the system store) dangle and TLS
